@@ -1,0 +1,95 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Stack: Start full local stack",
+            "type": "shell",
+            "command": "docker compose -f infra/docker-compose.yml up -d",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stack: Stop local stack",
+            "type": "shell",
+            "command": "docker compose -f infra/docker-compose.yml down",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Stack: Start with tracing profile",
+            "type": "shell",
+            "command": "docker compose -f infra/docker-compose.yml --profile tracing up -d",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "DB: Run migrations (up)",
+            "type": "shell",
+            "command": "make db-migrate-up",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "DB: Rollback migrations (down)",
+            "type": "shell",
+            "command": "make db-migrate-down",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Go: Test collector (with race)",
+            "type": "shell",
+            "command": "go test -race -v ./...",
+            "options": {
+                "cwd": "${workspaceFolder}/services/go/collector"
+            },
+            "group": "test",
+            "problemMatcher": "$go"
+        },
+        {
+            "label": "Go: Lint collector",
+            "type": "shell",
+            "command": "golangci-lint run ./...",
+            "options": {
+                "cwd": "${workspaceFolder}/services/go/collector"
+            },
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Python: Test predictor",
+            "type": "shell",
+            "command": "uv run pytest tests/ -v",
+            "options": {
+                "cwd": "${workspaceFolder}/services/python/predictor"
+            },
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Python: Lint predictor",
+            "type": "shell",
+            "command": "uv run ruff check src/ tests/ && uv run mypy src/",
+            "options": {
+                "cwd": "${workspaceFolder}/services/python/predictor"
+            },
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Copilot CLI: Suggest command",
+            "type": "shell",
+            "command": "gh copilot suggest",
+            "group": "none",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        }
+    ]
+}

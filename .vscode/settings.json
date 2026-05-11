@@ -1,0 +1,74 @@
+{
+    // ─── Editor ────────────────────────────────────────────────────────────────
+    "editor.formatOnSave": true,
+    "editor.rulers": [
+        100
+    ],
+    "editor.tabSize": 4,
+    // ─── Go ────────────────────────────────────────────────────────────────────
+    "[go]": {
+        "editor.defaultFormatter": "golang.go",
+        "editor.tabSize": 4,
+        "editor.insertSpaces": false
+    },
+    "go.lintTool": "golangci-lint",
+    "go.lintFlags": [
+        "--fast"
+    ],
+    "go.testFlags": [
+        "-v",
+        "-race"
+    ],
+    "go.coverOnSave": false,
+    "go.useLanguageServer": true,
+    // ─── Python ────────────────────────────────────────────────────────────────
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.tabSize": 4
+    },
+    "python.analysis.typeCheckingMode": "strict",
+    "mypy-type-checker.args": [
+        "--strict"
+    ],
+    "ruff.lint.enable": true,
+    // ─── SQL ───────────────────────────────────────────────────────────────────
+    "[sql]": {
+        "editor.defaultFormatter": "mtxr.sqltools"
+    },
+    // ─── Files ─────────────────────────────────────────────────────────────────
+    "files.associations": {
+        "*.prompt.md": "markdown",
+        "*.instructions.md": "markdown",
+        "Dockerfile*": "dockerfile"
+    },
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/.mypy_cache": true,
+        "**/.ruff_cache": true,
+        "**/dist": true,
+        "**/.venv": true
+    },
+    // ─── GitHub Copilot ────────────────────────────────────────────────────────
+    "github.copilot.chat.codeGeneration.useInstructionFiles": true,
+    "github.copilot.chat.codeGeneration.instructions": [
+        {
+            "text": "Always follow the conventions in .github/copilot-instructions.md. Use context.Context as first param in Go. Use type annotations everywhere in Python. Use parameterized SQL queries. Never hardcode secrets."
+        }
+    ],
+    "github.copilot.chat.reviewSelection.instructions": [
+        {
+            "text": "Check for: missing OTel spans, swallowed errors, unparameterized SQL, hardcoded secrets, missing type annotations (Python), missing context propagation (Go)."
+        }
+    ],
+    "github.copilot.chat.commitMessageGeneration.instructions": [
+        {
+            "text": "Use conventional commits: feat|fix|chore|docs|test|refactor|perf(scope): description. Keep subject under 72 chars."
+        }
+    ],
+    // ─── Test Explorer ─────────────────────────────────────────────────────────
+    "go.testExplorer.enable": true,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "tests"
+    ]
+}
