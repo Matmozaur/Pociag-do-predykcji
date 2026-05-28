@@ -1,0 +1,78 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://pociag-do-predykcji/schemas/ingestion-run",
+    "title": "IngestionRun",
+    "description": "Tracks a data ingestion pipeline execution for idempotency and observability",
+    "type": "object",
+    "required": [
+        "id",
+        "pipeline",
+        "run_date",
+        "status",
+        "started_at",
+        "created_at",
+        "updated_at"
+    ],
+    "properties": {
+        "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Surrogate primary key"
+        },
+        "pipeline": {
+            "type": "string",
+            "enum": [
+                "schedules",
+                "operations",
+                "disruptions",
+                "dictionaries"
+            ],
+            "description": "Pipeline identifier"
+        },
+        "run_date": {
+            "type": "string",
+            "format": "date",
+            "description": "The data date this run covers"
+        },
+        "status": {
+            "type": "string",
+            "enum": [
+                "running",
+                "success",
+                "failed"
+            ],
+            "description": "Current run status"
+        },
+        "records_fetched": {
+            "type": "integer",
+            "description": "Number of records fetched from PLK API"
+        },
+        "records_upserted": {
+            "type": "integer",
+            "description": "Number of records written to DB"
+        },
+        "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the run started"
+        },
+        "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the run finished (null if still running)"
+        },
+        "error_message": {
+            "type": "string",
+            "description": "Error details if status=failed"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time"
+        }
+    },
+    "additionalProperties": false
+}

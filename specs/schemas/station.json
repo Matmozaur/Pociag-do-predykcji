@@ -1,0 +1,43 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://pociag-do-predykcji/schemas/station",
+    "title": "Station",
+    "description": "A train station from PLK railway network",
+    "type": "object",
+    "required": [
+        "id",
+        "external_id",
+        "name",
+        "created_at",
+        "updated_at"
+    ],
+    "properties": {
+        "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Surrogate primary key"
+        },
+        "external_id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "PLK station ID used in API filters"
+        },
+        "name": {
+            "type": "string",
+            "description": "Full station name"
+        },
+        "city": {
+            "type": "string",
+            "description": "City the station belongs to"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time"
+        }
+    },
+    "additionalProperties": false
+}

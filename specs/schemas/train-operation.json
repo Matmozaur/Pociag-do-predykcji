@@ -1,0 +1,63 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://pociag-do-predykcji/schemas/train-operation",
+    "title": "TrainOperation",
+    "description": "A record of actual train execution for a specific operating date",
+    "type": "object",
+    "required": [
+        "id",
+        "schedule_id",
+        "order_id",
+        "operating_date",
+        "train_status",
+        "created_at",
+        "updated_at"
+    ],
+    "properties": {
+        "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Surrogate primary key"
+        },
+        "schedule_id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "PLK schedule ID"
+        },
+        "order_id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "PLK order ID"
+        },
+        "train_order_id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Train order ID"
+        },
+        "operating_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of train operation"
+        },
+        "train_status": {
+            "type": "string",
+            "enum": [
+                "S",
+                "P",
+                "C",
+                "X",
+                "Q"
+            ],
+            "description": "S=NotStarted, P=InProgress, C=Completed, X=Cancelled, Q=PartialCancelled"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time"
+        }
+    },
+    "additionalProperties": false
+}
