@@ -40,8 +40,8 @@ Adopt a **microservice architecture** with:
 |---|---|---|---|
 | **Collector** | Go | Extract raw data from PLK API → raw landing tables | 8081 |
 | **Processor** | Python | Transform raw → curated domain tables (dedup, normalize, enrich) | 8082 |
-| **Data Service** | Go | Owns curated domain data, exposes fine-grained REST APIs | 8083 |
-| **Gateway (BFF)** | Go | Frontend-facing facade, aggregates Data Service calls, shapes responses | 8080 |
+| **Data Service** | Go | Owns curated domain data, reads PostgreSQL directly, exposes fine-grained REST APIs | 8083 |
+| **Gateway (BFF)** | Go | Frontend-facing facade, aggregates Data Service calls, shapes responses; no direct DB access | 8080 |
 | **Airflow** | Python | Orchestrates Collector → Processor pipeline | 8090 |
 | **Frontend** | TBD | Web UI for schedule search, extensible | 3001 |
 
@@ -63,12 +63,18 @@ Adopt a **microservice architecture** with:
                      │  PostgreSQL  │
                      │ domain tables│
                      └──────┬───────┘
-                            │ reads
+                            │ SQL (reads)
                             ▼
-┌──────────┐  HTTP   ┌─────────────┐  HTTP   ┌──────────┐
-│ Frontend │◄───────►│   Gateway   │◄───────►│   Data   │
-│  (Web)   │         │   (BFF)     │         │ Service  │
-└──────────┘         └─────────────┘         └──────────┘
+                     ┌──────────┐
+                     │   Data   │
+                     │ Service  │
+                     └────┬─────┘
+                          │ HTTP
+                          ▼
+┌──────────┐  HTTP   ┌─────────────┐
+│ Frontend │◄───────►│   Gateway   │
+│  (Web)   │         │   (BFF)     │
+└──────────┘         └─────────────┘
 ```
 
 ### Data Pipeline Stages
@@ -103,6 +109,12 @@ The Gateway does **NOT** access the database directly. It:
 5. Can add caching layer (Redis) without affecting domain services
 6. Will later aggregate Predictor, Notification, and other services
 
+### Data Service Ownership
+
+The Data Service is the only read API service that accesses curated PostgreSQL domain tables directly.
+It does not rely on Gateway for any database operations. Gateway is a consumer of Data Service APIs,
+not a data-access dependency.
+
 ### Trade-off Analysis
 
 **Architecture style:**
@@ -118,7 +130,7 @@ The Gateway does **NOT** access the database directly. It:
 | Alternative | Pros | Cons | Verdict |
 |---|---|---|---|
 | FE → Data Service directly | Simple | Tight coupling, N+1 calls, FE logic leaks into service | Rejected |
-| **FE → Gateway (BFF) → Services** | Decoupled, FE-optimized, single entry point | Extra hop | **Accepted** |
+| **FE → Gateway (BFF) → Data Service** | Decoupled, FE-optimized, single entry point | Extra hop | **Accepted** |
 | GraphQL gateway | Flexible queries | Complexity, cache difficulty, security surface | Future option |
 
 **Processing language:**
