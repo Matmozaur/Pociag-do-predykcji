@@ -1,6 +1,5 @@
-# Infrastructure services for Pociag do Predykcji
-# This file contains ONLY shared infrastructure — databases, observability backends.
-# Application services are defined per-service once specs are written.
+# Local stack services for Pociag do Predykcji
+# This file contains shared infrastructure and selected local application services.
 #
 # Usage:
 #   docker compose up -d                          # core infra (postgres + otel)
@@ -63,9 +62,30 @@ services:
       - "8889:8889"   # Prometheus scrape (collector self-metrics)
     logging: *default-logging
 
+  # ── Collector Service ───────────────────────────────────────────────────────
+  collector:
+    build:
+      context: ../services/go/collector
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      HTTP_ADDR: :8081
+      DATABASE_DSN: postgres://pociag:${POSTGRES_PASSWORD:-pociag_dev_secret}@postgres:5432/pociag?sslmode=disable
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      PLK_BASE_URL: ${PLK_BASE_URL:?Set PLK_BASE_URL in infra/.env}
+      PLK_API_KEY: ${PLK_API_KEY:?Set PLK_API_KEY in infra/.env}
+    ports:
+      - "8081:8081"
+    logging: *default-logging
+
   # ── Jaeger (tracing UI) ─────────────────────────────────────────────── tracing
   jaeger:
-    image: jaegertracing/all-in-one:1.63
+    image: jaegertracing/all-in-one:1.63.0
     profiles: ["tracing", "all"]
     restart: unless-stopped
     environment:
@@ -116,6 +136,8 @@ services:
       POSTGRES_DB: airflow
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow_dev_secret
+    ports:
+      - "5433:5432"
     volumes:
       - airflow_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -135,6 +157,8 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_dev_secret@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "change_me_in_production_use_fernet_generate_key"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-airflow_local_dev_secret_key_change_me}
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
       _AIRFLOW_DB_MIGRATE: "true"
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: admin
@@ -154,6 +178,8 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_dev_secret@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "change_me_in_production_use_fernet_generate_key"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-airflow_local_dev_secret_key_change_me}
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
     volumes:
       - ../airflow/dags:/opt/airflow/dags:ro
       - ../airflow/plugins:/opt/airflow/plugins:ro
@@ -174,6 +200,8 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_dev_secret@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "change_me_in_production_use_fernet_generate_key"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-airflow_local_dev_secret_key_change_me}
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
     volumes:
       - ../airflow/dags:/opt/airflow/dags:ro
       - ../airflow/plugins:/opt/airflow/plugins:ro
