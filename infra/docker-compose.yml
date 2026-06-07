@@ -26,7 +26,7 @@ services:
       POSTGRES_USER: pociag
       POSTGRES_PASSWORD: pociag_dev_secret
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -52,10 +52,10 @@ services:
 
   # ── OpenTelemetry Collector ──────────────────────────────────────────────────
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.116.0
+    image: otel/opentelemetry-collector-contrib:0.117.0
     restart: unless-stopped
     volumes:
-      - ./otel-collector-config.yml:/etc/otelcol/config.yaml:ro
+      - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
     ports:
       - "4317:4317"   # OTLP gRPC — services send traces/metrics here
       - "4318:4318"   # OTLP HTTP
@@ -80,7 +80,7 @@ services:
       PLK_BASE_URL: ${PLK_BASE_URL:?Set PLK_BASE_URL in infra/.env}
       PLK_API_KEY: ${PLK_API_KEY:?Set PLK_API_KEY in infra/.env}
     ports:
-      - "8081:8081"
+      - "8082:8081"
     logging: *default-logging
 
   # ── Jaeger (tracing UI) ─────────────────────────────────────────────── tracing
