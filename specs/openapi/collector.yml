@@ -9,7 +9,7 @@ info:
     No transformation or deduplication.
 
 servers:
-  - url: http://localhost:8081
+  - url: http://localhost:8082
     description: Local development
 
 # ── Tags ─────────────────────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ components:
           type: object
           additionalProperties:
             type: integer
-          description: "Map of dictionary type to record count landed (e.g. {\"stations\": 3420, \"carriers\": 15})"
+          description: 'Map of dictionary type to record count landed (e.g. {"stations": 3420, "carriers": 15})'
         duration_ms:
           type: integer
           format: int64
