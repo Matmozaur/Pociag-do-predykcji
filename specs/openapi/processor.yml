@@ -1,0 +1,399 @@
+openapi: "3.1.0"
+
+info:
+  title: "Pociag Processor API"
+  version: "0.1.0"
+  description: |
+    Internal processing service (stage 2 of ELT).
+    Reads raw payloads, validates/transforms them, and writes curated domain data.
+    Triggered by Airflow after Collector fetch jobs.
+
+servers:
+  - url: http://localhost:8082
+    description: Local development
+
+# ── Tags ─────────────────────────────────────────────────────────────────────
+tags:
+  - name: health
+    description: Liveness and readiness probes
+  - name: process
+    description: Data transformation pipeline endpoints (called by Airflow)
+  - name: status
+    description: Processing run tracking
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      operationId: healthz
+      tags: [health]
+      responses:
+        "200":
+          description: Service is alive
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      operationId: readyz
+      tags: [health]
+      responses:
+        "200":
+          description: Service is ready to accept traffic
+        "503":
+          description: Service is not ready
+
+  # ── Dictionary Processing ──────────────────────────────────────────────────
+
+  /api/v1/process/dictionaries:
+    post:
+      summary: Process raw dictionaries into curated tables
+      description: |
+        Processes fetched dictionary payloads and upserts curated dictionary data.
+      operationId: processDictionaries
+      tags: [process]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessDictionariesRequest"
+      responses:
+        "200":
+          description: Processing completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessResult"
+        "409":
+          description: Processing already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Processing error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ── Schedule Processing ────────────────────────────────────────────────────
+
+  /api/v1/process/schedules:
+    post:
+      summary: Process raw schedules into curated domain tables
+      description: |
+        Processes fetched schedule payloads for the selected date range
+        and upserts curated schedule data.
+      operationId: processSchedules
+      tags: [process]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessSchedulesRequest"
+      responses:
+        "200":
+          description: Processing completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Processing already running for this scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Processing error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ── Operations Processing ──────────────────────────────────────────────────
+
+  /api/v1/process/operations:
+    post:
+      summary: Process raw operations into curated domain tables
+      description: |
+        Processes fetched operations payloads for a date
+        and upserts curated operations data.
+      operationId: processOperations
+      tags: [process]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessOperationsRequest"
+      responses:
+        "200":
+          description: Processing completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Processing already running for this date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Processing error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ── Disruptions Processing ─────────────────────────────────────────────────
+
+  /api/v1/process/disruptions:
+    post:
+      summary: Process raw disruptions into curated domain tables
+      description: |
+        Processes fetched disruptions payloads for a date range
+        and upserts curated disruptions data.
+      operationId: processDisruptions
+      tags: [process]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessDisruptionsRequest"
+      responses:
+        "200":
+          description: Processing completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Processing already running for this scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Processing error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ── Processing Status ──────────────────────────────────────────────────────
+
+  /api/v1/process/status:
+    get:
+      summary: Get recent processing run status
+      description: Returns the last N processing runs for monitoring and DAG logic.
+      operationId: getProcessingStatus
+      tags: [status]
+      parameters:
+        - name: pipeline
+          in: query
+          description: Filter by pipeline name
+          schema:
+            type: string
+            enum: [schedules, operations, disruptions, dictionaries]
+        - name: limit
+          in: query
+          description: Number of recent runs to return
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+      responses:
+        "200":
+          description: List of recent processing runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingStatusResponse"
+
+# ── Components ───────────────────────────────────────────────────────────────
+components:
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable error description
+        trace_id:
+          type: string
+          description: Trace ID for debugging
+
+    # ── Request Bodies ─────────────────────────────────────────────────────────
+
+    ProcessDictionariesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ingestion_run_id:
+          type: integer
+          format: int64
+          description: Process only raw data from this specific fetch run (optional, defaults to latest)
+
+    ProcessSchedulesRequest:
+      type: object
+      required: [date_from, date_to]
+      additionalProperties: false
+      properties:
+        date_from:
+          type: string
+          format: date
+          description: Process raw schedules covering this date range start
+        date_to:
+          type: string
+          format: date
+          description: Process raw schedules covering this date range end
+        ingestion_run_id:
+          type: integer
+          format: int64
+          description: Process only raw data from this specific fetch run (overrides date range)
+
+    ProcessOperationsRequest:
+      type: object
+      required: [date]
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          format: date
+          description: Process raw operations for this operating date
+        ingestion_run_id:
+          type: integer
+          format: int64
+          description: Process only raw data from this specific fetch run (overrides date)
+
+    ProcessDisruptionsRequest:
+      type: object
+      required: [date_from, date_to]
+      additionalProperties: false
+      properties:
+        date_from:
+          type: string
+          format: date
+          description: Process raw disruptions for this date range start
+        date_to:
+          type: string
+          format: date
+          description: Process raw disruptions for this date range end
+        ingestion_run_id:
+          type: integer
+          format: int64
+          description: Process only raw data from this specific fetch run (overrides dates)
+
+    # ── Response Bodies ────────────────────────────────────────────────────────
+
+    ProcessResult:
+      type: object
+      required: [pipeline, status, records_read, records_written]
+      additionalProperties: false
+      properties:
+        pipeline:
+          type: string
+          description: Pipeline name (dictionaries, schedules, operations, disruptions)
+        status:
+          type: string
+          enum: [success, partial, failed]
+          description: "success=all processed, partial=some errors skipped, failed=aborted"
+        records_read:
+          type: integer
+          description: Number of records read from raw tables
+        records_written:
+          type: integer
+          description: Number of records upserted into domain tables
+        records_skipped:
+          type: integer
+          description: Number of records skipped (validation failures, duplicates)
+        duration_ms:
+          type: integer
+          format: int64
+          description: Processing duration in milliseconds
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessingError"
+          description: Non-fatal errors encountered (only present when status=partial)
+
+    ProcessingError:
+      type: object
+      required: [record_ref, reason]
+      additionalProperties: false
+      properties:
+        record_ref:
+          type: string
+          description: Reference to the problematic record (e.g. "schedule_id=25, order_id=1234")
+        reason:
+          type: string
+          description: Human-readable error description
+
+    ProcessingRun:
+      type: object
+      required: [id, pipeline, status, started_at]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        pipeline:
+          type: string
+        scope_date_from:
+          type: string
+          format: date
+        scope_date_to:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [running, success, partial, failed]
+        records_read:
+          type: integer
+        records_written:
+          type: integer
+        records_skipped:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        error_message:
+          type: string
+
+    ProcessingStatusResponse:
+      type: object
+      required: [runs]
+      additionalProperties: false
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessingRun"
