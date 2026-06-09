@@ -26,7 +26,14 @@
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.tabSize": 4
     },
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "python.analysis.typeCheckingMode": "strict",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingTypeStubs": "none"
+    },
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/services/python/processor/src"
+    ],
     "mypy-type-checker.args": [
         "--strict"
     ],
@@ -70,5 +77,6 @@
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": [
         "tests"
-    ]
+    ],
+    "python-envs.defaultEnvManager": "ms-python.python:system"
 }
