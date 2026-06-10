@@ -91,6 +91,18 @@ db-psql: ## Open a psql shell to the local database
 # <service>-lint: ## Lint <service>
 # 	cd services/go/<service> && golangci-lint run ./...
 
+.PHONY: processor-format
+processor-format: ## Format processor Python service
+	$(MAKE) -C services/python/processor format
+
+.PHONY: processor-test
+processor-test: ## Run processor tests
+	$(MAKE) -C services/python/processor test
+
+.PHONY: processor-check
+processor-check: ## Lint + typecheck + test processor
+	$(MAKE) -C services/python/processor check
+
 # ── GitHub Copilot CLI ────────────────────────────────────────────────────────
 
 .PHONY: copilot-suggest
