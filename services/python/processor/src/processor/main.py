@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import asyncpg
 import structlog
@@ -51,7 +52,11 @@ def configure_tracing(settings: Settings) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    pool = await asyncpg.create_pool(dsn=settings.database_dsn, min_size=1, max_size=10)
+    asyncpg_module = cast(Any, asyncpg)
+    pool = cast(
+        asyncpg.Pool,
+        await asyncpg_module.create_pool(dsn=settings.database_dsn, min_size=1, max_size=10),
+    )
     app.state.pool = pool
     app.state.repository = Repository(pool)
     try:

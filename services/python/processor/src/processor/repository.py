@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import Any, cast
 
 import asyncpg
 from opentelemetry import trace
@@ -27,10 +30,49 @@ class Repository:
         self._pool = pool
         self._tracer = trace.get_tracer("pociag.processor")
 
+    @asynccontextmanager
+    async def _connection(self) -> AsyncIterator[asyncpg.Connection]:
+        pool = cast(Any, self._pool)
+        async with pool.acquire() as conn:
+            yield cast(asyncpg.Connection, conn)
+
+    async def _execute(self, conn: asyncpg.Connection, query: str, *args: object) -> None:
+        await cast(Any, conn).execute(query, *args)
+
+    async def _fetch_value(
+        self, conn: asyncpg.Connection, query: str, *args: object
+    ) -> object | None:
+        return cast(object | None, await cast(Any, conn).fetchval(query, *args))
+
+    async def _fetch_int(self, conn: asyncpg.Connection, query: str, *args: object) -> int:
+        value = await self._fetch_value(conn, query, *args)
+        if value is None:
+            return 0
+        return int(cast(int, value))
+
+    async def _fetch_required_int(
+        self,
+        conn: asyncpg.Connection,
+        query: str,
+        *args: object,
+    ) -> int:
+        value = await self._fetch_value(conn, query, *args)
+        if value is None:
+            raise RuntimeError("failed to create processing run")
+        return int(cast(int, value))
+
+    async def _fetch_rows(
+        self,
+        conn: asyncpg.Connection,
+        query: str,
+        *args: object,
+    ) -> list[asyncpg.Record]:
+        return cast(list[asyncpg.Record], await cast(Any, conn).fetch(query, *args))
+
     async def ping(self) -> None:
         with self._tracer.start_as_current_span("db.connection.ping"):
-            async with self._pool.acquire() as conn:
-                await conn.execute("SELECT 1")
+            async with self._connection() as conn:
+                await self._execute(conn, "SELECT 1")
 
     async def is_pipeline_running(self, pipeline: PipelineName, run_date: date) -> bool:
         query = """
@@ -43,8 +85,9 @@ class Repository:
         )
         """
         with self._tracer.start_as_current_span("db.ingestion_runs.exists"):
-            async with self._pool.acquire() as conn:
-                return bool(await conn.fetchval(query, pipeline, run_date))
+            async with self._connection() as conn:
+                value = await self._fetch_value(conn, query, pipeline, run_date)
+                return bool(cast(bool | None, value))
 
     async def create_processing_run(self, pipeline: PipelineName, run_date: date) -> int:
         query = """
@@ -53,11 +96,8 @@ class Repository:
         RETURNING id
         """
         with self._tracer.start_as_current_span("db.ingestion_runs.insert"):
-            async with self._pool.acquire() as conn:
-                run_id = await conn.fetchval(query, pipeline, run_date)
-                if run_id is None:
-                    raise RuntimeError("failed to create processing run")
-                return int(run_id)
+            async with self._connection() as conn:
+                return await self._fetch_required_int(conn, query, pipeline, run_date)
 
     async def mark_processing_run_success(
         self,
@@ -75,8 +115,8 @@ class Repository:
         WHERE id = $1
         """
         with self._tracer.start_as_current_span("db.ingestion_runs.mark_success"):
-            async with self._pool.acquire() as conn:
-                await conn.execute(query, run_id, records_read, records_written)
+            async with self._connection() as conn:
+                await self._execute(conn, query, run_id, records_read, records_written)
 
     async def mark_processing_run_failed(self, run_id: int, error_message: str) -> None:
         query = """
@@ -88,42 +128,43 @@ class Repository:
         WHERE id = $1
         """
         with self._tracer.start_as_current_span("db.ingestion_runs.mark_failed"):
-            async with self._pool.acquire() as conn:
-                await conn.execute(query, run_id, error_message)
+            async with self._connection() as conn:
+                await self._execute(conn, query, run_id, error_message)
 
     async def count_raw_dictionaries(self, ingestion_run_id: int | None) -> int:
         with self._tracer.start_as_current_span("db.raw_dictionaries.count"):
-            async with self._pool.acquire() as conn:
+            async with self._connection() as conn:
                 if ingestion_run_id is not None:
                     return await self._count_dictionaries_for_run(conn, ingestion_run_id)
 
-                latest_run_id = await conn.fetchval(
+                latest_run_id = await self._fetch_value(
+                    conn,
                     """
                     SELECT ingestion_run_id
                     FROM raw_dictionaries
                     WHERE ingestion_run_id IS NOT NULL
                     ORDER BY fetched_at DESC
                     LIMIT 1
-                    """
+                    """,
                 )
                 if latest_run_id is None:
-                    value = await conn.fetchval(
-                        "SELECT COALESCE(SUM(record_count), 0) FROM raw_dictionaries"
+                    return await self._fetch_int(
+                        conn,
+                        "SELECT COALESCE(SUM(record_count), 0) FROM raw_dictionaries",
                     )
-                    return int(value or 0)
-                return await self._count_dictionaries_for_run(conn, int(latest_run_id))
+                return await self._count_dictionaries_for_run(conn, int(cast(int, latest_run_id)))
 
     async def _count_dictionaries_for_run(
         self,
         conn: asyncpg.Connection,
         ingestion_run_id: int,
     ) -> int:
-        value = await conn.fetchval(
+        return await self._fetch_int(
+            conn,
             "SELECT COALESCE(SUM(record_count), 0) "
             "FROM raw_dictionaries WHERE ingestion_run_id = $1",
             ingestion_run_id,
         )
-        return int(value or 0)
 
     async def count_raw_schedules(
         self,
@@ -143,12 +184,10 @@ class Repository:
           AND date_to >= $1
         """
         with self._tracer.start_as_current_span("db.raw_schedules.count"):
-            async with self._pool.acquire() as conn:
+            async with self._connection() as conn:
                 if ingestion_run_id is not None:
-                    value = await conn.fetchval(query_with_run, ingestion_run_id)
-                else:
-                    value = await conn.fetchval(query_with_dates, date_from, date_to)
-                return int(value or 0)
+                    return await self._fetch_int(conn, query_with_run, ingestion_run_id)
+                return await self._fetch_int(conn, query_with_dates, date_from, date_to)
 
     async def count_raw_operations(self, operating_date: date, ingestion_run_id: int | None) -> int:
         query_with_run = """
@@ -162,12 +201,10 @@ class Repository:
         WHERE operating_date = $1
         """
         with self._tracer.start_as_current_span("db.raw_operations.count"):
-            async with self._pool.acquire() as conn:
+            async with self._connection() as conn:
                 if ingestion_run_id is not None:
-                    value = await conn.fetchval(query_with_run, ingestion_run_id)
-                else:
-                    value = await conn.fetchval(query_with_date, operating_date)
-                return int(value or 0)
+                    return await self._fetch_int(conn, query_with_run, ingestion_run_id)
+                return await self._fetch_int(conn, query_with_date, operating_date)
 
     async def count_raw_disruptions(
         self,
@@ -187,12 +224,10 @@ class Repository:
           AND date_to >= $1
         """
         with self._tracer.start_as_current_span("db.raw_disruptions.count"):
-            async with self._pool.acquire() as conn:
+            async with self._connection() as conn:
                 if ingestion_run_id is not None:
-                    value = await conn.fetchval(query_with_run, ingestion_run_id)
-                else:
-                    value = await conn.fetchval(query_with_dates, date_from, date_to)
-                return int(value or 0)
+                    return await self._fetch_int(conn, query_with_run, ingestion_run_id)
+                return await self._fetch_int(conn, query_with_dates, date_from, date_to)
 
     async def list_processing_runs(
         self,
@@ -215,13 +250,13 @@ class Repository:
         LIMIT $2
         """
         with self._tracer.start_as_current_span("db.ingestion_runs.list"):
-            async with self._pool.acquire() as conn:
-                rows = await conn.fetch(query, pipeline, limit)
+            async with self._connection() as conn:
+                rows = await self._fetch_rows(conn, query, pipeline, limit)
                 return [self._map_run_row(row) for row in rows]
 
     def _map_run_row(self, row: asyncpg.Record) -> ProcessingRunRow:
-        started_at = row["started_at"]
-        completed_at = row["completed_at"]
+        started_at = cast(datetime, row["started_at"])
+        completed_at = cast(datetime | None, row["completed_at"])
 
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=UTC)
@@ -229,13 +264,13 @@ class Repository:
             completed_at = completed_at.replace(tzinfo=UTC)
 
         return ProcessingRunRow(
-            id=int(row["id"]),
-            pipeline=row["pipeline"],
-            run_date=row["run_date"],
-            status=row["status"],
-            records_fetched=row["records_fetched"],
-            records_upserted=row["records_upserted"],
+            id=int(cast(int, row["id"])),
+            pipeline=cast(PipelineName, row["pipeline"]),
+            run_date=cast(date, row["run_date"]),
+            status=cast(str, row["status"]),
+            records_fetched=cast(int | None, row["records_fetched"]),
+            records_upserted=cast(int | None, row["records_upserted"]),
             started_at=started_at,
             completed_at=completed_at,
-            error_message=row["error_message"],
+            error_message=cast(str | None, row["error_message"]),
         )

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 PipelineName = Literal["schedules", "operations", "disruptions", "dictionaries"]
 ProcessStatus = Literal["success", "partial", "failed"]
@@ -83,4 +83,4 @@ class ProcessingRun(BaseModel):
 class ProcessingStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    runs: list[ProcessingRun] = Field(default_factory=list)
+    runs: list[ProcessingRun] = []
