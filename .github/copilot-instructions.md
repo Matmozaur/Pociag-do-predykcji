@@ -178,6 +178,13 @@ When asked to write tests:
 - Use parameterized queries — never string-concatenate SQL.
 - Dependencies: run `govulncheck` (Go) and `pip audit` / `uv pip audit` (Python) in CI.
 
+## Shell Environment
+
+- When using the console for this workspace, switch to a WSL terminal at the beginning of the session and continue working inside that WSL session.
+- After entering WSL, change to `/mnt/c/Users/Admin/Documents/IT/Pociag-do-predykcji` once, then run Docker, Make, Python, and test commands directly from that shell.
+- Do not prefix every command with `wsl` after the session is already running inside WSL.
+- Do not use PowerShell or other Windows-native shells unless the task is explicitly Windows-specific.
+
 ## GitHub Copilot CLI
 
 Use `gh copilot` for shell command assistance during development:
