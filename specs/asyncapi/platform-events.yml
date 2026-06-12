@@ -1,0 +1,281 @@
+asyncapi: "3.0.0"
+
+info:
+  title: "Pociag Platform Events"
+  version: "0.2.0"
+  description: |
+    Internal event bus for the Pociag do Predykcji platform.
+    Events are emitted in two stages and consumed by downstream services
+    (e.g. predictor, notification service):
+
+    1) Collector emits raw fetch completion events (raw landing/bronze)
+    2) Processor emits curated ingestion events (normalized/silver)
+
+    In the base version, events flow through PostgreSQL LISTEN/NOTIFY.
+    This can be upgraded to Kafka/NATS as the platform scales.
+
+# ── Channels ─────────────────────────────────────────────────────────────────
+channels:
+  schedulesFetched:
+    address: "pociag.raw.schedules_fetched"
+    description: Published after Collector lands schedules in raw tables.
+    messages:
+      schedulesFetchedMessage:
+        $ref: "#/components/messages/SchedulesFetched"
+
+  operationsFetched:
+    address: "pociag.raw.operations_fetched"
+    description: Published after Collector lands operations in raw tables.
+    messages:
+      operationsFetchedMessage:
+        $ref: "#/components/messages/OperationsFetched"
+
+  disruptionsFetched:
+    address: "pociag.raw.disruptions_fetched"
+    description: Published after Collector lands disruptions in raw tables.
+    messages:
+      disruptionsFetchedMessage:
+        $ref: "#/components/messages/DisruptionsFetched"
+
+  dictionariesFetched:
+    address: "pociag.raw.dictionaries_fetched"
+    description: Published after Collector lands dictionary payloads in raw tables.
+    messages:
+      dictionariesFetchedMessage:
+        $ref: "#/components/messages/DictionariesFetched"
+
+  schedulesIngested:
+    address: "pociag.data.schedules_ingested"
+    description: Published after Processor writes curated schedule data.
+    messages:
+      schedulesIngestedMessage:
+        $ref: "#/components/messages/SchedulesIngested"
+
+  operationsIngested:
+    address: "pociag.data.operations_ingested"
+    description: Published after Processor writes curated operations data.
+    messages:
+      operationsIngestedMessage:
+        $ref: "#/components/messages/OperationsIngested"
+
+  disruptionsIngested:
+    address: "pociag.data.disruptions_ingested"
+    description: Published after Processor writes curated disruptions data.
+    messages:
+      disruptionsIngestedMessage:
+        $ref: "#/components/messages/DisruptionsIngested"
+
+  dictionariesSynced:
+    address: "pociag.data.dictionaries_synced"
+    description: Published after Processor syncs curated dictionary tables.
+    messages:
+      dictionariesSyncedMessage:
+        $ref: "#/components/messages/DictionariesSynced"
+
+# ── Operations ───────────────────────────────────────────────────────────────
+operations:
+  publishSchedulesFetched:
+    action: send
+    channel:
+      $ref: "#/channels/schedulesFetched"
+    summary: Collector publishes after raw schedules fetch completes.
+
+  publishOperationsFetched:
+    action: send
+    channel:
+      $ref: "#/channels/operationsFetched"
+    summary: Collector publishes after raw operations fetch completes.
+
+  publishDisruptionsFetched:
+    action: send
+    channel:
+      $ref: "#/channels/disruptionsFetched"
+    summary: Collector publishes after raw disruptions fetch completes.
+
+  publishDictionariesFetched:
+    action: send
+    channel:
+      $ref: "#/channels/dictionariesFetched"
+    summary: Collector publishes after raw dictionaries fetch completes.
+
+  publishSchedulesIngested:
+    action: send
+    channel:
+      $ref: "#/channels/schedulesIngested"
+    summary: Processor publishes after curated schedules ingestion completes.
+
+  publishOperationsIngested:
+    action: send
+    channel:
+      $ref: "#/channels/operationsIngested"
+    summary: Processor publishes after curated operations ingestion completes.
+
+  publishDisruptionsIngested:
+    action: send
+    channel:
+      $ref: "#/channels/disruptionsIngested"
+    summary: Processor publishes after curated disruptions ingestion completes.
+
+  publishDictionariesSynced:
+    action: send
+    channel:
+      $ref: "#/channels/dictionariesSynced"
+    summary: Processor publishes after curated dictionary sync completes.
+
+# ── Components ───────────────────────────────────────────────────────────────
+components:
+  messages:
+    SchedulesFetched:
+      name: SchedulesFetched
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/RawFetchEventPayload"
+
+    OperationsFetched:
+      name: OperationsFetched
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/RawFetchEventPayload"
+
+    DisruptionsFetched:
+      name: DisruptionsFetched
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/RawFetchEventPayload"
+
+    DictionariesFetched:
+      name: DictionariesFetched
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/RawFetchEventPayload"
+
+    SchedulesIngested:
+      name: SchedulesIngested
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/CuratedIngestionEventPayload"
+
+    OperationsIngested:
+      name: OperationsIngested
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/CuratedIngestionEventPayload"
+
+    DisruptionsIngested:
+      name: DisruptionsIngested
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/CuratedIngestionEventPayload"
+
+    DictionariesSynced:
+      name: DictionariesSynced
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/SyncEventPayload"
+
+  schemas:
+    RawFetchEventPayload:
+      type: object
+      required:
+        - pipeline
+        - run_id
+        - run_date
+        - records_fetched
+        - source_service
+        - completed_at
+      properties:
+        pipeline:
+          type: string
+          description: Pipeline name (schedules, operations, disruptions, dictionaries)
+        run_id:
+          type: integer
+          format: int64
+          description: Ingestion run ID from ingestion_runs table
+        run_date:
+          type: string
+          format: date
+          description: The date the data covers
+        records_fetched:
+          type: integer
+          description: Number of records fetched from PLK and landed in raw tables
+        source_service:
+          type: string
+          enum: [collector]
+          description: Event producer service
+        ingestion_run_id:
+          type: string
+          description: Correlation identifier for end-to-end fetch/process chain
+        trace_id:
+          type: string
+          description: OpenTelemetry trace ID for correlation
+        completed_at:
+          type: string
+          format: date-time
+          description: When the raw fetch finished
+      additionalProperties: false
+
+    CuratedIngestionEventPayload:
+      type: object
+      required:
+        - pipeline
+        - run_id
+        - run_date
+        - records_upserted
+        - source_service
+        - completed_at
+      properties:
+        pipeline:
+          type: string
+          description: Pipeline name (schedules, operations, disruptions)
+        run_id:
+          type: integer
+          format: int64
+          description: Ingestion run ID from ingestion_runs table
+        run_date:
+          type: string
+          format: date
+          description: The date the data covers
+        records_upserted:
+          type: integer
+          description: Number of curated records written to normalized tables
+        source_service:
+          type: string
+          enum: [processor]
+          description: Event producer service
+        ingestion_run_id:
+          type: string
+          description: Correlation identifier for end-to-end fetch/process chain
+        completed_at:
+          type: string
+          format: date-time
+          description: When the ingestion finished
+        trace_id:
+          type: string
+          description: OpenTelemetry trace ID for correlation
+      additionalProperties: false
+
+    SyncEventPayload:
+      type: object
+      required:
+        - synced_entities
+        - source_service
+        - completed_at
+      properties:
+        synced_entities:
+          type: object
+          additionalProperties:
+            type: integer
+          description: "Map of entity type to count (e.g. {\"stations\": 3420})"
+        source_service:
+          type: string
+          enum: [processor]
+          description: Event producer service
+        ingestion_run_id:
+          type: string
+          description: Correlation identifier for end-to-end fetch/process chain
+        completed_at:
+          type: string
+          format: date-time
+        trace_id:
+          type: string
+      additionalProperties: false

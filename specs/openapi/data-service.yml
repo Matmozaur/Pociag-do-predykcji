@@ -1,0 +1,1053 @@
+openapi: "3.1.0"
+
+info:
+  title: "Pociag Data Service API"
+  version: "0.1.0"
+  description: |
+    Internal domain read service.
+    Exposes curated schedules, operations, disruptions, and dictionaries.
+    Not exposed to frontend directly; consumed by Gateway (BFF) and internal services.
+
+servers:
+  - url: http://localhost:8083
+    description: Local development
+
+# ── Tags ─────────────────────────────────────────────────────────────────────
+tags:
+  - name: health
+    description: Liveness and readiness probes
+  - name: schedules
+    description: Train schedule (timetable) domain queries
+  - name: operations
+    description: Train operation execution domain queries
+  - name: disruptions
+    description: Traffic disruption domain queries
+  - name: dictionaries
+    description: Reference data queries (stations, carriers, etc.)
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      operationId: healthz
+      tags: [health]
+      responses:
+        "200":
+          description: Service is alive
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      operationId: readyz
+      tags: [health]
+      responses:
+        "200":
+          description: Service is ready to accept traffic
+        "503":
+          description: Service is not ready
+
+  # ── Schedules ──────────────────────────────────────────────────────────────
+
+  /api/v1/schedules:
+    get:
+      summary: Query routes by filters
+      description: Returns paginated routes matching the given criteria.
+      operationId: queryRoutes
+      tags: [schedules]
+      parameters:
+        - name: dateFrom
+          in: query
+          description: Filter routes operating on or after this date
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          description: Filter routes operating on or before this date
+          schema:
+            type: string
+            format: date
+        - name: stationExternalIds
+          in: query
+          description: Comma-separated station external IDs (any-match)
+          schema:
+            type: string
+        - name: fromCity
+          in: query
+          description: Origin city name (requires toCity)
+          schema:
+            type: string
+        - name: toCity
+          in: query
+          description: Destination city name (requires fromCity)
+          schema:
+            type: string
+        - name: carrierCodes
+          in: query
+          description: Comma-separated carrier codes filter
+          schema:
+            type: string
+        - name: commercialCategory
+          in: query
+          description: Filter by commercial category symbol (e.g. IC, TLK, REG)
+          schema:
+            type: string
+        - name: name
+          in: query
+          description: Search by train name (partial match)
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated route list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/schedules/{routeId}:
+    get:
+      summary: Get route by internal ID
+      description: Returns full route with stations, operating dates, and connections.
+      operationId: getRouteById
+      tags: [schedules]
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Full route details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/schedules/by-key/{scheduleId}/{orderId}:
+    get:
+      summary: Get route by PLK natural key
+      description: Looks up a route by its PLK (schedule_id, order_id) pair.
+      operationId: getRouteByKey
+      tags: [schedules]
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full route details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/schedules/{routeId}/stations:
+    get:
+      summary: Get stations for a route
+      description: Returns ordered list of stops for a given route.
+      operationId: getRouteStations
+      tags: [schedules]
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Ordered station list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteStationListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/schedules/{routeId}/operating-dates:
+    get:
+      summary: Get operating dates for a route
+      description: Returns all dates when this route operates.
+      operationId: getRouteOperatingDates
+      tags: [schedules]
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: from
+          in: query
+          description: Filter dates from (inclusive)
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: Filter dates to (inclusive)
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: List of operating dates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatingDatesResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Operations ─────────────────────────────────────────────────────────────
+
+  /api/v1/operations:
+    get:
+      summary: Query train operations
+      description: Returns paginated train operations matching filters.
+      operationId: queryOperations
+      tags: [operations]
+      parameters:
+        - name: date
+          in: query
+          description: Operating date (defaults to today)
+          schema:
+            type: string
+            format: date
+        - name: stationExternalIds
+          in: query
+          description: Comma-separated station external IDs
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Train status filter
+          schema:
+            type: string
+            enum: [S, P, C, X, Q]
+        - name: carrierCodes
+          in: query
+          description: Comma-separated carrier codes
+          schema:
+            type: string
+        - name: minDelay
+          in: query
+          description: Minimum delay in minutes (filters trains with delay >= this value)
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated operations list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/operations/{operationId}:
+    get:
+      summary: Get operation by internal ID
+      description: Returns full operation details with all station stops.
+      operationId: getOperationById
+      tags: [operations]
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Full operation details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/operations/statistics:
+    get:
+      summary: Get operation statistics for a date
+      description: Returns aggregated status counts and delay distribution.
+      operationId: getOperationStatistics
+      tags: [operations]
+      parameters:
+        - name: date
+          in: query
+          description: Date for statistics (defaults to today)
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Daily statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationStatistics"
+
+  # ── Disruptions ────────────────────────────────────────────────────────────
+
+  /api/v1/disruptions:
+    get:
+      summary: Query disruptions
+      description: Returns paginated disruptions matching filters.
+      operationId: queryDisruptions
+      tags: [disruptions]
+      parameters:
+        - name: dateFrom
+          in: query
+          description: Disruptions active on or after this date
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          description: Disruptions active on or before this date
+          schema:
+            type: string
+            format: date
+        - name: stationExternalIds
+          in: query
+          description: Filter by station IDs (start or end station matches)
+          schema:
+            type: string
+        - name: typeCode
+          in: query
+          description: Filter by disruption type code
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated disruption list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisruptionListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/disruptions/{disruptionId}:
+    get:
+      summary: Get disruption by internal ID
+      description: Returns full disruption with affected routes.
+      operationId: getDisruptionById
+      tags: [disruptions]
+      parameters:
+        - name: disruptionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Full disruption details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisruptionDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Dictionaries ───────────────────────────────────────────────────────────
+
+  /api/v1/stations:
+    get:
+      summary: Query stations
+      description: Returns stations with optional search and pagination.
+      operationId: queryStations
+      tags: [dictionaries]
+      parameters:
+        - name: search
+          in: query
+          description: Search by name prefix (trigram, case-insensitive)
+          schema:
+            type: string
+        - name: city
+          in: query
+          description: Filter by city
+          schema:
+            type: string
+        - name: externalIds
+          in: query
+          description: Comma-separated external IDs to fetch
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Station list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StationListResponse"
+
+  /api/v1/stations/{externalId}:
+    get:
+      summary: Get station by external ID
+      operationId: getStationByExternalId
+      tags: [dictionaries]
+      parameters:
+        - name: externalId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Station details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Station"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/carriers:
+    get:
+      summary: List all carriers
+      operationId: listCarriers
+      tags: [dictionaries]
+      responses:
+        "200":
+          description: All carriers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CarrierListResponse"
+
+  /api/v1/commercial-categories:
+    get:
+      summary: List all commercial categories
+      operationId: listCommercialCategories
+      tags: [dictionaries]
+      responses:
+        "200":
+          description: All commercial categories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommercialCategoryListResponse"
+
+  /api/v1/stop-types:
+    get:
+      summary: List all stop types
+      operationId: listStopTypes
+      tags: [dictionaries]
+      responses:
+        "200":
+          description: All stop types
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StopTypeListResponse"
+
+# ── Components ───────────────────────────────────────────────────────────────
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items to return
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 1000
+
+    Offset:
+      name: offset
+      in: query
+      description: Number of items to skip
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    # ── Common ─────────────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        trace_id:
+          type: string
+
+    Pagination:
+      type: object
+      required: [total, limit, offset]
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    # ── Dictionaries ───────────────────────────────────────────────────────────
+    Station:
+      type: object
+      required: [id, external_id, name]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        external_id:
+          type: integer
+        name:
+          type: string
+        city:
+          type: string
+
+    StationListResponse:
+      type: object
+      required: [data, pagination]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Station"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    Carrier:
+      type: object
+      required: [id, code, name]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+
+    CarrierListResponse:
+      type: object
+      required: [data]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Carrier"
+
+    CommercialCategory:
+      type: object
+      required: [id, code, name]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        carrier_code:
+          type: string
+        speed_category_code:
+          type: string
+
+    CommercialCategoryListResponse:
+      type: object
+      required: [data]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommercialCategory"
+
+    StopType:
+      type: object
+      required: [id, external_id, description]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        external_id:
+          type: integer
+        description:
+          type: string
+
+    StopTypeListResponse:
+      type: object
+      required: [data]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/StopType"
+
+    # ── Schedules ──────────────────────────────────────────────────────────────
+    RouteSummary:
+      type: object
+      required: [id, schedule_id, order_id]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        schedule_id:
+          type: integer
+        order_id:
+          type: integer
+        train_order_id:
+          type: integer
+        name:
+          type: string
+        carrier_code:
+          type: string
+        national_number:
+          type: string
+        commercial_category_symbol:
+          type: string
+        first_station_name:
+          type: string
+        last_station_name:
+          type: string
+        first_departure_time:
+          type: string
+          description: "HH:MM format"
+        last_arrival_time:
+          type: string
+          description: "HH:MM format"
+        station_count:
+          type: integer
+        operating_dates_count:
+          type: integer
+
+    RouteListResponse:
+      type: object
+      required: [data, pagination]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteSummary"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    RouteStation:
+      type: object
+      required: [station_external_id, order_number]
+      additionalProperties: false
+      properties:
+        station_external_id:
+          type: integer
+        station_name:
+          type: string
+        order_number:
+          type: integer
+        arrival_time:
+          type: string
+          description: "ISO 8601 duration or HH:MM"
+        departure_time:
+          type: string
+          description: "ISO 8601 duration or HH:MM"
+        arrival_day:
+          type: integer
+        departure_day:
+          type: integer
+        platform:
+          type: string
+        track:
+          type: string
+        stop_type:
+          type: string
+        commercial_category:
+          type: string
+
+    RouteStationListResponse:
+      type: object
+      required: [data]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteStation"
+
+    OperatingDatesResponse:
+      type: object
+      required: [route_id, dates]
+      additionalProperties: false
+      properties:
+        route_id:
+          type: integer
+          format: int64
+        dates:
+          type: array
+          items:
+            type: string
+            format: date
+
+    RouteConnection:
+      type: object
+      required: [type_code, station_external_id]
+      additionalProperties: false
+      properties:
+        external_connection_id:
+          type: string
+        type_code:
+          type: string
+        type_name:
+          type: string
+        station_external_id:
+          type: integer
+        station_name:
+          type: string
+        wagon_numbers:
+          type: string
+        train1_order_id:
+          type: integer
+        train2_order_id:
+          type: integer
+
+    RouteDetail:
+      type: object
+      required: [id, schedule_id, order_id, stations, operating_dates]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        schedule_id:
+          type: integer
+        order_id:
+          type: integer
+        train_order_id:
+          type: integer
+        name:
+          type: string
+        carrier_code:
+          type: string
+        national_number:
+          type: string
+        international_arrival_num:
+          type: string
+        international_departure_num:
+          type: string
+        commercial_category_symbol:
+          type: string
+        stations:
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteStation"
+        operating_dates:
+          type: array
+          items:
+            type: string
+            format: date
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteConnection"
+
+    # ── Operations ─────────────────────────────────────────────────────────────
+    OperationSummary:
+      type: object
+      required: [id, schedule_id, order_id, operating_date, train_status]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        schedule_id:
+          type: integer
+        order_id:
+          type: integer
+        train_order_id:
+          type: integer
+        operating_date:
+          type: string
+          format: date
+        train_status:
+          type: string
+        route_name:
+          type: string
+          description: Resolved from routes table
+        carrier_code:
+          type: string
+        max_arrival_delay_minutes:
+          type: integer
+        max_departure_delay_minutes:
+          type: integer
+        station_count:
+          type: integer
+
+    OperationListResponse:
+      type: object
+      required: [data, pagination]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperationSummary"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    OperationStation:
+      type: object
+      required: [station_external_id, actual_sequence_number, is_confirmed, is_cancelled]
+      additionalProperties: false
+      properties:
+        station_external_id:
+          type: integer
+        station_name:
+          type: string
+        planned_sequence_number:
+          type: integer
+        actual_sequence_number:
+          type: integer
+        planned_arrival:
+          type: string
+          format: date-time
+        planned_departure:
+          type: string
+          format: date-time
+        actual_arrival:
+          type: string
+          format: date-time
+        actual_departure:
+          type: string
+          format: date-time
+        arrival_delay_minutes:
+          type: integer
+        departure_delay_minutes:
+          type: integer
+        is_confirmed:
+          type: boolean
+        is_cancelled:
+          type: boolean
+
+    OperationDetail:
+      type: object
+      required: [id, schedule_id, order_id, operating_date, train_status, stations]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        schedule_id:
+          type: integer
+        order_id:
+          type: integer
+        train_order_id:
+          type: integer
+        operating_date:
+          type: string
+          format: date
+        train_status:
+          type: string
+        route_name:
+          type: string
+        carrier_code:
+          type: string
+        stations:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperationStation"
+
+    OperationStatistics:
+      type: object
+      required: [date, total, by_status, delay_distribution]
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          format: date
+        total:
+          type: integer
+        by_status:
+          type: object
+          additionalProperties:
+            type: integer
+          description: "Map of status code to count"
+        delay_distribution:
+          type: object
+          additionalProperties: false
+          properties:
+            on_time:
+              type: integer
+              description: Trains with max delay <= 5 min
+            slight_delay:
+              type: integer
+              description: Trains with max delay 6-15 min
+            moderate_delay:
+              type: integer
+              description: Trains with max delay 16-60 min
+            severe_delay:
+              type: integer
+              description: Trains with max delay > 60 min
+        avg_delay_minutes:
+          type: number
+          format: float
+
+    # ── Disruptions ────────────────────────────────────────────────────────────
+    DisruptionSummary:
+      type: object
+      required: [id, external_disruption_id]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        external_disruption_id:
+          type: integer
+          format: int64
+        disruption_type_code:
+          type: string
+        disruption_type_name:
+          type: string
+        start_station_ext_id:
+          type: integer
+        start_station_name:
+          type: string
+        end_station_ext_id:
+          type: integer
+        end_station_name:
+          type: string
+        message:
+          type: string
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        affected_routes_count:
+          type: integer
+
+    DisruptionListResponse:
+      type: object
+      required: [data, pagination]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DisruptionSummary"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    DisruptionAffectedRoute:
+      type: object
+      required: [schedule_id, order_id]
+      additionalProperties: false
+      properties:
+        schedule_id:
+          type: integer
+        order_id:
+          type: integer
+        train_order_id:
+          type: integer
+        operating_date:
+          type: string
+          format: date
+        station_ext_id:
+          type: integer
+        station_name:
+          type: string
+        sequence_number:
+          type: integer
+
+    DisruptionDetail:
+      type: object
+      required: [id, external_disruption_id, affected_routes]
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        external_disruption_id:
+          type: integer
+          format: int64
+        disruption_type_code:
+          type: string
+        disruption_type_name:
+          type: string
+        start_station_ext_id:
+          type: integer
+        start_station_name:
+          type: string
+        end_station_ext_id:
+          type: integer
+        end_station_name:
+          type: string
+        message:
+          type: string
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        affected_routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DisruptionAffectedRoute"
