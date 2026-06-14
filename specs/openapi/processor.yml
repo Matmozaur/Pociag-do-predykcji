@@ -2,10 +2,11 @@ openapi: "3.1.0"
 
 info:
   title: "Pociag Processor API"
-  version: "0.1.0"
+  version: "0.2.0"
   description: |
     Internal processing service (stage 2 of ELT).
-    Reads raw payloads, validates/transforms them, and writes curated domain data.
+    Reads raw Parquet files from the data lake (S3/MinIO), validates/transforms them,
+    and writes curated domain data to PostgreSQL.
     Triggered by Airflow after Collector fetch jobs.
 
 servers:

@@ -10,7 +10,8 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 COPY pyproject.toml ./
-RUN uv export --format requirements-txt --no-hashes --output-file requirements.txt
+COPY src ./src
+RUN uv export --format requirements-txt --no-hashes --no-emit-project --output-file requirements.txt
 RUN uv pip install --system -r requirements.txt
 
 FROM python:3.13-slim

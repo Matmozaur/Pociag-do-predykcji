@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Superseded (raw landing) — see [ADR-002](002-data-lake-raw-landing.md) for data lake changes.
+Still valid for service boundaries, BFF pattern, and processing language choices.
 
 ## Date
 
@@ -48,29 +49,31 @@ Adopt a **microservice architecture** with:
 ### Data Flow
 
 ```
-┌──────────┐         ┌───────────┐  raw JSONB   ┌──────────────┐
-│ PLK Open │◄────────│ Collector │─────────────►│  PostgreSQL  │
-│ Data API │  fetch  │   (Go)    │              │  raw_* tables│
-└──────────┘         └───────────┘              └──────┬───────┘
-                                                       │ reads raw
-                     ┌───────────┐                     ▼
-                     │ Processor │◄────────── Airflow triggers
-                     │ (Python)  │
-                     └─────┬─────┘
-                           │ writes curated
-                           ▼
-                     ┌──────────────┐
-                     │  PostgreSQL  │
-                     │ domain tables│
-                     └──────┬───────┘
-                            │ SQL (reads)
-                            ▼
-                     ┌──────────┐
-                     │   Data   │
-                     │ Service  │
-                     └────┬─────┘
-                          │ HTTP
-                          ▼
+┌──────────┐         ┌───────────┐  Parquet     ┌──────────────┐
+│ PLK Open │◄────────│ Collector │─────────────►│    MinIO      │
+│ Data API │  fetch  │   (Go)    │              │ (S3-compat)  │
+└──────────┘         └───────────┘              │ pociag-lake/ │
+                           │                    └──────┬───────┘
+                           │ tracks run status         │ reads Parquet
+                           ▼                           ▼
+                     ┌──────────────┐          ┌───────────┐
+                     │  PostgreSQL  │          │ Processor │◄── Airflow triggers
+                     │ingestion_runs│          │ (Python)  │
+                     └──────────────┘          └─────┬─────┘
+                                                     │ writes curated
+                                                     ▼
+                                               ┌──────────────┐
+                                               │  PostgreSQL  │
+                                               │ domain tables│
+                                               └──────┬───────┘
+                                                      │ SQL (reads)
+                                                      ▼
+                                               ┌──────────┐
+                                               │   Data   │
+                                               │ Service  │
+                                               └────┬─────┘
+                                                    │ HTTP
+                                                    ▼
 ┌──────────┐  HTTP   ┌─────────────┐
 │ Frontend │◄───────►│   Gateway   │
 │  (Web)   │         │   (BFF)     │
@@ -79,25 +82,14 @@ Adopt a **microservice architecture** with:
 
 ### Data Pipeline Stages
 
-Instead of traditional bronze/silver/gold (designed for data lakes), we use a
-**Raw → Curated** approach optimized for PostgreSQL:
+The platform uses a **Raw (Lake) → Curated (PostgreSQL)** approach:
 
 | Stage | Storage | Owner | Description |
 |---|---|---|---|
-| **Raw (Landing)** | `raw_*` tables (JSONB) | Collector | Exact PLK API responses, timestamped, immutable append |
-| **Curated (Domain)** | Normalized relational tables | Processor | Deduplicated, validated, enriched relational data |
+| **Raw (Landing)** | MinIO / S3 (Parquet files) | Collector | Exact PLK API responses as Parquet, partitioned by date, immutable append |
+| **Curated (Domain)** | PostgreSQL relational tables | Processor | Deduplicated, validated, enriched relational data |
 
-**Why Raw → Curated over bronze/silver/gold?**
-- PostgreSQL, not a data lake — no need for Parquet/Delta layers
-- Two stages are sufficient: raw preserves source-of-truth, curated serves queries
-- Adding a "gold" aggregation layer later (materialized views) is trivial
-- Raw tables enable full reprocessing if Processor logic changes
-
-**Why Python for processing?**
-- Rich data manipulation capabilities (polars for performance)
-- Natural fit for future ML feature engineering pipeline
-- Easier to express complex dedup/normalization logic than in Go
-- Same language as the future Predictor service — shared transformation utils
+See [ADR-002](002-data-lake-raw-landing.md) for the full rationale on the data lake approach.
 
 ### BFF Pattern (Gateway)
 

@@ -17,6 +17,40 @@ x-logging: &default-logging
 
 services:
 
+  # ── MinIO (S3-compatible object storage / data lake) ─────────────────────────
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *default-logging
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-12-18T10-53-56Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/pociag-lake &&
+      mc anonymous set download local/pociag-lake
+      "
+    restart: on-failure
+
   # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
@@ -71,16 +105,47 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     environment:
       HTTP_ADDR: :8081
       DATABASE_DSN: postgres://pociag:${POSTGRES_PASSWORD:-pociag_dev_secret}@postgres:5432/pociag?sslmode=disable
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: pociag-lake
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_USE_PATH_STYLE: "true"
       PLK_BASE_URL: ${PLK_BASE_URL:?Set PLK_BASE_URL in infra/.env}
       PLK_API_KEY: ${PLK_API_KEY:?Set PLK_API_KEY in infra/.env}
     ports:
       - "8082:8081"
+    logging: *default-logging
+
+  # ── Processor Service ────────────────────────────────────────────────────────
+  processor:
+    build:
+      context: ../services/python/processor
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      DATABASE_DSN: postgres://pociag:${POSTGRES_PASSWORD:-pociag_dev_secret}@postgres:5432/pociag?sslmode=disable
+      OTLP_EXPORTER_ENDPOINT: http://otel-collector:4317
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: pociag-lake
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+    ports:
+      - "8083:8082"
     logging: *default-logging
 
   # ── Jaeger (tracing UI) ─────────────────────────────────────────────── tracing
@@ -164,7 +229,14 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: admin
     entrypoint: /bin/bash
-    command: -c "airflow db migrate && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin || true"
+    command: >
+      -c "
+      pip install --quiet httpx &&
+      airflow db migrate &&
+      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin || true &&
+      airflow connections delete pociag_collector 2>/dev/null; airflow connections add pociag_collector --conn-type http --conn-host collector --conn-port 8081 --conn-schema http &&
+      airflow connections delete pociag_processor 2>/dev/null; airflow connections add pociag_processor --conn-type http --conn-host processor --conn-port 8082 --conn-schema http
+      "
     restart: on-failure
 
   airflow-webserver:
@@ -180,6 +252,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: "change_me_in_production_use_fernet_generate_key"
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-airflow_local_dev_secret_key_change_me}
       AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
+      _PIP_ADDITIONAL_REQUIREMENTS: httpx
     volumes:
       - ../airflow/dags:/opt/airflow/dags:ro
       - ../airflow/plugins:/opt/airflow/plugins:ro
@@ -202,6 +275,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: "change_me_in_production_use_fernet_generate_key"
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-airflow_local_dev_secret_key_change_me}
       AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
+      _PIP_ADDITIONAL_REQUIREMENTS: httpx
     volumes:
       - ../airflow/dags:/opt/airflow/dags:ro
       - ../airflow/plugins:/opt/airflow/plugins:ro
@@ -210,6 +284,7 @@ services:
     logging: *default-logging
 
 volumes:
+  minio_data:
   postgres_data:
   airflow_db_data:
   airflow_logs:

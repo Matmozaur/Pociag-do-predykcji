@@ -2,11 +2,11 @@ openapi: "3.1.0"
 
 info:
   title: "Pociag Collector API"
-  version: "0.2.0"
+  version: "0.3.0"
   description: |
     Internal extraction service (stage 1 of ELT).
-    Fetches PLK API data and lands raw payloads.
-    No transformation or deduplication.
+    Fetches PLK API data and lands raw payloads as Parquet files in the data lake (S3/MinIO).
+    No transformation or deduplication. Run metadata tracked in PostgreSQL.
 
 servers:
   - url: http://localhost:8082
@@ -299,6 +299,9 @@ components:
           additionalProperties:
             type: integer
           description: 'Map of dictionary type to record count landed (e.g. {"stations": 3420, "carriers": 15})'
+        lake_prefix:
+          type: string
+          description: S3 prefix where Parquet files were written (e.g. "raw/dictionaries/2026/06/14/run_42")
         duration_ms:
           type: integer
           format: int64
@@ -321,7 +324,10 @@ components:
           description: Total records fetched from PLK API
         pages_landed:
           type: integer
-          description: Number of raw payload pages landed
+          description: Number of Parquet files written to the data lake
+        lake_prefix:
+          type: string
+          description: S3 prefix where Parquet files were written
         duration_ms:
           type: integer
           format: int64
