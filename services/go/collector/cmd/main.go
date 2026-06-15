@@ -21,6 +21,7 @@ import (
 
 	"github.com/pociag-do-predykcji/services/go/collector/internal/config"
 	"github.com/pociag-do-predykcji/services/go/collector/internal/handler"
+	"github.com/pociag-do-predykcji/services/go/collector/internal/lake"
 	"github.com/pociag-do-predykcji/services/go/collector/internal/plk"
 	"github.com/pociag-do-predykcji/services/go/collector/internal/repository"
 	"github.com/pociag-do-predykcji/services/go/collector/internal/service"
@@ -62,8 +63,15 @@ func main() {
 	defer dbPool.Close()
 
 	repo := repository.New(dbPool)
+	lakeStore := lake.New(lake.Config{
+		Endpoint:     cfg.S3Endpoint,
+		Bucket:       cfg.S3Bucket,
+		AccessKey:    cfg.S3AccessKey,
+		SecretKey:    cfg.S3SecretKey,
+		UsePathStyle: cfg.S3UsePathStyle,
+	})
 	plkClient := plk.New(cfg.PLKBaseURL, cfg.PLKAPIKey, nil)
-	svc := service.New(repo, plkClient)
+	svc := service.New(repo, lakeStore, plkClient)
 	h := handler.New(svc)
 
 	r := chi.NewRouter()
