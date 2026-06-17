@@ -26,7 +26,7 @@ from processor.models import (
     ProcessSchedulesRequest,
     RunStatus,
 )
-from processor.repository import Repository
+from processor.repository import Repository, UpsertResult
 
 router = APIRouter()
 
@@ -44,9 +44,12 @@ def _error_response(status_code: int, error: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=payload.model_dump(exclude_none=True))
 
 
-async def _sync_to_async(fn: Callable[..., Any], *args: Any) -> int:
+_T = Any
+
+
+async def _sync_to_async(fn: Callable[..., _T], *args: Any) -> _T:
     loop = asyncio.get_running_loop()
-    return cast(int, await loop.run_in_executor(None, partial(fn, *args)))
+    return cast(_T, await loop.run_in_executor(None, partial(fn, *args)))
 
 
 def _coerce_run_status(value: str) -> RunStatus:
@@ -61,7 +64,7 @@ async def _run_pipeline(
     repository: Repository,
     pipeline: PipelineName,
     run_date: date,
-    count_fn: Callable[[], Awaitable[int]],
+    process_fn: Callable[[], Awaitable[UpsertResult]],
 ) -> ProcessResult | JSONResponse:
     with tracer.start_as_current_span(f"{pipeline}.process") as span:
         if await repository.is_pipeline_running(pipeline, run_date):
@@ -71,15 +74,16 @@ async def _run_pipeline(
         run_id = await repository.create_processing_run(pipeline, run_date)
         started = perf_counter()
         try:
-            records_read = int(await count_fn())
-            records_written = records_read
-            await repository.mark_processing_run_success(run_id, records_read, records_written)
+            result = await process_fn()
+            await repository.mark_processing_run_success(
+                run_id, result.records_read, result.records_written,
+            )
             duration_ms = int((perf_counter() - started) * 1000)
             return ProcessResult(
                 pipeline=pipeline,
                 status="success",
-                records_read=records_read,
-                records_written=records_written,
+                records_read=result.records_read,
+                records_written=result.records_written,
                 records_skipped=0,
                 duration_ms=duration_ms,
             )
@@ -119,15 +123,62 @@ async def process_dictionaries(
 ) -> ProcessResult | JSONResponse:
     ingestion_run_id = request.ingestion_run_id if request is not None else None
     run_date = datetime.now(tz=UTC).date()
+
+    async def _process() -> UpsertResult:
+        envelopes = await _sync_to_async(
+            lake_reader.read_raw_dictionaries, ingestion_run_id, run_date,
+        )
+        total_read = 0
+        total_written = 0
+        for env in envelopes:
+            meta = env.get("metadata", {})
+            dtype = meta.get("dictionary_type", "")
+            payload = env.get("payload", {})
+            result = await _upsert_dictionary(repository, dtype, payload)
+            total_read += result.records_read
+            total_written += result.records_written
+        return UpsertResult(
+            records_read=total_read, records_written=total_written,
+        )
+
     return await _run_pipeline(
         tracer=tracer,
         repository=repository,
         pipeline="dictionaries",
         run_date=run_date,
-        count_fn=lambda: _sync_to_async(
-            lake_reader.count_raw_dictionaries, ingestion_run_id, run_date
-        ),
+        process_fn=_process,
     )
+
+
+async def _upsert_dictionary(
+    repository: Repository,
+    dtype: str,
+    payload: dict[str, Any],
+) -> UpsertResult:
+    """Dispatch to the correct upsert based on dictionary type."""
+    dict_key_map: dict[str, str] = {
+        "carriers": "carriers",
+        "stations": "stations",
+        "commercial_categories": "commercialCategories",
+        "stop_types": "stopTypes",
+    }
+    payload_key = dict_key_map.get(dtype)
+    if payload_key is None:
+        return UpsertResult(records_read=0, records_written=0)
+
+    records: list[dict[str, Any]] = payload.get(payload_key, [])
+    if not records:
+        return UpsertResult(records_read=0, records_written=0)
+
+    if dtype == "carriers":
+        return await repository.upsert_carriers(records)
+    if dtype == "stations":
+        return await repository.upsert_stations(records)
+    if dtype == "commercial_categories":
+        return await repository.upsert_commercial_categories(records)
+    if dtype == "stop_types":
+        return await repository.upsert_stop_types(records)
+    return UpsertResult(records_read=0, records_written=0)
 
 
 @router.post(
@@ -152,17 +203,33 @@ async def process_schedules(
             "date_from must be before or equal to date_to",
         )
 
+    async def _process() -> UpsertResult:
+        envelopes = await _sync_to_async(
+            lake_reader.read_raw_schedules,
+            request.date_from,
+            request.date_to,
+            request.ingestion_run_id,
+        )
+        total_read = 0
+        total_written = 0
+        for env in envelopes:
+            payload = env.get("payload", {})
+            routes: list[dict[str, Any]] = payload.get("routes", [])
+            if not routes:
+                continue
+            result = await repository.upsert_routes(routes)
+            total_read += result.records_read
+            total_written += result.records_written
+        return UpsertResult(
+            records_read=total_read, records_written=total_written,
+        )
+
     return await _run_pipeline(
         tracer=tracer,
         repository=repository,
         pipeline="schedules",
         run_date=request.date_from,
-        count_fn=lambda: _sync_to_async(
-            lake_reader.count_raw_schedules,
-            request.date_from,
-            request.date_to,
-            request.ingestion_run_id,
-        ),
+        process_fn=_process,
     )
 
 
@@ -181,16 +248,24 @@ async def process_operations(
     lake_reader: Annotated[LakeReader, Depends(get_lake_reader)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
 ) -> ProcessResult | JSONResponse:
+    async def _process() -> UpsertResult:
+        envelopes = await _sync_to_async(
+            lake_reader.read_raw_operations,
+            request.date,
+            request.ingestion_run_id,
+        )
+        total_read = sum(
+            int(e.get("metadata", {}).get("record_count", 0))
+            for e in envelopes
+        )
+        return UpsertResult(records_read=total_read, records_written=0)
+
     return await _run_pipeline(
         tracer=tracer,
         repository=repository,
         pipeline="operations",
         run_date=request.date,
-        count_fn=lambda: _sync_to_async(
-            lake_reader.count_raw_operations,
-            request.date,
-            request.ingestion_run_id,
-        ),
+        process_fn=_process,
     )
 
 
@@ -216,17 +291,25 @@ async def process_disruptions(
             "date_from must be before or equal to date_to",
         )
 
+    async def _process() -> UpsertResult:
+        envelopes = await _sync_to_async(
+            lake_reader.read_raw_disruptions,
+            request.date_from,
+            request.date_to,
+            request.ingestion_run_id,
+        )
+        total_read = sum(
+            int(e.get("metadata", {}).get("record_count", 0))
+            for e in envelopes
+        )
+        return UpsertResult(records_read=total_read, records_written=0)
+
     return await _run_pipeline(
         tracer=tracer,
         repository=repository,
         pipeline="disruptions",
         run_date=request.date_from,
-        count_fn=lambda: _sync_to_async(
-            lake_reader.count_raw_disruptions,
-            request.date_from,
-            request.date_to,
-            request.ingestion_run_id,
-        ),
+        process_fn=_process,
     )
 
 
