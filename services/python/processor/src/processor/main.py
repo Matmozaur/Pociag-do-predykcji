@@ -18,6 +18,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from processor.config import Settings
 from processor.dependencies import get_settings
+from processor.lake import LakeReader
 from processor.repository import Repository
 from processor.router import router
 
@@ -59,6 +60,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.pool = pool
     app.state.repository = Repository(pool)
+    app.state.lake_reader = LakeReader(
+        endpoint=settings.s3_endpoint,
+        bucket=settings.s3_bucket,
+        access_key=settings.s3_access_key,
+        secret_key=settings.s3_secret_key,
+    )
     try:
         yield
     finally:

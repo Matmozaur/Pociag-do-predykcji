@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
+from functools import partial
 from time import perf_counter
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode, Tracer
 
-from processor.dependencies import get_repository, get_tracer
+from processor.dependencies import get_lake_reader, get_repository, get_tracer
+from processor.lake import LakeReader
 from processor.models import (
     ErrorResponse,
     PipelineName,
@@ -39,6 +42,11 @@ def _current_trace_id() -> str | None:
 def _error_response(status_code: int, error: str, message: str) -> JSONResponse:
     payload = ErrorResponse(error=error, message=message, trace_id=_current_trace_id())
     return JSONResponse(status_code=status_code, content=payload.model_dump(exclude_none=True))
+
+
+async def _sync_to_async(fn: Callable[..., Any], *args: Any) -> int:
+    loop = asyncio.get_running_loop()
+    return cast(int, await loop.run_in_executor(None, partial(fn, *args)))
 
 
 def _coerce_run_status(value: str) -> RunStatus:
@@ -106,15 +114,19 @@ async def readyz(
 async def process_dictionaries(
     request: ProcessDictionariesRequest | None,
     repository: Annotated[Repository, Depends(get_repository)],
+    lake_reader: Annotated[LakeReader, Depends(get_lake_reader)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
 ) -> ProcessResult | JSONResponse:
     ingestion_run_id = request.ingestion_run_id if request is not None else None
+    run_date = datetime.now(tz=UTC).date()
     return await _run_pipeline(
         tracer=tracer,
         repository=repository,
         pipeline="dictionaries",
-        run_date=datetime.now(tz=UTC).date(),
-        count_fn=lambda: repository.count_raw_dictionaries(ingestion_run_id),
+        run_date=run_date,
+        count_fn=lambda: _sync_to_async(
+            lake_reader.count_raw_dictionaries, ingestion_run_id, run_date
+        ),
     )
 
 
@@ -130,6 +142,7 @@ async def process_dictionaries(
 async def process_schedules(
     request: ProcessSchedulesRequest,
     repository: Annotated[Repository, Depends(get_repository)],
+    lake_reader: Annotated[LakeReader, Depends(get_lake_reader)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
 ) -> ProcessResult | JSONResponse:
     if request.date_from > request.date_to:
@@ -144,7 +157,8 @@ async def process_schedules(
         repository=repository,
         pipeline="schedules",
         run_date=request.date_from,
-        count_fn=lambda: repository.count_raw_schedules(
+        count_fn=lambda: _sync_to_async(
+            lake_reader.count_raw_schedules,
             request.date_from,
             request.date_to,
             request.ingestion_run_id,
@@ -164,6 +178,7 @@ async def process_schedules(
 async def process_operations(
     request: ProcessOperationsRequest,
     repository: Annotated[Repository, Depends(get_repository)],
+    lake_reader: Annotated[LakeReader, Depends(get_lake_reader)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
 ) -> ProcessResult | JSONResponse:
     return await _run_pipeline(
@@ -171,7 +186,8 @@ async def process_operations(
         repository=repository,
         pipeline="operations",
         run_date=request.date,
-        count_fn=lambda: repository.count_raw_operations(
+        count_fn=lambda: _sync_to_async(
+            lake_reader.count_raw_operations,
             request.date,
             request.ingestion_run_id,
         ),
@@ -190,6 +206,7 @@ async def process_operations(
 async def process_disruptions(
     request: ProcessDisruptionsRequest,
     repository: Annotated[Repository, Depends(get_repository)],
+    lake_reader: Annotated[LakeReader, Depends(get_lake_reader)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
 ) -> ProcessResult | JSONResponse:
     if request.date_from > request.date_to:
@@ -204,7 +221,8 @@ async def process_disruptions(
         repository=repository,
         pipeline="disruptions",
         run_date=request.date_from,
-        count_fn=lambda: repository.count_raw_disruptions(
+        count_fn=lambda: _sync_to_async(
+            lake_reader.count_raw_disruptions,
             request.date_from,
             request.date_to,
             request.ingestion_run_id,

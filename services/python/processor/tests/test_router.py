@@ -5,20 +5,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_process_schedules_success_returns_result(client, database_dsn: str) -> None:
-    conn = await asyncpg.connect(database_dsn)
-    try:
-        await conn.execute(
-            """
-            INSERT INTO raw_schedules (date_from, date_to, payload, record_count, ingestion_run_id)
-            VALUES
-                ('2026-06-01', '2026-06-07', '{}'::jsonb, 5, 101),
-                ('2026-06-03', '2026-06-06', '{}'::jsonb, 3, 101)
-            """
-        )
-    finally:
-        await conn.close()
-
+async def test_process_schedules_success_returns_result(client) -> None:
     response = await client.post(
         "/api/v1/process/schedules",
         json={"date_from": "2026-06-01", "date_to": "2026-06-07"},

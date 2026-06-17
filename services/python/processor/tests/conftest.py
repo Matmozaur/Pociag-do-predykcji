@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Iterator
+from unittest.mock import MagicMock
 
 import asyncpg
 import pytest
@@ -32,62 +33,6 @@ async def _setup_schema(database_dsn: str) -> None:
             )
             """
         )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS raw_dictionaries (
-                id BIGSERIAL PRIMARY KEY,
-                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                dictionary_type TEXT NOT NULL,
-                payload JSONB NOT NULL,
-                record_count INT,
-                ingestion_run_id BIGINT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS raw_schedules (
-                id BIGSERIAL PRIMARY KEY,
-                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                date_from DATE NOT NULL,
-                date_to DATE NOT NULL,
-                page INT NOT NULL DEFAULT 1,
-                payload JSONB NOT NULL,
-                record_count INT,
-                ingestion_run_id BIGINT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS raw_operations (
-                id BIGSERIAL PRIMARY KEY,
-                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                operating_date DATE NOT NULL,
-                page INT NOT NULL DEFAULT 1,
-                payload JSONB NOT NULL,
-                record_count INT,
-                ingestion_run_id BIGINT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS raw_disruptions (
-                id BIGSERIAL PRIMARY KEY,
-                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                date_from DATE NOT NULL,
-                date_to DATE NOT NULL,
-                payload JSONB NOT NULL,
-                record_count INT,
-                ingestion_run_id BIGINT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            """
-        )
     finally:
         await conn.close()
 
@@ -110,27 +55,39 @@ async def reset_tables(database_dsn: str) -> AsyncIterator[None]:
     conn = await asyncpg.connect(database_dsn)
     try:
         await conn.execute("TRUNCATE ingestion_runs RESTART IDENTITY CASCADE")
-        await conn.execute("TRUNCATE raw_dictionaries RESTART IDENTITY CASCADE")
-        await conn.execute("TRUNCATE raw_schedules RESTART IDENTITY CASCADE")
-        await conn.execute("TRUNCATE raw_operations RESTART IDENTITY CASCADE")
-        await conn.execute("TRUNCATE raw_disruptions RESTART IDENTITY CASCADE")
         yield
     finally:
         await conn.close()
 
 
 @pytest.fixture
-def app(database_dsn: str, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("DATABASE_DSN", database_dsn)
-    get_settings.cache_clear()
-    from processor.main import create_app
-
-    return create_app()
+def mock_lake_reader() -> MagicMock:
+    lake = MagicMock()
+    lake.count_raw_dictionaries.return_value = 100
+    lake.count_raw_schedules.return_value = 8
+    lake.count_raw_operations.return_value = 50
+    lake.count_raw_disruptions.return_value = 10
+    return lake
 
 
 @pytest.fixture
-async def client(app) -> AsyncIterator[AsyncClient]:
+def app(database_dsn: str, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("DATABASE_DSN", database_dsn)
+    monkeypatch.setenv("S3_ENDPOINT", "http://localhost:9000")
+    monkeypatch.setenv("S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("S3_ACCESS_KEY", "test")
+    monkeypatch.setenv("S3_SECRET_KEY", "test")
+    get_settings.cache_clear()
+    from processor.main import create_app
+
+    application = create_app()
+    return application
+
+
+@pytest.fixture
+async def client(app, mock_lake_reader: MagicMock) -> AsyncIterator[AsyncClient]:
     async with LifespanManager(app):
+        app.state.lake_reader = mock_lake_reader
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
             yield async_client

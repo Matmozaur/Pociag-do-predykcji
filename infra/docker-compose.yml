@@ -38,7 +38,7 @@ services:
     logging: *default-logging
 
   minio-init:
-    image: minio/mc:RELEASE.2024-12-18T10-53-56Z
+    image: minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy
