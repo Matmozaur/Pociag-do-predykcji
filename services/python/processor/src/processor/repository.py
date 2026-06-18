@@ -373,12 +373,14 @@ class Repository:
                         )
                         records_written += 1
 
-                        for od in route.get("operatingDates") or []:
+                        operating_dates: list[str] = route.get("operatingDates") or []
+                        for od in operating_dates:
                             await self._execute(
                                 conn, date_query, route_id, _parse_date(od),
                             )
 
-                        for stn in route.get("stations") or []:
+                        stations: list[dict[str, Any]] = route.get("stations") or []
+                        for stn in stations:
                             await self._execute(
                                 conn,
                                 station_query,
