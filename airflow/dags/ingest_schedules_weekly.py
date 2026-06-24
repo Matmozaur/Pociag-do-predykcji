@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 from airflow.decorators import dag, task
@@ -20,19 +20,19 @@ from airflow.hooks.base import BaseHook
 def ingest_schedules_weekly() -> None:
     @task
     def check_last_run() -> bool:
-        conn = BaseHook.get_connection("pociag_processor")
-        base_url = f"{conn.schema}://{conn.host}:{conn.port}"
-        response = httpx.get(
-            f"{base_url}/api/v1/process/status",
-            params={"pipeline": "schedules", "limit": "1"},
-            timeout=30,
-        )
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("runs"):
-            return True  # No prior run — proceed
-        last_run = datetime.fromisoformat(data["runs"][0]["completed_at"])
-        return (datetime.now(tz=last_run.tzinfo) - last_run) > timedelta(days=7)
+        from pociag_processing.repository import SyncRepository
+
+        repo = SyncRepository()
+        runs = repo.list_processing_runs("schedules", 1)
+        if not runs:
+            return True
+        last_run = runs[0]
+        completed_at = last_run.get("completed_at")
+        if completed_at is None:
+            return True
+        if isinstance(completed_at, str):
+            completed_at = datetime.fromisoformat(completed_at)
+        return (datetime.now(tz=completed_at.tzinfo) - completed_at) > timedelta(days=7)
 
     @task.short_circuit
     def should_proceed(needs_run: bool) -> bool:
@@ -53,18 +53,19 @@ def ingest_schedules_weekly() -> None:
         return response.json()
 
     @task
-    def process_schedules() -> dict:
-        conn = BaseHook.get_connection("pociag_processor")
-        base_url = f"{conn.schema}://{conn.host}:{conn.port}"
-        today = datetime.now().strftime("%Y-%m-%d")
-        date_to = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
-        response = httpx.post(
-            f"{base_url}/api/v1/process/schedules",
-            json={"date_from": today, "date_to": date_to},
-            timeout=600,
+    def process_schedules(fetch_result: dict) -> dict:
+        from pociag_processing.pipelines.schedules import (
+            process_schedules as run,
         )
-        response.raise_for_status()
-        return response.json()
+
+        today = date.today()
+        date_to = today + timedelta(days=14)
+        result = run(date_from=today, date_to=date_to, ingestion_run_id=fetch_result.get("run_id"))
+        return {
+            "status": result.status,
+            "records_written": result.records_written,
+            "records_read": result.records_read,
+        }
 
     @task
     def verify_result(result: dict) -> None:
@@ -77,7 +78,7 @@ def ingest_schedules_weekly() -> None:
     needs_run = check_last_run()
     proceed = should_proceed(needs_run)
     fetch_result = fetch_schedules()
-    process_result = process_schedules()
+    process_result = process_schedules(fetch_result)
     verify_result(process_result)
 
     proceed >> fetch_result >> process_result

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 from airflow.decorators import dag, task
@@ -32,15 +32,16 @@ def sync_dictionaries_weekly() -> None:
 
     @task
     def process_dictionaries(fetch_result: dict) -> dict:
-        conn = BaseHook.get_connection("pociag_processor")
-        base_url = f"{conn.schema}://{conn.host}:{conn.port}"
-        response = httpx.post(
-            f"{base_url}/api/v1/process/dictionaries",
-            json={},
-            timeout=300,
+        from pociag_processing.pipelines.dictionaries import (
+            process_dictionaries as run,
         )
-        response.raise_for_status()
-        return response.json()
+
+        result = run(run_date=date.today(), ingestion_run_id=fetch_result.get("run_id"))
+        return {
+            "status": result.status,
+            "records_written": result.records_written,
+            "records_read": result.records_read,
+        }
 
     result = fetch_dictionaries()
     process_dictionaries(result)

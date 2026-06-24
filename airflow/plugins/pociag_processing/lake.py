@@ -5,20 +5,25 @@ from datetime import date
 from typing import Any, cast
 
 import boto3  # type: ignore[import-untyped]
-from opentelemetry import trace
+from airflow.hooks.base import BaseHook
+
+from pociag_processing.tracing import get_tracer
 
 
 class LakeReader:
-    _client: Any
+    def __init__(self, conn_id: str = "pociag_s3") -> None:
+        conn = BaseHook.get_connection(conn_id)
+        extras: dict[str, Any] = conn.extra_dejson
+        endpoint_url: str = extras.get("endpoint_url", "")
+        bucket: str = extras.get("bucket", "pociag-lake")
 
-    def __init__(self, endpoint: str, bucket: str, access_key: str, secret_key: str) -> None:
         self._bucket = bucket
-        self._tracer = trace.get_tracer("pociag.processor")
+        self._tracer = get_tracer()
         self._client: Any = cast(Any, boto3).client(
             "s3",
-            endpoint_url=endpoint,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
+            endpoint_url=endpoint_url,
+            aws_access_key_id=conn.login,
+            aws_secret_access_key=conn.password,
             region_name="us-east-1",
         )
 
@@ -64,38 +69,6 @@ class LakeReader:
                 prefix += f"run_{run_id}_"
             return self._read_objects(prefix)
 
-    def count_raw_dictionaries(self, run_id: int | None, run_date: date) -> int:
-        with self._tracer.start_as_current_span("lake.dictionaries.count"):
-            objects = self.read_raw_dictionaries(run_id, run_date)
-            return sum(
-                int(obj.get("metadata", {}).get("record_count", 0)) for obj in objects
-            )
-
-    def count_raw_schedules(
-        self, date_from: date, date_to: date, run_id: int | None
-    ) -> int:
-        with self._tracer.start_as_current_span("lake.schedules.count"):
-            objects = self.read_raw_schedules(date_from, date_to, run_id)
-            return sum(
-                int(obj.get("metadata", {}).get("record_count", 0)) for obj in objects
-            )
-
-    def count_raw_operations(self, operating_date: date, run_id: int | None) -> int:
-        with self._tracer.start_as_current_span("lake.operations.count"):
-            objects = self.read_raw_operations(operating_date, run_id)
-            return sum(
-                int(obj.get("metadata", {}).get("record_count", 0)) for obj in objects
-            )
-
-    def count_raw_disruptions(
-        self, date_from: date, date_to: date, run_id: int | None
-    ) -> int:
-        with self._tracer.start_as_current_span("lake.disruptions.count"):
-            objects = self.read_raw_disruptions(date_from, date_to, run_id)
-            return sum(
-                int(obj.get("metadata", {}).get("record_count", 0)) for obj in objects
-            )
-
     def _read_objects(self, prefix: str) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         paginator = self._client.get_paginator("list_objects_v2")
@@ -108,5 +81,9 @@ class LakeReader:
                     envelope = json.loads(body)
                     results.append(envelope)
                 except (json.JSONDecodeError, ValueError):
+                    import logging
+                    logging.getLogger("pociag_processing.lake").warning(
+                        "Failed to parse object: %s", key
+                    )
                     continue
         return results
