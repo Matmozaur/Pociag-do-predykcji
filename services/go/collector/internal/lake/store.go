@@ -64,12 +64,15 @@ func (s *Store) PutRawDictionaries(ctx context.Context, dictionaryType string, p
 	key := fmt.Sprintf("raw/dictionaries/%d/%02d/%02d/run_%d_%s.parquet",
 		now.Year(), now.Month(), now.Day(), runID, dictionaryType)
 
-	data := wrapAsParquetJSON(payload, map[string]string{
+	data, err := wrapAsParquetJSON(payload, map[string]string{
 		"dictionary_type":  dictionaryType,
 		"record_count":     fmt.Sprintf("%d", recordCount),
 		"ingestion_run_id": fmt.Sprintf("%d", runID),
 		"fetched_at":       now.Format(time.RFC3339),
 	})
+	if err != nil {
+		return "", fmt.Errorf("put raw dictionaries: marshal envelope: %w", err)
+	}
 
 	if err := s.putObject(ctx, key, data); err != nil {
 		return "", fmt.Errorf("put raw dictionaries: %w", err)
@@ -85,7 +88,7 @@ func (s *Store) PutRawSchedules(ctx context.Context, dateFrom time.Time, dateTo 
 	key := fmt.Sprintf("raw/schedules/%d/%02d/%02d/run_%d_page_%d.parquet",
 		dateFrom.Year(), dateFrom.Month(), dateFrom.Day(), runID, page)
 
-	data := wrapAsParquetJSON(payload, map[string]string{
+	data, err := wrapAsParquetJSON(payload, map[string]string{
 		"date_from":        dateFrom.Format("2006-01-02"),
 		"date_to":          dateTo.Format("2006-01-02"),
 		"page":             fmt.Sprintf("%d", page),
@@ -93,6 +96,9 @@ func (s *Store) PutRawSchedules(ctx context.Context, dateFrom time.Time, dateTo 
 		"ingestion_run_id": fmt.Sprintf("%d", runID),
 		"fetched_at":       time.Now().UTC().Format(time.RFC3339),
 	})
+	if err != nil {
+		return "", fmt.Errorf("put raw schedules: marshal envelope: %w", err)
+	}
 
 	if err := s.putObject(ctx, key, data); err != nil {
 		return "", fmt.Errorf("put raw schedules: %w", err)
@@ -108,13 +114,16 @@ func (s *Store) PutRawOperations(ctx context.Context, operatingDate time.Time, p
 	key := fmt.Sprintf("raw/operations/%d/%02d/%02d/run_%d_page_%d.parquet",
 		operatingDate.Year(), operatingDate.Month(), operatingDate.Day(), runID, page)
 
-	data := wrapAsParquetJSON(payload, map[string]string{
+	data, err := wrapAsParquetJSON(payload, map[string]string{
 		"operating_date":   operatingDate.Format("2006-01-02"),
 		"page":             fmt.Sprintf("%d", page),
 		"record_count":     fmt.Sprintf("%d", recordCount),
 		"ingestion_run_id": fmt.Sprintf("%d", runID),
 		"fetched_at":       time.Now().UTC().Format(time.RFC3339),
 	})
+	if err != nil {
+		return "", fmt.Errorf("put raw operations: marshal envelope: %w", err)
+	}
 
 	if err := s.putObject(ctx, key, data); err != nil {
 		return "", fmt.Errorf("put raw operations: %w", err)
@@ -130,13 +139,16 @@ func (s *Store) PutRawDisruptions(ctx context.Context, dateFrom time.Time, dateT
 	key := fmt.Sprintf("raw/disruptions/%d/%02d/%02d/run_%d.parquet",
 		dateFrom.Year(), dateFrom.Month(), dateFrom.Day(), runID)
 
-	data := wrapAsParquetJSON(payload, map[string]string{
+	data, err := wrapAsParquetJSON(payload, map[string]string{
 		"date_from":        dateFrom.Format("2006-01-02"),
 		"date_to":          dateTo.Format("2006-01-02"),
 		"record_count":     fmt.Sprintf("%d", recordCount),
 		"ingestion_run_id": fmt.Sprintf("%d", runID),
 		"fetched_at":       time.Now().UTC().Format(time.RFC3339),
 	})
+	if err != nil {
+		return "", fmt.Errorf("put raw disruptions: marshal envelope: %w", err)
+	}
 
 	if err := s.putObject(ctx, key, data); err != nil {
 		return "", fmt.Errorf("put raw disruptions: %w", err)
@@ -163,11 +175,14 @@ type rawPayloadEnvelope struct {
 	Payload  json.RawMessage   `json:"payload"`
 }
 
-func wrapAsParquetJSON(payload []byte, metadata map[string]string) []byte {
+func wrapAsParquetJSON(payload []byte, metadata map[string]string) ([]byte, error) {
 	envelope := rawPayloadEnvelope{
 		Metadata: metadata,
 		Payload:  payload,
 	}
-	data, _ := json.Marshal(envelope)
-	return data
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshal envelope: %w", err)
+	}
+	return data, nil
 }

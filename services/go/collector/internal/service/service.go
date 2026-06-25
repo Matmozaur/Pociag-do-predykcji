@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -212,7 +213,7 @@ func (s *Service) FetchOperations(ctx context.Context, req FetchOperationsReques
 		Status:         "success",
 		RecordsFetched: recordCount,
 		PagesLanded:    1,
-		LakePrefix:     key,
+		LakePrefix:     path.Dir(key) + "/",
 		DurationMS:     time.Since(start).Milliseconds(),
 	}, nil
 }
@@ -291,7 +292,7 @@ func (s *Service) fetchWithRange(ctx context.Context, pipeline string, dateFrom 
 		Status:         "success",
 		RecordsFetched: recordCount,
 		PagesLanded:    1,
-		LakePrefix:     key,
+		LakePrefix:     path.Dir(key) + "/",
 		DurationMS:     time.Since(start).Milliseconds(),
 	}, nil
 }
