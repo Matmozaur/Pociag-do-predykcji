@@ -76,11 +76,14 @@ class LakeReader:
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 response = self._client.get_object(Bucket=self._bucket, Key=key)
-                body = response["Body"].read()
+                stream = response["Body"]
+                try:
+                    body = stream.read()
+                finally:
+                    stream.close()
                 try:
                     envelope = json.loads(body)
                     results.append(envelope)
-                except (json.JSONDecodeError, ValueError):
                     import logging
                     logging.getLogger("pociag_processing.lake").warning(
                         "Failed to parse object: %s", key

@@ -141,7 +141,12 @@ func (s *Service) FetchDictionaries(ctx context.Context) (FetchDictionariesResul
 			return FetchDictionariesResult{}, s.failRun(ctx, runID, err, "fetch dictionaries: put to lake")
 		}
 		if lakePrefix == "" {
-			lakePrefix = key[:len(key)-len(dictionaryType)-len(".parquet")-1]
+			suffix := fmt.Sprintf("_%s.parquet", dictionaryType)
+			if len(key) > len(suffix) && key[len(key)-len(suffix):] == suffix {
+				lakePrefix = key[:len(key)-len(suffix)]
+			} else {
+				lakePrefix = key
+			}
 		}
 
 		totalRecords += recordCount
