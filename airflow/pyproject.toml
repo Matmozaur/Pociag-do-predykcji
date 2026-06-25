@@ -1,0 +1,38 @@
+[project]
+name = "pociag-airflow"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "apache-airflow>=2.10,<3.0",
+    "httpx",
+    "psycopg2-binary",
+    "boto3",
+    "opentelemetry-sdk",
+    "opentelemetry-api",
+    "opentelemetry-exporter-otlp-proto-grpc",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+    "ruff",
+    "mypy",
+    "boto3-stubs",
+    "types-psycopg2",
+]
+
+[tool.setuptools.packages.find]
+include = ["pociag_processing*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

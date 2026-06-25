@@ -19,7 +19,7 @@ from airflow.hooks.base import BaseHook
 )
 def sync_dictionaries_weekly() -> None:
     @task
-    def fetch_dictionaries() -> dict:
+    def fetch_dictionaries() -> dict[str, object]:
         conn = BaseHook.get_connection("pociag_collector")
         base_url = f"{conn.schema}://{conn.host}:{conn.port}"
         response = httpx.post(
@@ -31,7 +31,7 @@ def sync_dictionaries_weekly() -> None:
         return response.json()
 
     @task
-    def process_dictionaries(fetch_result: dict) -> dict:
+    def process_dictionaries(fetch_result: dict[str, object]) -> dict[str, str | int]:
         from pociag_processing.pipelines.dictionaries import (
             process_dictionaries as run,
         )

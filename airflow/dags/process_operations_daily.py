@@ -17,7 +17,7 @@ from airflow.decorators import dag, task
 )
 def process_operations_daily() -> None:
     @task
-    def process_operations() -> dict:
+    def process_operations() -> dict[str, str | int]:
         from pociag_processing.pipelines.operations import (
             process_operations as run,
         )

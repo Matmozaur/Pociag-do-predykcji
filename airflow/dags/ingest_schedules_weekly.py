@@ -39,7 +39,7 @@ def ingest_schedules_weekly() -> None:
         return needs_run
 
     @task
-    def fetch_schedules() -> dict:
+    def fetch_schedules() -> dict[str, object]:
         conn = BaseHook.get_connection("pociag_collector")
         base_url = f"{conn.schema}://{conn.host}:{conn.port}"
         today = datetime.now().strftime("%Y-%m-%d")
@@ -53,7 +53,7 @@ def ingest_schedules_weekly() -> None:
         return response.json()
 
     @task
-    def process_schedules(fetch_result: dict) -> dict:
+    def process_schedules(fetch_result: dict[str, object]) -> dict[str, str | int]:
         from pociag_processing.pipelines.schedules import (
             process_schedules as run,
         )
