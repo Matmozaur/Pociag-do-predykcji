@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pociag-processing"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3",
+    "psycopg2-binary",
+    "opentelemetry-sdk",
+    "opentelemetry-api",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "apache-airflow>=2.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+    "ruff",
+    "mypy",
+]
+
+[tool.setuptools.packages.find]
+include = ["pociag_processing*"]

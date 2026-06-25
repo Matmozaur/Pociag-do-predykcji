@@ -112,66 +112,6 @@ WHERE id = $1`
 	return nil
 }
 
-func (r *Repository) InsertRawDictionaries(ctx context.Context, dictionaryType string, payload []byte, recordCount int, ingestionRunID int64) error {
-	ctx, span := r.tracer.Start(ctx, "db.raw_dictionaries.insert")
-	defer span.End()
-
-	const query = `
-INSERT INTO raw_dictionaries (dictionary_type, payload, record_count, ingestion_run_id)
-VALUES ($1, $2::jsonb, $3, $4)`
-
-	if _, err := r.pool.Exec(ctx, query, dictionaryType, payload, recordCount, ingestionRunID); err != nil {
-		return fmt.Errorf("insert raw dictionaries: %w", err)
-	}
-
-	return nil
-}
-
-func (r *Repository) InsertRawSchedules(ctx context.Context, dateFrom time.Time, dateTo time.Time, page int, payload []byte, recordCount int, ingestionRunID int64) error {
-	ctx, span := r.tracer.Start(ctx, "db.raw_schedules.insert")
-	defer span.End()
-
-	const query = `
-INSERT INTO raw_schedules (date_from, date_to, page, payload, record_count, ingestion_run_id)
-VALUES ($1, $2, $3, $4::jsonb, $5, $6)`
-
-	if _, err := r.pool.Exec(ctx, query, dateFrom.Format("2006-01-02"), dateTo.Format("2006-01-02"), page, payload, recordCount, ingestionRunID); err != nil {
-		return fmt.Errorf("insert raw schedules: %w", err)
-	}
-
-	return nil
-}
-
-func (r *Repository) InsertRawOperations(ctx context.Context, operatingDate time.Time, page int, payload []byte, recordCount int, ingestionRunID int64) error {
-	ctx, span := r.tracer.Start(ctx, "db.raw_operations.insert")
-	defer span.End()
-
-	const query = `
-INSERT INTO raw_operations (operating_date, page, payload, record_count, ingestion_run_id)
-VALUES ($1, $2, $3::jsonb, $4, $5)`
-
-	if _, err := r.pool.Exec(ctx, query, operatingDate.Format("2006-01-02"), page, payload, recordCount, ingestionRunID); err != nil {
-		return fmt.Errorf("insert raw operations: %w", err)
-	}
-
-	return nil
-}
-
-func (r *Repository) InsertRawDisruptions(ctx context.Context, dateFrom time.Time, dateTo time.Time, payload []byte, recordCount int, ingestionRunID int64) error {
-	ctx, span := r.tracer.Start(ctx, "db.raw_disruptions.insert")
-	defer span.End()
-
-	const query = `
-INSERT INTO raw_disruptions (date_from, date_to, payload, record_count, ingestion_run_id)
-VALUES ($1, $2, $3::jsonb, $4, $5)`
-
-	if _, err := r.pool.Exec(ctx, query, dateFrom.Format("2006-01-02"), dateTo.Format("2006-01-02"), payload, recordCount, ingestionRunID); err != nil {
-		return fmt.Errorf("insert raw disruptions: %w", err)
-	}
-
-	return nil
-}
-
 func (r *Repository) ListIngestionRuns(ctx context.Context, pipeline *string, limit int) ([]service.IngestionRun, error) {
 	ctx, span := r.tracer.Start(ctx, "db.ingestion_runs.list")
 	defer span.End()

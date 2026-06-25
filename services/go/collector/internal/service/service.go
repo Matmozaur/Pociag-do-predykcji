@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -32,6 +33,7 @@ type FetchDisruptionsRequest struct {
 
 type FetchDictionariesResult struct {
 	FetchedTypes map[string]int `json:"fetched_types"`
+	LakePrefix   string         `json:"lake_prefix,omitempty"`
 	DurationMS   int64          `json:"duration_ms,omitempty"`
 }
 
@@ -40,6 +42,7 @@ type FetchResult struct {
 	Status         string `json:"status"`
 	RecordsFetched int    `json:"records_fetched"`
 	PagesLanded    int    `json:"pages_landed"`
+	LakePrefix     string `json:"lake_prefix,omitempty"`
 	DurationMS     int64  `json:"duration_ms,omitempty"`
 	ErrorMessage   string `json:"error_message,omitempty"`
 }
@@ -62,11 +65,15 @@ type Repository interface {
 	CreateIngestionRun(ctx context.Context, pipeline string, runDate time.Time) (int64, error)
 	MarkIngestionRunSuccess(ctx context.Context, runID int64, recordsFetched int) error
 	MarkIngestionRunFailed(ctx context.Context, runID int64, errorMessage string) error
-	InsertRawDictionaries(ctx context.Context, dictionaryType string, payload []byte, recordCount int, ingestionRunID int64) error
-	InsertRawSchedules(ctx context.Context, dateFrom time.Time, dateTo time.Time, page int, payload []byte, recordCount int, ingestionRunID int64) error
-	InsertRawOperations(ctx context.Context, operatingDate time.Time, page int, payload []byte, recordCount int, ingestionRunID int64) error
-	InsertRawDisruptions(ctx context.Context, dateFrom time.Time, dateTo time.Time, payload []byte, recordCount int, ingestionRunID int64) error
 	ListIngestionRuns(ctx context.Context, pipeline *string, limit int) ([]IngestionRun, error)
+}
+
+type Lake interface {
+	Ping(ctx context.Context) error
+	PutRawDictionaries(ctx context.Context, dictionaryType string, payload []byte, recordCount int, runID int64) (string, error)
+	PutRawSchedules(ctx context.Context, dateFrom time.Time, dateTo time.Time, page int, payload []byte, recordCount int, runID int64) (string, error)
+	PutRawOperations(ctx context.Context, operatingDate time.Time, page int, payload []byte, recordCount int, runID int64) (string, error)
+	PutRawDisruptions(ctx context.Context, dateFrom time.Time, dateTo time.Time, payload []byte, recordCount int, runID int64) (string, error)
 }
 
 type PLKClient interface {
@@ -78,13 +85,15 @@ type PLKClient interface {
 
 type Service struct {
 	repo      Repository
+	lake      Lake
 	plkClient PLKClient
 	tracer    trace.Tracer
 }
 
-func New(repo Repository, plkClient PLKClient) *Service {
+func New(repo Repository, lake Lake, plkClient PLKClient) *Service {
 	return &Service{
 		repo:      repo,
+		lake:      lake,
 		plkClient: plkClient,
 		tracer:    otel.Tracer("pociag.collector"),
 	}
@@ -95,6 +104,10 @@ func (s *Service) Ready(ctx context.Context) error {
 	defer span.End()
 
 	if err := s.repo.Ping(ctx); err != nil {
+		return fmt.Errorf("ready: %w", err)
+	}
+
+	if err := s.lake.Ping(ctx); err != nil {
 		return fmt.Errorf("ready: %w", err)
 	}
 
@@ -121,10 +134,20 @@ func (s *Service) FetchDictionaries(ctx context.Context) (FetchDictionariesResul
 
 	totalRecords := 0
 	fetchedTypes := make(map[string]int, len(dictionaryPayloads))
+	var lakePrefix string
 	for dictionaryType, payload := range dictionaryPayloads {
 		recordCount := countRecords(payload)
-		if err := s.repo.InsertRawDictionaries(ctx, dictionaryType, payload, recordCount, runID); err != nil {
-			return FetchDictionariesResult{}, s.failRun(ctx, runID, err, "fetch dictionaries: insert raw payload")
+		key, err := s.lake.PutRawDictionaries(ctx, dictionaryType, payload, recordCount, runID)
+		if err != nil {
+			return FetchDictionariesResult{}, s.failRun(ctx, runID, err, "fetch dictionaries: put to lake")
+		}
+		if lakePrefix == "" {
+			suffix := fmt.Sprintf("_%s.parquet", dictionaryType)
+			if len(key) > len(suffix) && key[len(key)-len(suffix):] == suffix {
+				lakePrefix = key[:len(key)-len(suffix)]
+			} else {
+				lakePrefix = key
+			}
 		}
 
 		totalRecords += recordCount
@@ -137,6 +160,7 @@ func (s *Service) FetchDictionaries(ctx context.Context) (FetchDictionariesResul
 
 	return FetchDictionariesResult{
 		FetchedTypes: fetchedTypes,
+		LakePrefix:   lakePrefix,
 		DurationMS:   time.Since(start).Milliseconds(),
 	}, nil
 }
@@ -175,8 +199,9 @@ func (s *Service) FetchOperations(ctx context.Context, req FetchOperationsReques
 	}
 
 	recordCount := countRecords(payload)
-	if err := s.repo.InsertRawOperations(ctx, req.Date, 1, payload, recordCount, runID); err != nil {
-		return FetchResult{}, s.failRun(ctx, runID, err, "fetch operations: insert raw payload")
+	key, putErr := s.lake.PutRawOperations(ctx, req.Date, 1, payload, recordCount, runID)
+	if putErr != nil {
+		return FetchResult{}, s.failRun(ctx, runID, putErr, "fetch operations: put to lake")
 	}
 
 	if err := s.repo.MarkIngestionRunSuccess(ctx, runID, recordCount); err != nil {
@@ -188,6 +213,7 @@ func (s *Service) FetchOperations(ctx context.Context, req FetchOperationsReques
 		Status:         "success",
 		RecordsFetched: recordCount,
 		PagesLanded:    1,
+		LakePrefix:     path.Dir(key) + "/",
 		DurationMS:     time.Since(start).Milliseconds(),
 	}, nil
 }
@@ -232,28 +258,29 @@ func (s *Service) fetchWithRange(ctx context.Context, pipeline string, dateFrom 
 	var (
 		payload     []byte
 		recordCount int
-		insertErr   error
+		key         string
+		fetchErr    error
 	)
 
 	switch pipeline {
 	case "schedules":
-		payload, insertErr = s.plkClient.FetchSchedules(ctx, dateFrom, dateTo, 1, 1000)
-		if insertErr == nil {
+		payload, fetchErr = s.plkClient.FetchSchedules(ctx, dateFrom, dateTo, 1, 1000)
+		if fetchErr == nil {
 			recordCount = countRecords(payload)
-			insertErr = s.repo.InsertRawSchedules(ctx, dateFrom, dateTo, 1, payload, recordCount, runID)
+			key, fetchErr = s.lake.PutRawSchedules(ctx, dateFrom, dateTo, 1, payload, recordCount, runID)
 		}
 	case "disruptions":
-		payload, insertErr = s.plkClient.FetchDisruptions(ctx, dateFrom, dateTo)
-		if insertErr == nil {
+		payload, fetchErr = s.plkClient.FetchDisruptions(ctx, dateFrom, dateTo)
+		if fetchErr == nil {
 			recordCount = countRecords(payload)
-			insertErr = s.repo.InsertRawDisruptions(ctx, dateFrom, dateTo, payload, recordCount, runID)
+			key, fetchErr = s.lake.PutRawDisruptions(ctx, dateFrom, dateTo, payload, recordCount, runID)
 		}
 	default:
-		insertErr = fmt.Errorf("unsupported pipeline: %s", pipeline)
+		fetchErr = fmt.Errorf("unsupported pipeline: %s", pipeline)
 	}
 
-	if insertErr != nil {
-		return FetchResult{}, s.failRun(ctx, runID, insertErr, fmt.Sprintf("fetch %s", pipeline))
+	if fetchErr != nil {
+		return FetchResult{}, s.failRun(ctx, runID, fetchErr, fmt.Sprintf("fetch %s", pipeline))
 	}
 
 	if err := s.repo.MarkIngestionRunSuccess(ctx, runID, recordCount); err != nil {
@@ -265,6 +292,7 @@ func (s *Service) fetchWithRange(ctx context.Context, pipeline string, dateFrom 
 		Status:         "success",
 		RecordsFetched: recordCount,
 		PagesLanded:    1,
+		LakePrefix:     path.Dir(key) + "/",
 		DurationMS:     time.Since(start).Milliseconds(),
 	}, nil
 }

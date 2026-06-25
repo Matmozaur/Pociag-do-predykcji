@@ -17,10 +17,13 @@ type mockRepository struct {
 	isRunningErr   error
 	createRunID    int64
 	createRunErr   error
-	insertErr      error
 	markSuccessErr error
 	listRuns       []service.IngestionRun
 	listErr        error
+}
+
+type mockLake struct {
+	putErr error
 }
 
 type mockPLKClient struct {
@@ -54,27 +57,43 @@ func (m *mockRepository) MarkIngestionRunFailed(ctx context.Context, runID int64
 	return nil
 }
 
-func (m *mockRepository) InsertRawDictionaries(ctx context.Context, dictionaryType string, payload []byte, recordCount int, ingestionRunID int64) error {
-	return m.insertErr
-}
-
-func (m *mockRepository) InsertRawSchedules(ctx context.Context, dateFrom time.Time, dateTo time.Time, page int, payload []byte, recordCount int, ingestionRunID int64) error {
-	return m.insertErr
-}
-
-func (m *mockRepository) InsertRawOperations(ctx context.Context, operatingDate time.Time, page int, payload []byte, recordCount int, ingestionRunID int64) error {
-	return m.insertErr
-}
-
-func (m *mockRepository) InsertRawDisruptions(ctx context.Context, dateFrom time.Time, dateTo time.Time, payload []byte, recordCount int, ingestionRunID int64) error {
-	return m.insertErr
-}
-
 func (m *mockRepository) ListIngestionRuns(ctx context.Context, pipeline *string, limit int) ([]service.IngestionRun, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
 	return m.listRuns, nil
+}
+
+func (m *mockLake) Ping(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockLake) PutRawDictionaries(ctx context.Context, dictionaryType string, payload []byte, recordCount int, runID int64) (string, error) {
+	if m.putErr != nil {
+		return "", m.putErr
+	}
+	return "raw/dictionaries/2026/06/14/run_1_" + dictionaryType + ".parquet", nil
+}
+
+func (m *mockLake) PutRawSchedules(ctx context.Context, dateFrom time.Time, dateTo time.Time, page int, payload []byte, recordCount int, runID int64) (string, error) {
+	if m.putErr != nil {
+		return "", m.putErr
+	}
+	return "raw/schedules/2026/06/14/run_1_page_1.parquet", nil
+}
+
+func (m *mockLake) PutRawOperations(ctx context.Context, operatingDate time.Time, page int, payload []byte, recordCount int, runID int64) (string, error) {
+	if m.putErr != nil {
+		return "", m.putErr
+	}
+	return "raw/operations/2026/06/14/run_1_page_1.parquet", nil
+}
+
+func (m *mockLake) PutRawDisruptions(ctx context.Context, dateFrom time.Time, dateTo time.Time, payload []byte, recordCount int, runID int64) (string, error) {
+	if m.putErr != nil {
+		return "", m.putErr
+	}
+	return "raw/disruptions/2026/06/14/run_1.parquet", nil
 }
 
 func (m *mockPLKClient) FetchDictionaries(ctx context.Context) (map[string][]byte, error) {
@@ -103,8 +122,9 @@ func TestService_FetchSchedules_Success(t *testing.T) {
 	t.Parallel()
 
 	repo := &mockRepository{}
+	lake := &mockLake{}
 	plkClient := &mockPLKClient{schedulesPayload: []byte(`{"items":[{"id":1},{"id":2}]}`)}
-	svc := service.New(repo, plkClient)
+	svc := service.New(repo, lake, plkClient)
 
 	result, err := svc.FetchSchedules(context.Background(), service.FetchSchedulesRequest{
 		DateFrom: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
@@ -122,8 +142,9 @@ func TestService_FetchSchedules_AlreadyRunning_ReturnsConflictError(t *testing.T
 	t.Parallel()
 
 	repo := &mockRepository{isRunning: true}
+	lake := &mockLake{}
 	plkClient := &mockPLKClient{}
-	svc := service.New(repo, plkClient)
+	svc := service.New(repo, lake, plkClient)
 
 	_, err := svc.FetchSchedules(context.Background(), service.FetchSchedulesRequest{
 		DateFrom: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
@@ -138,8 +159,9 @@ func TestService_GetFetchStatus_RepositoryError_ReturnsWrappedError(t *testing.T
 	t.Parallel()
 
 	repo := &mockRepository{listErr: errors.New("db unavailable")}
+	lake := &mockLake{}
 	plkClient := &mockPLKClient{}
-	svc := service.New(repo, plkClient)
+	svc := service.New(repo, lake, plkClient)
 
 	_, err := svc.GetFetchStatus(context.Background(), nil, 10)
 

@@ -26,13 +26,18 @@
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.tabSize": 4
     },
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "${workspaceFolder}/airflow/.venv/Scripts/python.exe",
     "python.analysis.typeCheckingMode": "strict",
     "python.analysis.diagnosticSeverityOverrides": {
-        "reportMissingTypeStubs": "none"
+        "reportMissingTypeStubs": "none",
+        "reportUnknownMemberType": "none",
+        "reportUnknownParameterType": "information",
+        "reportUnknownVariableType": "information",
+        "reportUnknownArgumentType": "information"
     },
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/services/python/processor/src"
+        "${workspaceFolder}/airflow/plugins",
+        "${workspaceFolder}/airflow/dags"
     ],
     "mypy-type-checker.args": [
         "--strict"
@@ -76,7 +81,7 @@
     "go.testExplorer.enable": true,
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": [
-        "tests"
+        "airflow/tests"
     ],
     "python-envs.defaultEnvManager": "ms-python.python:system"
 }
