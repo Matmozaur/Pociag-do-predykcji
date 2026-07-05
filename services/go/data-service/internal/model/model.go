@@ -1,4 +1,4 @@
-﻿package model
+package model
 
 import "github.com/pociag-do-predykcji/services/go/shared/dsmodel"
 

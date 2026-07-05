@@ -28,7 +28,7 @@ func RateLimit(limit rate.Limit, burst int) func(http.Handler) http.Handler {
 			if !store.allow(clientKey(r)) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(`{"error":"rate_limited","message":"too many requests"}`))
+				if _, err := w.Write([]byte(`{"error":"rate_limited","message":"too many requests"}`)); err != nil { return }
 				return
 			}
 			next.ServeHTTP(w, r)

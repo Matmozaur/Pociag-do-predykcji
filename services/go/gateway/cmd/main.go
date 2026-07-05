@@ -32,7 +32,9 @@ func main() {
 		panic(fmt.Sprintf("init logger: %v", err))
 	}
 	defer func() {
-		_ = logger.Sync()
+		if syncErr := logger.Sync(); syncErr != nil {
+			// ignore sync errors
+		}
 	}()
 
 	cfg, err := config.Load()
