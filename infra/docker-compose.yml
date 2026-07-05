@@ -124,6 +124,24 @@ services:
       - "8082:8081"
     logging: *default-logging
 
+  # ── Data Service ─────────────────────────────────────────────────────────────
+  data-service:
+    build:
+      context: ../services/go/data-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      HTTP_ADDR: :8083
+      DATABASE_DSN: postgres://pociag:${POSTGRES_PASSWORD}@postgres:5432/pociag?sslmode=disable
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+    ports:
+      - "8083:8083"
+    logging: *default-logging
 
   # ── Jaeger (tracing UI) ─────────────────────────────────────────────── tracing
   jaeger:
