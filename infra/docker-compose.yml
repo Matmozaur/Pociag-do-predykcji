@@ -143,6 +143,25 @@ services:
       - "8083:8083"
     logging: *default-logging
 
+  # ── Gateway Service ─────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ../services/go/gateway
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      data-service:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    environment:
+      HTTP_ADDR: :8084
+      DATA_SERVICE_BASE_URL: http://data-service:8083
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+    ports:
+      - "8084:8084"
+    logging: *default-logging
+
   # ── Jaeger (tracing UI) ─────────────────────────────────────────────── tracing
   jaeger:
     image: jaegertracing/all-in-one:1.63.0
