@@ -1,4 +1,4 @@
-﻿package dataservice
+package dataservice
 
 import "github.com/pociag-do-predykcji/services/go/shared/dsmodel"
 

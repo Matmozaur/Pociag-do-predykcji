@@ -275,7 +275,7 @@ func (h *Handler) writeJSON(w http.ResponseWriter, status int, payload any) {
 	if payload == nil {
 		return
 	}
-	_ = json.NewEncoder(w).Encode(payload)
+	if err := json.NewEncoder(w).Encode(payload); err != nil { return }
 }
 
 func (h *Handler) writeError(w http.ResponseWriter, status int, code, message string) {
