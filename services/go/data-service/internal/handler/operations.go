@@ -12,6 +12,18 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// HandleQueryOperations queries train operations by filters and returns paginated results.
+// @Summary		Query train operations
+// @Description	Returns paginated train operations matching the given criteria
+// @Tags		operations
+// @Produce		json
+// @Param		date query string false "Filter operations for a specific date (YYYY-MM-DD)"
+// @Param		station query string false "Filter by station external ID"
+// @Param		limit query int false "Limit (default 50, max 1000)" default(50)
+// @Param		offset query int false "Offset for pagination (default 0)" default(0)
+// @Success		200 {array} model.TrainOperation
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Router		/api/v1/operations [get]
 func (h *Handler) HandleQueryOperations(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "operations.query")
 	defer span.End()
@@ -69,6 +81,7 @@ func (h *Handler) HandleQueryOperations(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// HandleGetOperationById retrieves a single operation by ID with full details including stops and delay info.
 func (h *Handler) HandleGetOperationById(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "operation.get_by_id")
 	defer span.End()
@@ -88,6 +101,7 @@ func (h *Handler) HandleGetOperationById(w http.ResponseWriter, r *http.Request)
 	h.writeJSON(w, span, http.StatusOK, detail)
 }
 
+// HandleGetOperationStatistics retrieves aggregate statistics for train operations on a given date.
 func (h *Handler) HandleGetOperationStatistics(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "operation.statistics")
 	defer span.End()

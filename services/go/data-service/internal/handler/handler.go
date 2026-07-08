@@ -18,6 +18,8 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// Handler handles all HTTP endpoints for the data-service.
+// RegisterRoutes registers all chi routes. See specs/openapi/data-service.yml for full API contract.
 type Handler struct {
 	svc    *service.Service
 	tracer trace.Tracer
@@ -61,6 +63,12 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	})
 }
 
+// HandleHealthz handles the liveness probe endpoint.
+// @Summary		Liveness probe
+// @Description	Service is alive
+// @Tags		health
+// @Success		200 "OK"
+// @Router		/healthz [get]
 func (h *Handler) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 	_, span := h.tracer.Start(r.Context(), "health.check")
 	defer span.End()
@@ -68,6 +76,13 @@ func (h *Handler) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleReadyz handles the readiness probe endpoint.
+// @Summary		Readiness probe
+// @Description	Service is ready to accept traffic
+// @Tags		health
+// @Success		200 "OK"
+// @Failure		503 "Service is not ready"
+// @Router		/readyz [get]
 func (h *Handler) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "readiness.check")
 	defer span.End()

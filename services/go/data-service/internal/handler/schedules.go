@@ -11,6 +11,20 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// HandleQueryRoutes queries routes by filters and returns paginated results.
+// @Summary		Query routes by filters
+// @Description	Returns paginated routes matching the given criteria
+// @Tags		schedules
+// @Produce		json
+// @Param		dateFrom query string false "Filter routes operating on or after this date (YYYY-MM-DD)"
+// @Param		dateTo query string false "Filter routes operating on or before this date (YYYY-MM-DD)"
+// @Param		carrierCodes query string false "Comma-separated carrier codes filter"
+// @Param		commercialCategory query string false "Filter by commercial category symbol (e.g IC, TLK, REG)"
+// @Param		limit query int false "Limit (default 50, max 1000)" default(50)
+// @Param		offset query int false "Offset for pagination (default 0)" default(0)
+// @Success		200 {array} model.Route
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Router		/api/v1/schedules [get]
 func (h *Handler) HandleQueryRoutes(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "routes.query")
 	defer span.End()
@@ -62,6 +76,7 @@ func (h *Handler) HandleQueryRoutes(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleGetRouteById retrieves a single route by ID with full details including stops.
 func (h *Handler) HandleGetRouteById(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "route.get_by_id")
 	defer span.End()
@@ -81,6 +96,7 @@ func (h *Handler) HandleGetRouteById(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, span, http.StatusOK, detail)
 }
 
+// HandleGetRouteByKey retrieves a route by schedule ID and order ID.
 func (h *Handler) HandleGetRouteByKey(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "route.get_by_key")
 	defer span.End()
@@ -105,6 +121,7 @@ func (h *Handler) HandleGetRouteByKey(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, span, http.StatusOK, detail)
 }
 
+// HandleGetRouteStations retrieves all stations (stops) for a route.
 func (h *Handler) HandleGetRouteStations(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "route.stations")
 	defer span.End()
@@ -124,6 +141,7 @@ func (h *Handler) HandleGetRouteStations(w http.ResponseWriter, r *http.Request)
 	h.writeJSON(w, span, http.StatusOK, model.RouteStationListResponse{Data: stations})
 }
 
+// HandleGetRouteOperatingDates retrieves the dates on which a route operates, optionally filtered by date range.
 func (h *Handler) HandleGetRouteOperatingDates(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "route.operating_dates")
 	defer span.End()

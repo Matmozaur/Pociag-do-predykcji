@@ -17,6 +17,8 @@ import (
 	"github.com/pociag-do-predykcji/services/go/collector/internal/service"
 )
 
+// Handler handles all HTTP endpoints for the collector service.
+// RegisterRoutes registers all chi routes. See specs/openapi/collector.yml for full API contract.
 type Handler struct {
 	svc    *service.Service
 	tracer trace.Tracer
@@ -73,6 +75,12 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/fetch/status", h.HandleFetchStatus)
 }
 
+// HandleHealthz handles the liveness probe endpoint.
+// @Summary		Liveness probe
+// @Description	Service is alive
+// @Tags		health
+// @Success		200 "OK"
+// @Router		/healthz [get]
 func (h *Handler) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 	_, span := h.tracer.Start(r.Context(), "health.check")
 	defer span.End()
@@ -80,6 +88,13 @@ func (h *Handler) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleReadyz handles the readiness probe endpoint.
+// @Summary		Readiness probe
+// @Description	Service is ready to accept traffic
+// @Tags		health
+// @Success		200 "OK"
+// @Failure		503 "Service is not ready"
+// @Router		/readyz [get]
 func (h *Handler) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "readiness.check")
 	defer span.End()
@@ -94,6 +109,13 @@ func (h *Handler) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleFetchDictionaries fetches all dictionaries from PLK API into raw landing.
+// @Summary		Fetch all dictionaries from PLK API
+// @Description	Fetches all PLK dictionaries and lands raw payloads into data lake
+// @Tags		fetch
+// @Success		200 {object} service.FetchResult
+// @Failure		502 {object} errorResponse "Upstream PLK API error"
+// @Router		/api/v1/fetch/dictionaries [post]
 func (h *Handler) HandleFetchDictionaries(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "dictionaries.fetch")
 	defer span.End()
@@ -109,6 +131,19 @@ func (h *Handler) HandleFetchDictionaries(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, span, http.StatusOK, result)
 }
 
+// HandleFetchSchedules fetches schedules from PLK API for a date range into raw landing.
+// Pagination is handled internally.
+// @Summary		Fetch schedules from PLK API
+// @Description	Pulls schedule data for a date range and lands raw payloads. Pagination is handled internally.
+// @Tags		fetch
+// @Accept		json
+// @Produce		json
+// @Param		body body fetchSchedulesRequest true "Date range and force flag"
+// @Success		200 {object} service.FetchResult
+// @Failure		400 {object} errorResponse "Bad request"
+// @Failure		409 {object} errorResponse "Fetch already running for this date range"
+// @Failure		502 {object} errorResponse "Upstream PLK API error"
+// @Router		/api/v1/fetch/schedules [post]
 func (h *Handler) HandleFetchSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "schedules.fetch")
 	defer span.End()
@@ -143,6 +178,18 @@ func (h *Handler) HandleFetchSchedules(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, span, http.StatusOK, result)
 }
 
+// HandleFetchOperations fetches operations from PLK API for a specific date into raw landing.
+// @Summary		Fetch train operations from PLK API
+// @Description	Pulls operations for a date and lands raw payloads. Includes planned/actual timing data and handles pagination internally.
+// @Tags		fetch
+// @Accept		json
+// @Produce		json
+// @Param		body body fetchOperationsRequest true "Date and force flag"
+// @Success		200 {object} service.FetchResult
+// @Failure		400 {object} errorResponse "Bad request"
+// @Failure		409 {object} errorResponse "Fetch already running for this date"
+// @Failure		502 {object} errorResponse "Upstream PLK API error"
+// @Router		/api/v1/fetch/operations [post]
 func (h *Handler) HandleFetchOperations(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "operations.fetch")
 	defer span.End()
@@ -171,6 +218,18 @@ func (h *Handler) HandleFetchOperations(w http.ResponseWriter, r *http.Request) 
 	h.writeJSON(w, span, http.StatusOK, result)
 }
 
+// HandleFetchDisruptions fetches disruptions from PLK API for a date range into raw landing.
+// @Summary		Fetch disruptions from PLK API
+// @Description	Pulls disruption data for a date range and lands raw payloads
+// @Tags		fetch
+// @Accept		json
+// @Produce		json
+// @Param		body body fetchDisruptionsRequest true "Date range and force flag"
+// @Success		200 {object} service.FetchResult
+// @Failure		400 {object} errorResponse "Bad request"
+// @Failure		409 {object} errorResponse "Fetch already running for this date range"
+// @Failure		502 {object} errorResponse "Upstream PLK API error"
+// @Router		/api/v1/fetch/disruptions [post]
 func (h *Handler) HandleFetchDisruptions(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "disruptions.fetch")
 	defer span.End()
@@ -205,6 +264,13 @@ func (h *Handler) HandleFetchDisruptions(w http.ResponseWriter, r *http.Request)
 	h.writeJSON(w, span, http.StatusOK, result)
 }
 
+// HandleFetchStatus retrieves the status of recent ingestion runs.
+// @Summary		Get ingestion run status
+// @Description	Returns the status of recent data ingestion runs
+// @Tags		status
+// @Produce		json
+// @Success		200 {object} ingestionStatusResponse
+// @Router		/api/v1/fetch/status [get]
 func (h *Handler) HandleFetchStatus(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "status.fetch")
 	defer span.End()

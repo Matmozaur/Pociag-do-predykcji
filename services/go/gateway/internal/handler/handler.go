@@ -19,6 +19,8 @@ import (
 	"github.com/pociag-do-predykcji/services/go/shared/trainutil"
 )
 
+// Handler handles all HTTP endpoints for the gateway (BFF) service.
+// RegisterRoutes registers all chi routes. See specs/openapi/gateway.yml for full API contract.
 type Handler struct {
 	svc    *service.Service
 	tracer trace.Tracer
@@ -47,6 +49,12 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	})
 }
 
+// HandleHealthz handles the liveness probe endpoint.
+// @Summary		Liveness probe
+// @Description	Service is alive
+// @Tags		health
+// @Success		200 "OK"
+// @Router		/healthz [get]
 func (h *Handler) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 	_, span := h.tracer.Start(r.Context(), "health.check")
 	defer span.End()
@@ -54,6 +62,13 @@ func (h *Handler) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleReadyz handles the readiness probe endpoint.
+// @Summary		Readiness probe
+// @Description	Service is ready to accept traffic
+// @Tags		health
+// @Success		200 "OK"
+// @Failure		503 "Service is not ready"
+// @Router		/readyz [get]
 func (h *Handler) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "ready.check")
 	defer span.End()
@@ -67,6 +82,18 @@ func (h *Handler) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleSearchStations handles frontend autocomplete for station search.
+// Returns station suggestions grouped by city, optimized for typeahead UX.
+// @Summary		Autocomplete station search
+// @Description	Frontend autocomplete endpoint. Returns station suggestions as the user types.
+// @Tags		search
+// @Produce		json
+// @Param		q query string true "Search query (min 2 characters)" minlength(2)
+// @Param		limit query int false "Max suggestions to return (default 10, max 20)" default(10) maximum(20)
+// @Success		200 {object} model.StationSuggestionsResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/search/stations [get]
 func (h *Handler) HandleSearchStations(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "stations.search")
 	defer span.End()
@@ -94,6 +121,24 @@ func (h *Handler) HandleSearchStations(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, response)
 }
 
+// HandleSearchSchedules handles frontend search for train connections.
+// Returns paginated connections sorted by departure, arrival, or duration.
+// @Summary		Search train connections
+// @Description	Search for train connections between two stations on a specific date
+// @Tags		schedules
+// @Produce		json
+// @Param		from query string true "Origin city or station name"
+// @Param		to query string true "Destination city or station name"
+// @Param		date query string true "Travel date (YYYY-MM-DD format)"
+// @Param		carriers query string false "Comma-separated carrier codes to filter"
+// @Param		categories query string false "Comma-separated commercial categories to filter"
+// @Param		sort query string false "Sort order: departure, arrival, or duration (default: departure)" default(departure) Enums(departure,arrival,duration)
+// @Param		limit query int false "Results per page (default 20, max 100)" default(20) maximum(100)
+// @Param		offset query int false "Pagination offset (default 0)" default(0)
+// @Success		200 {array} model.ScheduleResult
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/schedules/search [get]
 func (h *Handler) HandleSearchSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "schedules.search")
 	defer span.End()
@@ -146,6 +191,17 @@ func (h *Handler) HandleSearchSchedules(w http.ResponseWriter, r *http.Request) 
 	h.writeJSON(w, http.StatusOK, response)
 }
 
+// HandleGetScheduleDetail retrieves the full timetable and stop details for a route.
+// @Summary		Get schedule detail
+// @Description	Retrieves the full timetable and stop details for a specific route
+// @Tags		schedules
+// @Produce		json
+// @Param		routeId path int64 true "Route ID"
+// @Success		200 {object} model.ScheduleDetailResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		404 {object} model.ErrorResponse "Route not found"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/schedules/{routeId} [get]
 func (h *Handler) HandleGetScheduleDetail(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "schedule.detail")
 	defer span.End()
@@ -165,6 +221,19 @@ func (h *Handler) HandleGetScheduleDetail(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, http.StatusOK, response)
 }
 
+// HandleGetLiveTrains retrieves current live train positions and statuses for given stations.
+// @Summary		Get live trains
+// @Description	Retrieves current live train positions and statuses
+// @Tags		operations
+// @Produce		json
+// @Param		stations query string false "Comma-separated station IDs"
+// @Param		carriers query string false "Comma-separated carrier codes to filter"
+// @Param		limit query int false "Results per page (default 20, max 100)" default(20) maximum(100)
+// @Param		offset query int false "Pagination offset (default 0)" default(0)
+// @Success		200 {array} model.TrainStatusResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/trains/live [get]
 func (h *Handler) HandleGetLiveTrains(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "trains.live")
 	defer span.End()
@@ -189,6 +258,17 @@ func (h *Handler) HandleGetLiveTrains(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, response)
 }
 
+// HandleGetTrainDetail retrieves detailed information for a specific train including stops and delays.
+// @Summary		Get train detail
+// @Description	Retrieves detailed information for a specific train including stops and current delays
+// @Tags		operations
+// @Produce		json
+// @Param		operationId path int64 true "Train operation ID"
+// @Success		200 {object} model.TrainDetailResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		404 {object} model.ErrorResponse "Train not found"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/trains/{operationId} [get]
 func (h *Handler) HandleGetTrainDetail(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "train.detail")
 	defer span.End()
@@ -208,6 +288,18 @@ func (h *Handler) HandleGetTrainDetail(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, response)
 }
 
+// HandleListDisruptions lists traffic disruptions with optional filtering by active status.
+// @Summary		List disruptions
+// @Description	Lists traffic disruptions with optional filtering by active status
+// @Tags		disruptions
+// @Produce		json
+// @Param		active query boolean false "Filter by active status (default: true)" default(true)
+// @Param		limit query int false "Results per page (default 20, max 100)" default(20) maximum(100)
+// @Param		offset query int false "Pagination offset (default 0)" default(0)
+// @Success		200 {array} model.DisruptionResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/disruptions [get]
 func (h *Handler) HandleListDisruptions(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "disruptions.list")
 	defer span.End()
@@ -237,6 +329,17 @@ func (h *Handler) HandleListDisruptions(w http.ResponseWriter, r *http.Request) 
 	h.writeJSON(w, http.StatusOK, response)
 }
 
+// HandleGetDisruptionDetail retrieves detailed information for a specific disruption including affected routes.
+// @Summary		Get disruption detail
+// @Description	Retrieves detailed information for a specific disruption including affected routes
+// @Tags		disruptions
+// @Produce		json
+// @Param		disruptionId path int64 true "Disruption ID"
+// @Success		200 {object} model.DisruptionDetailResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		404 {object} model.ErrorResponse "Disruption not found"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/disruptions/{disruptionId} [get]
 func (h *Handler) HandleGetDisruptionDetail(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "disruption.detail")
 	defer span.End()
@@ -256,6 +359,14 @@ func (h *Handler) HandleGetDisruptionDetail(w http.ResponseWriter, r *http.Reque
 	h.writeJSON(w, http.StatusOK, response)
 }
 
+// HandleGetDashboardOverview retrieves aggregated dashboard statistics (delays, disruptions, etc.).
+// @Summary\t\tGet dashboard overview
+// @Description\tRetrieves aggregated dashboard statistics including delays, disruptions, and service status
+// @Tags\t\tdashboard
+// @Produce\t\tjson
+// @Success\t\t200 {object} model.DashboardOverviewResponse
+// @Failure\t\t500 {object} model.ErrorResponse "Internal server error"
+// @Router\t\t/api/v1/dashboard/overview [get]
 func (h *Handler) HandleGetDashboardOverview(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "dashboard.overview")
 	defer span.End()
@@ -275,7 +386,9 @@ func (h *Handler) writeJSON(w http.ResponseWriter, status int, payload any) {
 	if payload == nil {
 		return
 	}
-	if err := json.NewEncoder(w).Encode(payload); err != nil { return }
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		return
+	}
 }
 
 func (h *Handler) writeError(w http.ResponseWriter, status int, code, message string) {
