@@ -26,6 +26,13 @@ import (
 	"github.com/pociag-do-predykcji/services/go/gateway/internal/service"
 )
 
+// @title			Pociag Gateway (BFF) API
+// @version		0.2.0
+// @description	Backend-for-Frontend (BFF) gateway for Pociag do Predykcji. Aggregates calls to internal Data Service into frontend-optimized responses.
+// @host			localhost:8080
+// @basePath		/
+// @schemes		http https
+// @x-internal	false
 func main() {
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -71,6 +78,7 @@ func main() {
 	r.Use(middleware.RateLimit(rate.Limit(cfg.RateLimitRPS), cfg.RateLimitBurst))
 	r.Use(middleware.CacheHeaders(cfg.CacheControl))
 	h.RegisterRoutes(r)
+	h.RegisterDocsRoutes(r)
 
 	server := &http.Server{
 		Addr:         cfg.HTTPAddr,

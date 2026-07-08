@@ -11,6 +11,18 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// HandleQueryDisruptions queries traffic disruptions by filters and returns paginated results.
+// @Summary		Query disruptions
+// @Description	Returns paginated traffic disruptions matching the given criteria
+// @Tags		disruptions
+// @Produce		json
+// @Param		dateFrom query string false "Filter disruptions from date (YYYY-MM-DD)"
+// @Param		dateTo query string false "Filter disruptions until date (YYYY-MM-DD)"
+// @Param		limit query int false "Limit (default 50, max 1000)" default(50)
+// @Param		offset query int false "Offset for pagination (default 0)" default(0)
+// @Success		200 {array} model.Disruption
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Router		/api/v1/disruptions [get]
 func (h *Handler) HandleQueryDisruptions(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "disruptions.query")
 	defer span.End()
@@ -58,6 +70,7 @@ func (h *Handler) HandleQueryDisruptions(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// HandleGetDisruptionById retrieves a single disruption by ID with full details and affected routes.
 func (h *Handler) HandleGetDisruptionById(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "disruption.get_by_id")
 	defer span.End()

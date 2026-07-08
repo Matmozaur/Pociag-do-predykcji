@@ -7,6 +7,7 @@ RUN cd data-service; go mod download
 
 COPY data-service ./data-service
 COPY shared ./shared
+
 RUN cd data-service; CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /data-service ./cmd
 
 FROM alpine:3.22.1

@@ -27,6 +27,13 @@ import (
 	"github.com/pociag-do-predykcji/services/go/collector/internal/service"
 )
 
+// @title			Pociag Collector API
+// @version		0.3.0
+// @description	Internal extraction service (stage 1 of ELT). Fetches PLK API data and lands raw payloads as Parquet files.
+// @host			localhost:8082
+// @basePath		/
+// @schemes		http https
+// @x-internal	true
 func main() {
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -78,6 +85,7 @@ func main() {
 	r.Use(corsMiddleware)
 	r.Handle("/metrics", promhttp.Handler())
 	h.RegisterRoutes(r)
+	h.RegisterDocsRoutes(r)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
