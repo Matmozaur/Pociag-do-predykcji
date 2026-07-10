@@ -1,0 +1,145 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-test:
+    name: Go Test (${{ matrix.module.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - name: collector
+            path: services/go/collector
+          - name: data-service
+            path: services/go/data-service
+          - name: gateway
+            path: services/go/gateway
+          - name: shared
+            path: services/go/shared
+    defaults:
+      run:
+        working-directory: ${{ matrix.module.path }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module.path }}/go.mod
+          cache: true
+          cache-dependency-path: services/go/**/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -race -v ./...
+
+  go-lint:
+    name: Go Lint (${{ matrix.module.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - name: collector
+            path: services/go/collector
+          - name: data-service
+            path: services/go/data-service
+          - name: gateway
+            path: services/go/gateway
+    defaults:
+      run:
+        working-directory: ${{ matrix.module.path }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module.path }}/go.mod
+          cache: true
+          cache-dependency-path: services/go/**/go.sum
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+
+      - name: Run golangci-lint
+        run: $(go env GOPATH)/bin/golangci-lint run --timeout=5m ./...
+
+  airflow-ci:
+    name: Python CI (airflow)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: airflow
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+          uv pip install -e plugins
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type check (mypy)
+        run: uv run mypy plugins/pociag_processing
+
+      - name: Test (pytest)
+        run: uv run pytest tests/ -v
+
+  build-placeholder:
+    name: Build Placeholder
+    runs-on: ubuntu-latest
+    needs:
+      - go-test
+      - go-lint
+      - airflow-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build placeholder
+        run: |
+          echo "Build stage placeholder."
+          echo "TODO: Add container/image build steps when build strategy is finalized."
+
+  deploy-placeholder:
+    name: Deploy Placeholder (no deployment yet)
+    runs-on: ubuntu-latest
+    needs:
+      - build-placeholder
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment:
+      name: staging
+    steps:
+      - name: Deployment placeholder
+        run: |
+          echo "No deployment configured yet."
+          echo "TODO: Add deployment steps (e.g., Helm/Terraform/SSH) in a future iteration."

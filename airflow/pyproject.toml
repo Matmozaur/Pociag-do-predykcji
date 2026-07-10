@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "apache-airflow>=2.10,<3.0",
+    "apache-airflow-providers-postgres>=5.13.0",
     "httpx",
     "psycopg2-binary",
     "boto3",

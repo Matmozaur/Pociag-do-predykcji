@@ -80,7 +80,7 @@ func (r *Repository) QueryDisruptions(ctx context.Context, p service.QueryDisrup
 	if err != nil {
 		return nil, 0, fmt.Errorf("query disruptions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []model.DisruptionSummary
 	var total int64
@@ -256,7 +256,7 @@ func (r *Repository) GetDisruptionById(ctx context.Context, id int64) (*model.Di
 	if err != nil {
 		return nil, fmt.Errorf("query disruption affected routes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var (

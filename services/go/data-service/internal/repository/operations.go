@@ -85,7 +85,7 @@ func (r *Repository) QueryOperations(ctx context.Context, p service.QueryOperati
 	if err != nil {
 		return nil, 0, fmt.Errorf("query operations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []model.OperationSummary
 	var total int64
@@ -227,7 +227,7 @@ func (r *Repository) GetOperationById(ctx context.Context, id int64) (*model.Ope
 	if err != nil {
 		return nil, fmt.Errorf("query operation stations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	detail.Stations = []model.OperationStation{}
 	for rows.Next() {
