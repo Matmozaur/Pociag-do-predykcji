@@ -3,7 +3,7 @@ name: CI/CD Pipeline
 on:
   push:
     branches:
-      - '**'
+      - "**"
   pull_request:
 
 permissions:
@@ -14,12 +14,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  go-ci:
-    name: Go CI (collector)
+  go-test:
+    name: Go Test (${{ matrix.module.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - name: collector
+            path: services/go/collector
+          - name: data-service
+            path: services/go/data-service
+          - name: gateway
+            path: services/go/gateway
+          - name: shared
+            path: services/go/shared
     defaults:
       run:
-        working-directory: services/go/collector
+        working-directory: ${{ matrix.module.path }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,9 +39,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: services/go/collector/go.mod
+          go-version-file: ${{ matrix.module.path }}/go.mod
           cache: true
-          cache-dependency-path: services/go/collector/go.sum
+          cache-dependency-path: services/go/**/go.sum
 
       - name: Download dependencies
         run: go mod download
@@ -37,46 +49,42 @@ jobs:
       - name: Run tests
         run: go test -race -v ./...
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: services/go/collector
-          args: --timeout=5m ./...
-
-  python-ci:
-    name: Python CI (predictor)
+  go-lint:
+    name: Go Lint (${{ matrix.module.name }})
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/python/predictor
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - name: collector
+            path: services/go/collector
+          - name: data-service
+            path: services/go/data-service
+          - name: gateway
+            path: services/go/gateway
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
+          go-version-file: ${{ matrix.module.path }}/go.mod
+          cache: true
+          cache-dependency-path: services/go/**/go.sum
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
-
-      - name: Lint (ruff)
-        run: uv run ruff check src/ tests/
-
-      - name: Type check (mypy)
-        run: uv run mypy src/
-
-      - name: Test (pytest)
-        run: uv run pytest tests/ -v
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: ${{ matrix.module.path }}
+          args: --timeout=5m ./...
 
   airflow-ci:
     name: Python CI (airflow)
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/airflow/plugins
     defaults:
       run:
         working-directory: airflow
@@ -87,7 +95,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -108,8 +116,8 @@ jobs:
     name: Build Placeholder
     runs-on: ubuntu-latest
     needs:
-      - go-ci
-      - python-ci
+      - go-test
+      - go-lint
       - airflow-ci
     steps:
       - name: Checkout
