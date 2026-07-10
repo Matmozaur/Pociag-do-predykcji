@@ -54,7 +54,7 @@ func (r *Repository) QueryStations(ctx context.Context, p service.QueryStationsP
 	if err != nil {
 		return nil, 0, fmt.Errorf("query stations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []model.Station
 	var total int64
@@ -128,7 +128,7 @@ func (r *Repository) ListCarriers(ctx context.Context) ([]model.Carrier, error) 
 	if err != nil {
 		return nil, fmt.Errorf("list carriers: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []model.Carrier
 	for rows.Next() {
@@ -173,7 +173,7 @@ func (r *Repository) ListCommercialCategories(ctx context.Context) ([]model.Comm
 	if err != nil {
 		return nil, fmt.Errorf("list commercial categories: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []model.CommercialCategory
 	for rows.Next() {
@@ -218,7 +218,7 @@ func (r *Repository) ListStopTypes(ctx context.Context) ([]model.StopType, error
 	if err != nil {
 		return nil, fmt.Errorf("list stop types: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []model.StopType
 	for rows.Next() {

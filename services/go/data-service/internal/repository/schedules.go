@@ -211,7 +211,7 @@ func (r *Repository) QueryRoutes(ctx context.Context, p service.QueryRoutesParam
 	if err != nil {
 		return nil, 0, fmt.Errorf("query routes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []model.RouteSummary
 	var total int64
@@ -389,7 +389,7 @@ func (r *Repository) fetchRouteDetail(ctx context.Context, whereClause string, p
 	if err != nil {
 		return nil, fmt.Errorf("query route stations: %w", err)
 	}
-	defer stRows.Close()
+	defer func() { _ = stRows.Close() }()
 
 	detail.Stations, err = scanRouteStations(stRows)
 	if err != nil {
@@ -410,7 +410,7 @@ func (r *Repository) fetchRouteDetail(ctx context.Context, whereClause string, p
 	if err != nil {
 		return nil, fmt.Errorf("query route operating dates: %w", err)
 	}
-	defer dateRows.Close()
+	defer func() { _ = dateRows.Close() }()
 
 	detail.OperatingDates = []string{}
 	for dateRows.Next() {
@@ -440,7 +440,7 @@ func (r *Repository) fetchRouteDetail(ctx context.Context, whereClause string, p
 	if err != nil {
 		return nil, fmt.Errorf("query route connections: %w", err)
 	}
-	defer connRows.Close()
+	defer func() { _ = connRows.Close() }()
 
 	for connRows.Next() {
 		var (
@@ -523,7 +523,7 @@ func (r *Repository) GetRouteStations(ctx context.Context, routeID int64) ([]mod
 	if err != nil {
 		return nil, fmt.Errorf("query route stations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	stations, err := scanRouteStations(rows)
 	if err != nil {
@@ -580,7 +580,7 @@ func (r *Repository) GetRouteOperatingDates(ctx context.Context, routeID int64, 
 	if err != nil {
 		return nil, fmt.Errorf("query route operating dates: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var dates []time.Time
 	for rows.Next() {

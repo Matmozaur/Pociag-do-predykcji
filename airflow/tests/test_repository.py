@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-from unittest.mock import MagicMock, call, patch
+from datetime import date
+from unittest.mock import MagicMock, patch
 
 from pociag_processing.repository import SyncRepository
 
