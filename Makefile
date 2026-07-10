@@ -91,7 +91,61 @@ db-psql: ## Open a psql shell to the local database
 # <service>-lint: ## Lint <service>
 # 	cd services/go/<service> && golangci-lint run ./...
 
-.PHONY: processor-format
+# ── Collector service (Go) ────────────────────────────────────────────────────
+
+.PHONY: collector-build
+collector-build: ## Build collector binary with swagger docs
+	cd services/go/collector && swag init -g cmd/main.go -o internal/docs && go build -o /tmp/collector ./cmd
+
+.PHONY: collector-test
+collector-test: ## Run collector tests with race detection
+	cd services/go/collector && go test -race -v ./...
+
+.PHONY: collector-lint
+collector-lint: ## Lint collector
+	cd services/go/collector && golangci-lint run ./...
+
+.PHONY: collector-docs
+collector-docs: ## Generate collector Swagger documentation
+	cd services/go/collector && swag init -g cmd/main.go -o internal/docs
+
+# ── Data Service (Go) ────────────────────────────────────────────────────────
+
+.PHONY: data-service-build
+data-service-build: ## Build data-service binary with swagger docs
+	cd services/go/data-service && swag init -g cmd/main.go -o internal/docs && go build -o /tmp/data-service ./cmd
+
+.PHONY: data-service-test
+data-service-test: ## Run data-service tests
+	cd services/go/data-service && go test -race -v ./...
+
+.PHONY: data-service-lint
+data-service-lint: ## Lint data-service
+	cd services/go/data-service && golangci-lint run ./...
+
+.PHONY: data-service-docs
+data-service-docs: ## Generate data-service Swagger documentation
+	cd services/go/data-service && swag init -g cmd/main.go -o internal/docs
+
+# ── Gateway service (Go) ──────────────────────────────────────────────────────
+
+.PHONY: gateway-build
+gateway-build: ## Build gateway binary with swagger docs
+	cd services/go/gateway && swag init -g cmd/main.go -o internal/docs && go build -o /tmp/gateway ./cmd
+
+.PHONY: gateway-test
+gateway-test: ## Run gateway tests
+	cd services/go/gateway && go test -race -v ./...
+
+.PHONY: gateway-lint
+gateway-lint: ## Lint gateway
+	cd services/go/gateway && golangci-lint run ./...
+
+.PHONY: gateway-docs
+gateway-docs: ## Generate gateway Swagger documentation
+	cd services/go/gateway && swag init -g cmd/main.go -o internal/docs
+
+# ── Processor service (Python) ────────────────────────────────────────────────
 processor-format: ## Format processor Python service
 	$(MAKE) -C services/python/processor format
 
