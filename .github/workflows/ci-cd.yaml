@@ -62,6 +62,9 @@ jobs:
             path: services/go/data-service
           - name: gateway
             path: services/go/gateway
+    defaults:
+      run:
+        working-directory: ${{ matrix.module.path }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,18 +76,15 @@ jobs:
           cache: true
           cache-dependency-path: services/go/**/go.sum
 
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: ${{ matrix.module.path }}
-          args: --timeout=5m ./...
+        run: $(go env GOPATH)/bin/golangci-lint run --timeout=5m ./...
 
   airflow-ci:
     name: Python CI (airflow)
     runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: ${{ github.workspace }}/airflow/plugins
     defaults:
       run:
         working-directory: airflow
@@ -101,13 +101,15 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: |
+          uv sync --all-extras
+          uv pip install -e plugins
 
       - name: Lint (ruff)
         run: uv run ruff check .
 
       - name: Type check (mypy)
-        run: uv run mypy .
+        run: uv run mypy plugins/pociag_processing
 
       - name: Test (pytest)
         run: uv run pytest tests/ -v

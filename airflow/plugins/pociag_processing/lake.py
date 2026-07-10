@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from typing import Any, cast
 
-import boto3  # type: ignore[import-untyped]
+import boto3
 from airflow.hooks.base import BaseHook
 
 from pociag_processing.tracing import get_tracer
+
+
+logger = logging.getLogger("pociag_processing.lake")
 
 
 class LakeReader:
@@ -84,9 +88,7 @@ class LakeReader:
                 try:
                     envelope = json.loads(body)
                     results.append(envelope)
-                    import logging
-                    logging.getLogger("pociag_processing.lake").warning(
-                        "Failed to parse object: %s", key
-                    )
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse object: %s", key)
                     continue
         return results
