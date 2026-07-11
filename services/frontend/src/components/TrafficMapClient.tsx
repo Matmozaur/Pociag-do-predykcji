@@ -1,6 +1,7 @@
 'use client'
 
 import 'leaflet/dist/leaflet.css'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
 import type { Feature, Geometry } from 'geojson'
@@ -19,6 +20,41 @@ const POLAND_BOUNDS: [[number, number], [number, number]] = [
     [49.0, 14.1],
     [54.9, 24.3],
 ]
+
+// Inverted mask: world rectangle with Poland as a hole
+const WORLD_RECT_COORDS = [
+    [-90, -180],
+    [90, -180],
+    [90, 180],
+    [-90, 180],
+    [-90, -180],
+]
+
+function buildMask(polandCoords: [number, number][][]): GeoJSON.Feature {
+    // GeoJSON Polygon: first ring = outer world, second ring = Poland hole
+    // GeoJSON coords are [lng, lat]; Leaflet world rect uses [lat, lng] internally but
+    // GeoJSON spec is [longitude, latitude]
+    return {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+            type: 'Polygon',
+            coordinates: [
+                // outer ring: whole world (counterclockwise in GeoJSON = exterior)
+                [
+                    [-180, -90],
+                    [-180, 90],
+                    [180, 90],
+                    [180, -90],
+                    [-180, -90],
+                ],
+                // inner ring: Poland border (clockwise = hole)
+                // geojson file already in [lng, lat] order — reverse winding for hole
+                [...polandCoords[0]].reverse(),
+            ],
+        },
+    }
+}
 
 function MapLegend() {
     const items = [
@@ -50,7 +86,7 @@ function MapLegend() {
 }
 
 export function TrafficMapClient() {
-    const { data, isLoading } = useQuery({
+    const { data, isLoading } = useQuery<TrafficGeoJSON>({
         queryKey: ['trafficData'],
         queryFn: async () => {
             const res = await fetch('/api/mock/traffic')
@@ -61,6 +97,19 @@ export function TrafficMapClient() {
         },
         staleTime: Infinity,
     })
+
+    const [maskFeature, setMaskFeature] = useState<GeoJSON.Feature | null>(null)
+
+    useEffect(() => {
+        fetch('/poland-border.geojson')
+            .then((r) => r.json())
+            .then((geojson: GeoJSON.Feature<GeoJSON.Polygon>) => {
+                setMaskFeature(buildMask(geojson.geometry.coordinates as [number, number][][]))
+            })
+            .catch(() => {
+                // mask not critical — fail silently
+            })
+    }, [])
 
     return (
         <div className="relative h-full w-full">
@@ -96,6 +145,21 @@ export function TrafficMapClient() {
                     maxZoom={19}
                     noWrap={true}
                 />
+
+                {/* Dark mask covering everything outside Poland's border */}
+                {maskFeature && (
+                    <GeoJSON
+                        key="poland-mask"
+                        data={maskFeature as GeoJSON.Feature<GeoJSON.Geometry>}
+                        style={() => ({
+                            fillColor: '#0a0c14',
+                            fillOpacity: 0.82,
+                            color: '#0a0c14',
+                            weight: 0,
+                        })}
+                        interactive={false}
+                    />
+                )}
 
                 <GeoJSON
                     key="stations"
