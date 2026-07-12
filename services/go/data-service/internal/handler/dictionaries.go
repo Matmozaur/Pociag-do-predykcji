@@ -11,6 +11,19 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// HandleQueryStations queries reference stations by search, city, or external IDs and returns paginated results.
+// @Summary		Query stations
+// @Description	Returns paginated stations matching the given criteria
+// @Tags		dictionaries
+// @Produce		json
+// @Param		q query string false "Search query (station name or city)"
+// @Param		likeCity query string false "Filter by city name (substring match)"
+// @Param		externalIds query string false "Comma-separated external IDs"
+// @Param		limit query int false "Limit (default 50, max 1000)" default(50)
+// @Param		offset query int false "Offset for pagination (default 0)" default(0)
+// @Success		200 {array} model.Station
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Router		/api/v1/stations [get]
 func (h *Handler) HandleQueryStations(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "stations.query")
 	defer span.End()
@@ -47,6 +60,7 @@ func (h *Handler) HandleQueryStations(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleGetStationByExternalId retrieves a single station by its external PKP identifier.
 func (h *Handler) HandleGetStationByExternalId(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "station.get_by_external_id")
 	defer span.End()
@@ -66,6 +80,7 @@ func (h *Handler) HandleGetStationByExternalId(w http.ResponseWriter, r *http.Re
 	h.writeJSON(w, span, http.StatusOK, station)
 }
 
+// HandleListCarriers lists all train carriers (operators).
 func (h *Handler) HandleListCarriers(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "carriers.list")
 	defer span.End()
@@ -81,6 +96,7 @@ func (h *Handler) HandleListCarriers(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, span, http.StatusOK, model.CarrierListResponse{Data: carriers})
 }
 
+// HandleListCommercialCategories lists all train commercial categories (e.g. IC, TLK, REG).
 func (h *Handler) HandleListCommercialCategories(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "commercial_categories.list")
 	defer span.End()
@@ -96,6 +112,7 @@ func (h *Handler) HandleListCommercialCategories(w http.ResponseWriter, r *http.
 	h.writeJSON(w, span, http.StatusOK, model.CommercialCategoryListResponse{Data: categories})
 }
 
+// HandleListStopTypes lists all station stop types (e.g. platform, station, stop).
 func (h *Handler) HandleListStopTypes(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "stop_types.list")
 	defer span.End()

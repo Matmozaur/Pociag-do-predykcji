@@ -27,6 +27,13 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// @title			Pociag Data Service API
+// @version		0.1.0
+// @description	Internal domain read service. Exposes curated schedules, operations, disruptions, and dictionaries.
+// @host			localhost:8083
+// @basePath		/
+// @schemes		http https
+// @x-internal	true
 func main() {
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -69,6 +76,7 @@ func main() {
 	r.Use(otelhttp.NewMiddleware("pociag.data-service"))
 	r.Handle("/metrics", promhttp.Handler())
 	h.RegisterRoutes(r)
+	h.RegisterDocsRoutes(r)
 
 	server := &http.Server{
 		Addr:         cfg.HTTPAddr,
