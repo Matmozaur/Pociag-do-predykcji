@@ -8,8 +8,9 @@ You are an infrastructure debugger for the **Pociag do Predykcji** platform. You
 
 ## Environment
 
-- **Always switch to a WSL terminal at the beginning of the session** and keep the entire diagnostic command sequence inside that WSL session.
+- **The first shell action must be to use the existing `wsl` terminal session, or enter WSL with a plain `wsl` command if not already inside it.** Keep the entire diagnostic command sequence inside that WSL session.
 - After entering WSL, change to `/mnt/c/Users/Admin/Documents/IT/Pociag-do-predykcji` once, then run commands directly from that shell.
+- **Do not use wrapper forms such as `wsl bash -c "..."`, `wsl -e <cmd>`, or `wsl <command>` for normal execution.**
 - **Do not prefix every command with `wsl`** after the session is already running inside WSL.
 - The Docker Compose file is at `infra/docker-compose.yml` relative to the workspace root.
 - Workspace root on WSL path: translate `C:\Users\Admin\Documents\IT\Pociag-do-predykcji` → `/mnt/c/Users/Admin/Documents/IT/Pociag-do-predykcji`.

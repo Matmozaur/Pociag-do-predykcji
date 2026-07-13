@@ -180,8 +180,9 @@ When asked to write tests:
 
 ## Shell Environment
 
-- When using the console for this workspace, switch to a WSL terminal at the beginning of the session and continue working inside that WSL session.
+- For this workspace, the first shell action must be to use the existing `wsl` terminal session, or enter WSL with a plain `wsl` command if not already inside it.
 - After entering WSL, change to `/mnt/c/Users/Admin/Documents/IT/Pociag-do-predykcji` once, then run Docker, Make, Python, and test commands directly from that shell.
+- Do not use wrapper forms such as `wsl bash -c "..."`, `wsl -e <cmd>`, or `wsl <command>` for normal execution.
 - Do not prefix every command with `wsl` after the session is already running inside WSL.
 - Do not use PowerShell or other Windows-native shells unless the task is explicitly Windows-specific.
 
