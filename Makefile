@@ -52,7 +52,7 @@ infra-logs: ## Follow logs from all running infra containers
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
-DB_URL ?= postgres://pociag:pociag_dev_secret@localhost:5432/pociag?sslmode=disable
+DB_URL ?= postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable
 
 .PHONY: db-migrate-up
 db-migrate-up: ## Apply all pending migrations
