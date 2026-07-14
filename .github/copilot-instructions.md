@@ -1,207 +1,79 @@
 # Copilot Workspace Instructions
 
-## Project Overview
+These instructions are for AI coding agents working in this repository.
 
-**Pociag do Predykcji** ("Train to Prediction") is a data monitoring and prediction platform.
-The architecture, services, and data models are defined incrementally through specs — do not
-assume or invent components that are not described in `specs/`.
+## Start Here
 
-## Spec-Driven Development Workflow
+- Read [README.md](../README.md) for local setup and entry commands.
+- Read [docs/architecture.md](../docs/architecture.md) for system boundaries.
+- Treat contracts in [specs/openapi](../specs/openapi), [specs/asyncapi](../specs/asyncapi), and [specs/schemas](../specs/schemas) as source of truth.
 
-> **Always consult `specs/` before generating any code.**
+## Contract-First Rules
 
-1. **Spec first** — API contracts, data schemas, and event definitions live in `specs/`.
-   Code must match the spec exactly. If a spec is ambiguous, flag it rather than guessing.
-2. **Implement from spec** — use the `#implement-from-spec` prompt to scaffold or fill in
-   a service from an OpenAPI/AsyncAPI spec.
-3. **Update spec with code** — if implementation reveals a necessary spec change, update the
-   spec file first, then update the code.
-4. **No accidental contracts** — do not add endpoints, fields, or events that are not in the spec.
+1. Specs first: do not add endpoints, fields, events, or schema attributes not defined in specs.
+2. If implementation requires a contract change, update specs first, then code.
+3. If docs disagree, trust these files in order:
+   - [infra/docker-compose.yml](../infra/docker-compose.yml) for runtime ports/services
+   - [.github/workflows/ci-cd.yaml](workflows/ci-cd.yaml) for CI build/lint/test behavior
+   - [Makefile](../Makefile) for local command entrypoints
 
-## Repository Layout
+## Current Architecture Snapshot
 
-```
-.github/
-  copilot-instructions.md   ← you are here
-  prompts/                  ← reusable Copilot prompt files
-specs/
-  openapi/                  ← OpenAPI 3.1 service API contracts
-  asyncapi/                 ← AsyncAPI event/message contracts (if needed)
-  schemas/                  ← JSON Schema domain entity definitions
-services/
-  go/
-    <service-name>/         ← microservice (one per subdirectory)
-airflow/
-  dags/                     ← Airflow DAG definitions
-  plugins/                  ← custom Airflow operators/hooks
-db/
-  migrations/               ← numbered SQL migration files
-infra/
-  docker-compose.yml        ← infrastructure services only (db, otel, etc.)
-  otel-collector-config.yml ← OpenTelemetry Collector config
-docs/
-  decisions/                ← Architecture Decision Records (ADRs)
-  copilot-cli.md
-Makefile                    ← all developer tasks
-```
+- Go services:
+  - collector: PLK ingest to MinIO raw Parquet
+  - data-service: read API over curated Postgres tables
+  - gateway: frontend-facing BFF
+- Python processing runs as an Airflow plugin, not a standalone processor API service.
+- Frontend exists in [services/frontend](../services/frontend).
+- Airflow DAGs and plugin code live in [airflow/dags](../airflow/dags) and [airflow/plugins](../airflow/plugins).
+- Historical context for the processor move: [docs/decisions/003-processor-to-airflow-plugin.md](../docs/decisions/003-processor-to-airflow-plugin.md).
 
-## Tech Stack
+## Coding Conventions
 
-| Layer | Technology |
-|---|---|
-| Go services | Go 1.23+ |
-| Python services | Python 3.12+, FastAPI |
-| Orchestration | Apache Airflow 2.9+ |
-| Database | PostgreSQL 16 |
-| Migrations | golang-migrate (SQL files) |
-| Tracing | OpenTelemetry → Jaeger |
-| Metrics | OpenTelemetry → Prometheus |
-| Logging | Structured JSON (zap in Go, structlog in Python) |
-| Container runtime | Docker Compose (local), Kubernetes (prod) |
+### Go
 
-## Go Conventions
+- Always pass context.Context as the first parameter.
+- Use net/http and chi.
+- Use pgx with parameterized SQL only.
+- Instrument handlers and DB operations with OpenTelemetry.
+- Wrap errors with context using fmt.Errorf("...: %w", err).
 
-- Module path: `github.com/pociag-do-predykcji/services/go/<service-name>`
-- Use **`internal/`** for all non-exported packages; `cmd/` for entrypoints.
-- Configuration via environment variables only; use a `config` package that reads with `os.LookupEnv`.
-- **Always** propagate `context.Context` as the first parameter.
-- Use `pgx/v5` directly (no ORM) for database access; queries live in `internal/repository/`.
-- HTTP server: standard `net/http` with `chi` router.
-- **Tracing**: instrument every HTTP handler and DB call with `go.opentelemetry.io/otel`.
-- Error wrapping: `fmt.Errorf("operation: %w", err)` — never swallow errors.
-- Tests: `_test.go` files alongside the code; use `testcontainers-go` for DB integration tests.
-- Linting: `golangci-lint` with `.golangci.yml` at service root.
+### Python (Airflow + plugin)
 
-```go
-// Example handler signature
-func (h *Handler) HandleFetch(w http.ResponseWriter, r *http.Request) {
-    ctx, span := otel.Tracer("pociag.<service>").Start(r.Context(), "<resource>.fetch")
-    defer span.End()
-    // ...
-}
-```
+- Use uv-managed environments.
+- Keep type annotations throughout; maintain mypy cleanliness.
+- Keep DAGs idempotent and use Airflow connections/hooks for external systems.
+- Never hardcode credentials; use env vars or Airflow connections.
 
-## Python Conventions
+### Database and Security
 
-- Package manager: **uv**; `pyproject.toml` (PEP 621) at service root.
-- Source layout: `src/<package>/` (import-mode = importlib).
-- HTTP framework: **FastAPI** with async handlers.
-- DB access: **asyncpg** + raw SQL; queries in `src/<pkg>/repository.py`.
-- **Tracing**: `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`.
-- Logging: `structlog` configured to emit JSON.
-- Type annotations required everywhere; validated with `mypy --strict`.
-- Tests: **pytest** + `pytest-asyncio`; use `testcontainers` for Postgres integration tests.
-- Linting: `ruff` for lint + format.
+- Migration naming: db/migrations/NNN_description.up.sql and .down.sql.
+- Use parameterized SQL only; never concatenate untrusted values.
+- Do not log secrets or sensitive payloads.
 
-```python
-# Example endpoint signature
-@router.get("/<resources>/{id}")
-async def get_resource(
-    id: int,
-    db: AsyncConnection = Depends(get_db),
-    tracer: Tracer = Depends(get_tracer),
-) -> ResourceResponse:
-    with tracer.start_as_current_span("<resource>.fetch"):
-        ...
-```
+## Command Surface
 
-## Airflow DAG Conventions
-
-- All DAGs use the **`@dag` decorator** (TaskFlow API).
-- Use `@task` for Python callables; use `DockerOperator` or `KubernetesPodOperator` for heavy jobs.
-- DAG IDs: `snake_case`, descriptive, e.g. `ingest_source_daily`.
-- Schedule via cron string or `timedelta`; always set `catchup=False` unless backfill is intentional.
-- Connections stored in Airflow Connections, never hardcoded.
-- DAGs must be **idempotent** — re-running a DAG for the same date must be safe.
-- Always define `default_args` with `retries=2` and `retry_delay=timedelta(minutes=5)`.
-
-```python
-# DAG skeleton
-from airflow.decorators import dag, task
-from datetime import datetime, timedelta
-
-@dag(
-    dag_id="<dag_id>",
-    schedule="@daily",
-    start_date=datetime(2025, 1, 1),
-    catchup=False,
-    default_args={"retries": 2, "retry_delay": timedelta(minutes=5)},
-    tags=["pociag"],
-)
-def my_dag():
-    @task
-    def extract() -> dict: ...
-
-    @task
-    def load(data: dict) -> None: ...
-
-    load(extract())
-```
-
-## Database Conventions
-
-- Migration files: `db/migrations/<NNN>_<description>.{up,down}.sql` (zero-padded 3 digits).
-- Schema naming: `snake_case` for tables and columns.
-- Every table must have `id BIGSERIAL PRIMARY KEY`, `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`.
-- Indexes: create explicitly in migrations, not via ORM magic.
-- Never `DROP` columns in a migration — add new columns and deprecate old ones.
-- Use transactions in migrations; wrap each migration in `BEGIN; ... COMMIT;`.
-
-## Observability
-
-### Tracing
-- Service names follow pattern: `pociag.<service>` (e.g. `pociag.ingestor`, `pociag.api`).
-- Span names: `<noun>.<verb>` (e.g. `record.fetch`, `job.run`).
-- Add span attributes for key business dimensions (record ID, source name, model version, etc.).
-- All inter-service calls must propagate W3C TraceContext headers.
-
-### Metrics
-- Expose a `/metrics` endpoint (Prometheus scrape) on each service.
-- Standard metrics per service: request count, request duration (histogram), active connections.
-
-### Logging
-- Emit structured JSON logs with fields: `level`, `ts`, `service`, `trace_id`, `span_id`, `msg`.
-- Never log sensitive data (credentials, PII).
-
-## Testing Guidelines
-
-When asked to write tests:
-1. Write unit tests first, mock external dependencies.
-2. Write integration tests with real DB using testcontainers.
-3. Aim for ≥ 80% coverage on business logic packages.
-4. Test names: `Test<Function>_<Scenario>_<ExpectedBehavior>`.
-
-## Security Guidelines
-
-- Never hardcode secrets; use environment variables or secret managers.
-- Validate all external input at service boundaries.
-- Use parameterized queries — never string-concatenate SQL.
-- Dependencies: run `govulncheck` (Go) and `pip audit` / `uv pip audit` (Python) in CI.
+- Preferred local entrypoint: [Makefile](../Makefile).
+- Useful targets:
+  - infra-up, infra-up-tracing, infra-up-monitoring, infra-up-airflow, infra-up-all, infra-down
+  - db-migrate-up, db-migrate-down, db-migrate-status
+  - collector-test, data-service-test, gateway-test
+  - collector-lint, data-service-lint, gateway-lint
+- CI reference for exact checks: [.github/workflows/ci-cd.yaml](workflows/ci-cd.yaml).
 
 ## Shell Environment
 
-- For this workspace, the first shell action must be to use the existing `wsl` terminal session, or enter WSL with a plain `wsl` command if not already inside it.
-- After entering WSL, change to `/mnt/c/Users/Admin/Documents/IT/Pociag-do-predykcji` once, then run Docker, Make, Python, and test commands directly from that shell.
-- Do not use wrapper forms such as `wsl bash -c "..."`, `wsl -e <cmd>`, or `wsl <command>` for normal execution.
-- Do not prefix every command with `wsl` after the session is already running inside WSL.
-- Do not use PowerShell or other Windows-native shells unless the task is explicitly Windows-specific.
+- First shell action should use the existing WSL terminal session (or enter WSL with plain wsl once).
+- After entering WSL, switch to /mnt/c/Users/Admin/Documents/IT/Pociag-do-predykcji and run commands there.
+- Do not use wrapper forms such as wsl bash -c or wsl -e for normal execution.
+- Avoid PowerShell for repo tasks unless the task is explicitly Windows-specific.
 
-## GitHub Copilot CLI
+## Known Drift to Watch
 
-Use `gh copilot` for shell command assistance during development:
+- Some task/docs references still mention services/python/predictor; current Python execution path is Airflow plugin-based.
+- Some historical docs list older host ports; use [infra/docker-compose.yml](../infra/docker-compose.yml) as the runtime source of truth.
 
-```bash
-# Suggest a command to accomplish a goal
-gh copilot suggest "run only the <service> tests with race detection"
+## Additional References
 
-# Explain an unfamiliar command
-gh copilot explain "docker compose --profile tracing up -d"
-```
-
-Alias recommendations (add to shell profile):
-```bash
-alias gcs='gh copilot suggest'
-alias gce='gh copilot explain'
-```
-
-See `docs/copilot-cli.md` for detailed usage patterns.
+- Architecture decision records: [docs/decisions](../docs/decisions)
+- Copilot CLI usage patterns: [docs/copilot-cli.md](../docs/copilot-cli.md)
