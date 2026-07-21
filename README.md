@@ -48,6 +48,12 @@ cd services/python/predictor && uv run pytest tests/ -v
 cd services/python/predictor && uv run ruff check src/ tests/ && uv run mypy src/
 ```
 
+## OpenCode
+
+Project configuration, specialist agents, workflow commands, and language skills are
+versioned in `opencode.json` and `.opencode/`. See [docs/opencode.md](docs/opencode.md)
+for installation, authentication, and usage.
+
 ## Port mapping
 
 Use this to verify what is reachable from your host.
