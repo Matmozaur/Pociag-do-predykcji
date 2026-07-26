@@ -26,11 +26,42 @@ def test_process_schedules_success(mock_repo_cls: MagicMock, mock_lake_cls: Magi
     ]
     mock_repo.upsert_routes.return_value = UpsertResult(records_read=1, records_written=1)
 
-    result = process_schedules(date_from=date(2025, 6, 1), date_to=date(2025, 6, 7))
+    result = process_schedules(
+        date_from=date(2025, 6, 1), date_to=date(2025, 6, 7), ingestion_run_id=42
+    )
 
     assert result.status == "success"
     assert result.records_written == 1
+    mock_lake.read_raw_schedules.assert_called_once_with(date(2025, 6, 1), date(2025, 6, 7), 42)
     mock_repo.mark_processing_run_success.assert_called_once_with(1, 1, 1)
+
+
+@patch("pociag_processing.pipelines.schedules.LakeReader")
+@patch("pociag_processing.pipelines.schedules.SyncRepository")
+def test_process_schedules_processes_route_detail_payload(
+    mock_repo_cls: MagicMock, mock_lake_cls: MagicMock
+) -> None:
+    mock_repo = mock_repo_cls.return_value
+    mock_lake = mock_lake_cls.return_value
+    mock_repo.is_pipeline_running.return_value = False
+    mock_repo.create_processing_run.return_value = 1
+    # Exact shape returned by GET /api/v1/schedules/route/{scheduleId}/{orderId}.
+    route_detail = {
+        "scheduleId": 1,
+        "orderId": 2,
+        "trainOrderId": 2,
+        "name": "Train A",
+        "operatingDates": ["2025-06-01"],
+        "stations": [],
+        "connections": [],
+    }
+    mock_lake.read_raw_schedules.return_value = [{"metadata": {}, "payload": route_detail}]
+    mock_repo.upsert_routes.return_value = UpsertResult(records_read=1, records_written=1)
+
+    result = process_schedules(date(2025, 6, 1), date(2025, 6, 7))
+
+    assert result.records_written == 1
+    mock_repo.upsert_routes.assert_called_once_with([route_detail])
 
 
 @patch("pociag_processing.pipelines.schedules.LakeReader")

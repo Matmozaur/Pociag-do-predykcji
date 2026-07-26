@@ -11,7 +11,7 @@ from pociag_processing.tracing import get_tracer
 
 
 def process_operations(
-    operating_date: date,
+    capture_date: date,
     ingestion_run_id: int | None = None,
 ) -> ProcessResult:
     tracer = get_tracer()
@@ -19,7 +19,7 @@ def process_operations(
         repository = SyncRepository()
         lake = LakeReader()
 
-        if repository.is_pipeline_running("operations", operating_date):
+        if repository.is_pipeline_running("operations", capture_date):
             return ProcessResult(
                 pipeline="operations",
                 status="failed",
@@ -29,18 +29,18 @@ def process_operations(
                 duration_ms=0,
             )
 
-        run_id = repository.create_processing_run("operations", operating_date)
+        run_id = repository.create_processing_run("operations", capture_date)
         started = perf_counter()
         try:
-            envelopes = lake.read_raw_operations(operating_date, ingestion_run_id)
+            envelopes = lake.read_raw_operations(capture_date, ingestion_run_id)
             total_read = 0
             total_written = 0
             for env in envelopes:
                 payload = env.get("payload", {})
-                operations: list[dict[str, Any]] = payload.get("operations", [])
+                operations: list[dict[str, Any]] = payload.get("trains", [])
                 if not operations:
                     continue
-                result = repository.upsert_operations(operations, operating_date)
+                result = repository.upsert_operations(operations)
                 total_read += result.records_read
                 total_written += result.records_written
 

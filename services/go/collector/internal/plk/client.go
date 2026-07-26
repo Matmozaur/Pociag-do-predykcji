@@ -40,7 +40,6 @@ func New(baseURL string, apiKey string, httpClient *http.Client) *Client {
 func (c *Client) FetchDictionaries(ctx context.Context) (map[string][]byte, error) {
 	endpoints := map[string]string{
 		"carriers":              "/api/v1/dictionaries/carriers",
-		"stations":              "/api/v1/dictionaries/stations",
 		"commercial_categories": "/api/v1/dictionaries/commercial-categories",
 		"stop_types":            "/api/v1/dictionaries/stop-types",
 		"cities":                "/api/v1/dictionaries/cities",
@@ -58,20 +57,28 @@ func (c *Client) FetchDictionaries(ctx context.Context) (map[string][]byte, erro
 	return results, nil
 }
 
-func (c *Client) FetchSchedules(ctx context.Context, dateFrom time.Time, dateTo time.Time, page int, pageSize int) ([]byte, error) {
-	return c.doGET(ctx, "plk.schedules.fetch", "/api/v1/schedules", map[string]string{
-		"dateFrom": dateFrom.Format("2006-01-02"),
-		"dateTo":   dateTo.Format("2006-01-02"),
+// FetchStationPage fetches one documented stations page. The response's totalPages
+// field determines whether the caller must request further pages.
+func (c *Client) FetchStationPage(ctx context.Context, page int, pageSize int) ([]byte, error) {
+	return c.doGET(ctx, "plk.stations.fetch", "/api/v1/dictionaries/stations", map[string]string{
 		"page":     fmt.Sprintf("%d", page),
 		"pageSize": fmt.Sprintf("%d", pageSize),
 	})
 }
 
-func (c *Client) FetchOperations(ctx context.Context, operatingDate time.Time, page int, pageSize int) ([]byte, error) {
+func (c *Client) FetchScheduleRoutes(ctx context.Context, date time.Time) ([]byte, error) {
+	return c.doGET(ctx, "plk.schedule_routes.fetch", "/api/v1/schedules/routes/"+date.Format("2006-01-02"), nil)
+}
+
+func (c *Client) FetchScheduleRoute(ctx context.Context, scheduleID int, orderID int) ([]byte, error) {
+	return c.doGET(ctx, "plk.schedule_route.fetch", fmt.Sprintf("/api/v1/schedules/route/%d/%d", scheduleID, orderID), nil)
+}
+
+func (c *Client) FetchOperations(ctx context.Context, page int, pageSize int) ([]byte, error) {
 	return c.doGET(ctx, "plk.operations.fetch", "/api/v1/operations", map[string]string{
-		"date":     operatingDate.Format("2006-01-02"),
-		"page":     fmt.Sprintf("%d", page),
-		"pageSize": fmt.Sprintf("%d", pageSize),
+		"page":        fmt.Sprintf("%d", page),
+		"pageSize":    fmt.Sprintf("%d", pageSize),
+		"withPlanned": "true",
 	})
 }
 

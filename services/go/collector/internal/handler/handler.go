@@ -37,8 +37,7 @@ type fetchSchedulesRequest struct {
 }
 
 type fetchOperationsRequest struct {
-	Date  string `json:"date"`
-	Force bool   `json:"force"`
+	Force bool `json:"force"`
 }
 
 type fetchDisruptionsRequest struct {
@@ -113,7 +112,7 @@ func (h *Handler) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 // @Summary		Fetch all dictionaries from PLK API
 // @Description	Fetches all PLK dictionaries and lands raw payloads into data lake
 // @Tags		fetch
-// @Success		200 {object} service.FetchResult
+// @Success		200 {object} service.FetchDictionariesResult
 // @Failure		502 {object} errorResponse "Upstream PLK API error"
 // @Router		/api/v1/fetch/dictionaries [post]
 func (h *Handler) HandleFetchDictionaries(w http.ResponseWriter, r *http.Request) {
@@ -178,16 +177,16 @@ func (h *Handler) HandleFetchSchedules(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, span, http.StatusOK, result)
 }
 
-// HandleFetchOperations fetches operations from PLK API for a specific date into raw landing.
+// HandleFetchOperations fetches current operations from PLK API into raw landing.
 // @Summary		Fetch train operations from PLK API
-// @Description	Pulls operations for a date and lands raw payloads. Includes planned/actual timing data and handles pagination internally.
+// @Description	Pulls current operations and lands raw payloads. Includes planned/actual timing data and handles pagination internally.
 // @Tags		fetch
 // @Accept		json
 // @Produce		json
-// @Param		body body fetchOperationsRequest true "Date and force flag"
+// @Param		body body fetchOperationsRequest true "Force flag"
 // @Success		200 {object} service.FetchResult
 // @Failure		400 {object} errorResponse "Bad request"
-// @Failure		409 {object} errorResponse "Fetch already running for this date"
+// @Failure		409 {object} errorResponse "Fetch already running"
 // @Failure		502 {object} errorResponse "Upstream PLK API error"
 // @Router		/api/v1/fetch/operations [post]
 func (h *Handler) HandleFetchOperations(w http.ResponseWriter, r *http.Request) {
@@ -200,14 +199,7 @@ func (h *Handler) HandleFetchOperations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	date, err := parseDate(req.Date)
-	if err != nil {
-		h.writeError(w, span, http.StatusBadRequest, "invalid_request", "date must be in YYYY-MM-DD format")
-		return
-	}
-
 	result, err := h.svc.FetchOperations(ctx, service.FetchOperationsRequest{
-		Date:  date,
 		Force: req.Force,
 	})
 	if err != nil {

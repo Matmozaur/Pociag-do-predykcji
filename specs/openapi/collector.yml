@@ -110,7 +110,7 @@ paths:
     post:
       summary: Fetch train operations from PLK API into raw landing
       description: |
-        Pulls operations for a date and lands raw payloads.
+        Pulls currently available operations and lands raw payloads.
         Includes planned/actual timing data and handles pagination internally.
       operationId: fetchOperations
       tags: [fetch]
@@ -130,7 +130,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: Fetch already running for this date
+          description: Fetch already running
           content:
             application/json:
               schema:
@@ -257,13 +257,8 @@ components:
 
     FetchOperationsRequest:
       type: object
-      required: [date]
       additionalProperties: false
       properties:
-        date:
-          type: string
-          format: date
-          description: Operating date to fetch operations for
         force:
           type: boolean
           default: false
@@ -291,9 +286,13 @@ components:
 
     FetchDictionariesResult:
       type: object
-      required: [fetched_types]
+      required: [run_id, fetched_types]
       additionalProperties: false
       properties:
+        run_id:
+          type: integer
+          format: int64
+          description: ID of the ingestion run that wrote the raw data
         fetched_types:
           type: object
           additionalProperties:
@@ -309,9 +308,13 @@ components:
 
     FetchResult:
       type: object
-      required: [pipeline, status, records_fetched, pages_landed]
+      required: [run_id, pipeline, status, records_fetched, pages_landed]
       additionalProperties: false
       properties:
+        run_id:
+          type: integer
+          format: int64
+          description: ID of the ingestion run that wrote the raw data
         pipeline:
           type: string
           description: Pipeline name
