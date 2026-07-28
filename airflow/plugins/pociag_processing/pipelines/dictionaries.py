@@ -18,6 +18,7 @@ def _upsert_dictionary(
     dict_key_map: dict[str, str] = {
         "carriers": "carriers",
         "stations": "stations",
+        "cities": "cities",
         "commercial_categories": "commercialCategories",
         "stop_types": "stopTypes",
     }
@@ -33,6 +34,8 @@ def _upsert_dictionary(
         return repository.upsert_carriers(records)
     if dtype == "stations":
         return repository.upsert_stations(records)
+    if dtype == "cities":
+        return repository.upsert_station_cities(records)
     if dtype == "commercial_categories":
         return repository.upsert_commercial_categories(records)
     if dtype == "stop_types":
@@ -62,11 +65,22 @@ def process_dictionaries(run_date: date, ingestion_run_id: int | None = None) ->
             envelopes = lake.read_raw_dictionaries(ingestion_run_id, run_date)
             total_read = 0
             total_written = 0
+            city_payloads: list[dict[str, Any]] = []
             for env in envelopes:
                 meta = env.get("metadata", {})
                 dtype = meta.get("dictionary_type", "")
                 payload = env.get("payload", {})
+                if dtype == "cities":
+                    city_payloads.append(payload)
+                    continue
                 result = _upsert_dictionary(repository, dtype, payload)
+                total_read += result.records_read
+                total_written += result.records_written
+
+            # City records only reference stations, so apply them after every
+            # station envelope regardless of the object listing order.
+            for payload in city_payloads:
+                result = _upsert_dictionary(repository, "cities", payload)
                 total_read += result.records_read
                 total_written += result.records_written
 

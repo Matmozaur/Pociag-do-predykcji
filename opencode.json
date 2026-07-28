@@ -13,6 +13,24 @@
         "-y",
         "@upstash/context7-mcp"
       ]
+    },
+    "postgres": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "set -ae; eval \"$(tr -d '\\r' < infra/.env)\"; . .opencode/.env; exec npx -y @bytebase/dbhub@0.23.0 --config .opencode/dbhub.toml"
+      ],
+      "timeout": 30000
+    },
+    "airflow": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "set -ae; eval \"$(tr -d '\\r' < infra/.env)\"; . .opencode/.env; AIRFLOW_URL=http://127.0.0.1:8090 AIRFLOW_API_PREFIX=/api/v1 AIRFLOW_AUTH_MODE=basic AIRFLOW_USERNAME=\"$OPENCODE_AIRFLOW_USERNAME\" AIRFLOW_PASSWORD=\"$OPENCODE_AIRFLOW_PASSWORD\" exec uvx airflow-dev-mcp"
+      ],
+      "timeout": 30000
     }
   },
   "instructions": [

@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Any, cast
 
 import httpx
 from airflow.decorators import dag, task
 from airflow.hooks.base import BaseHook
+
+
+def _fetch_run_id(fetch_result: object) -> int | None:
+    if not isinstance(fetch_result, dict):
+        return None
+    value: Any = fetch_result.get("run_id", fetch_result.get("runId"))
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None
 
 
 @dag(
@@ -28,7 +40,7 @@ def sync_dictionaries_weekly() -> None:
             timeout=300,
         )
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, object], response.json())
 
     @task
     def process_dictionaries(fetch_result: dict[str, object]) -> dict[str, str | int]:
@@ -36,7 +48,7 @@ def sync_dictionaries_weekly() -> None:
             process_dictionaries as run,
         )
 
-        result = run(run_date=date.today(), ingestion_run_id=fetch_result.get("run_id"))
+        result = run(run_date=date.today(), ingestion_run_id=_fetch_run_id(fetch_result))
         return {
             "status": result.status,
             "records_written": result.records_written,
@@ -44,7 +56,7 @@ def sync_dictionaries_weekly() -> None:
         }
 
     result = fetch_dictionaries()
-    process_dictionaries(result)
+    process_dictionaries(result)  # type: ignore[arg-type]
 
 
 sync_dictionaries_weekly()

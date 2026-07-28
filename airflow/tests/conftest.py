@@ -21,6 +21,7 @@ def mock_repo() -> MagicMock:
         repo.upsert_stop_types.return_value = UpsertResult(records_read=0, records_written=0)
         repo.upsert_routes.return_value = UpsertResult(records_read=0, records_written=0)
         repo.upsert_operations.return_value = UpsertResult(records_read=0, records_written=0)
+        repo.upsert_disruption_types.return_value = UpsertResult(records_read=0, records_written=0)
         repo.upsert_disruptions.return_value = UpsertResult(records_read=0, records_written=0)
         yield repo
 

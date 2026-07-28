@@ -56,16 +56,17 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) PutRawDictionaries(ctx context.Context, dictionaryType string, payload []byte, recordCount int, runID int64) (string, error) {
+func (s *Store) PutRawDictionaries(ctx context.Context, dictionaryType string, page int, payload []byte, recordCount int, runID int64) (string, error) {
 	ctx, span := s.tracer.Start(ctx, "lake.dictionaries.put")
 	defer span.End()
 
 	now := time.Now().UTC()
-	key := fmt.Sprintf("raw/dictionaries/%d/%02d/%02d/run_%d_%s.parquet",
-		now.Year(), now.Month(), now.Day(), runID, dictionaryType)
+	key := fmt.Sprintf("raw/dictionaries/%d/%02d/%02d/run_%d_%s_page_%d.parquet",
+		now.Year(), now.Month(), now.Day(), runID, dictionaryType, page)
 
 	data, err := wrapAsParquetJSON(payload, map[string]string{
 		"dictionary_type":  dictionaryType,
+		"page":             fmt.Sprintf("%d", page),
 		"record_count":     fmt.Sprintf("%d", recordCount),
 		"ingestion_run_id": fmt.Sprintf("%d", runID),
 		"fetched_at":       now.Format(time.RFC3339),
@@ -107,15 +108,15 @@ func (s *Store) PutRawSchedules(ctx context.Context, dateFrom time.Time, dateTo 
 	return key, nil
 }
 
-func (s *Store) PutRawOperations(ctx context.Context, operatingDate time.Time, page int, payload []byte, recordCount int, runID int64) (string, error) {
+func (s *Store) PutRawOperations(ctx context.Context, captureDate time.Time, page int, payload []byte, recordCount int, runID int64) (string, error) {
 	ctx, span := s.tracer.Start(ctx, "lake.operations.put")
 	defer span.End()
 
 	key := fmt.Sprintf("raw/operations/%d/%02d/%02d/run_%d_page_%d.parquet",
-		operatingDate.Year(), operatingDate.Month(), operatingDate.Day(), runID, page)
+		captureDate.Year(), captureDate.Month(), captureDate.Day(), runID, page)
 
 	data, err := wrapAsParquetJSON(payload, map[string]string{
-		"operating_date":   operatingDate.Format("2006-01-02"),
+		"capture_date":     captureDate.Format("2006-01-02"),
 		"page":             fmt.Sprintf("%d", page),
 		"record_count":     fmt.Sprintf("%d", recordCount),
 		"ingestion_run_id": fmt.Sprintf("%d", runID),

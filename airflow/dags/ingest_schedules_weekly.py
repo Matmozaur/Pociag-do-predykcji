@@ -3,10 +3,23 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Any, cast
 
 import httpx
 from airflow.decorators import dag, task
 from airflow.hooks.base import BaseHook
+from airflow.sensors.external_task import ExternalTaskSensor
+
+
+def _fetch_run_id(fetch_result: object) -> int | None:
+    if not isinstance(fetch_result, dict):
+        return None
+    value: Any = fetch_result.get("run_id", fetch_result.get("runId"))
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None
 
 
 @dag(
@@ -50,7 +63,7 @@ def ingest_schedules_weekly() -> None:
             timeout=600,
         )
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, object], response.json())
 
     @task
     def process_schedules(fetch_result: dict[str, object]) -> dict[str, str | int]:
@@ -60,7 +73,11 @@ def ingest_schedules_weekly() -> None:
 
         today = date.today()
         date_to = today + timedelta(days=14)
-        result = run(date_from=today, date_to=date_to, ingestion_run_id=fetch_result.get("run_id"))
+        result = run(
+            date_from=today,
+            date_to=date_to,
+            ingestion_run_id=_fetch_run_id(fetch_result),
+        )
         return {
             "status": result.status,
             "records_written": result.records_written,
@@ -68,7 +85,7 @@ def ingest_schedules_weekly() -> None:
         }
 
     @task
-    def verify_result(result: dict) -> None:
+    def verify_result(result: dict[str, str | int]) -> None:
         records = result.get("records_written", 0)
         status = result.get("status", "unknown")
         if status != "success":
@@ -76,12 +93,22 @@ def ingest_schedules_weekly() -> None:
         print(f"Schedules processed successfully: {records} records written")
 
     needs_run = check_last_run()
-    proceed = should_proceed(needs_run)
+    proceed = should_proceed(needs_run)  # type: ignore[arg-type]
+    dictionaries_complete = ExternalTaskSensor(
+        task_id="wait_for_dictionaries",
+        external_dag_id="sync_dictionaries_weekly",
+        external_task_id="process_dictionaries",
+        allowed_states=["success"],
+        failed_states=["failed", "upstream_failed"],
+        mode="reschedule",
+        poke_interval=60,
+        timeout=3600,
+    )
     fetch_result = fetch_schedules()
-    process_result = process_schedules(fetch_result)
-    verify_result(process_result)
+    process_result = process_schedules(fetch_result)  # type: ignore[arg-type]
+    verify_result(process_result)  # type: ignore[arg-type]
 
-    proceed >> fetch_result >> process_result
+    proceed >> dictionaries_complete >> fetch_result >> process_result
 
 
 ingest_schedules_weekly()

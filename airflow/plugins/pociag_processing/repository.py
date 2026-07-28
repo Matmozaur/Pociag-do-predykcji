@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -8,6 +9,8 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from pociag_processing.models import PipelineName, UpsertResult
 from pociag_processing.tracing import get_tracer
+
+logger = logging.getLogger(__name__)
 
 _ISO_DUR = re.compile(
     r"^P(?:(?P<days>\d+)D)?"
@@ -243,6 +246,37 @@ class SyncRepository:
                 conn.close()
         return UpsertResult(records_read=len(records), records_written=len(records))
 
+    def upsert_station_cities(self, records: list[dict[str, Any]]) -> UpsertResult:
+        query = """
+        UPDATE stations
+        SET city = %s,
+            updated_at = NOW()
+        WHERE external_id = %s
+        """
+        records_read = 0
+        records_written = 0
+        with self._tracer.start_as_current_span("db.stations.cities.upsert"):
+            conn = self._get_conn()
+            try:
+                with conn.cursor() as cur:
+                    for city in records:
+                        city_name = city.get("name")
+                        if not isinstance(city_name, str) or not city_name.strip():
+                            logger.warning("Skipping city record without a nonempty name")
+                            continue
+                        station_ids: list[int] = city.get("stationIds") or []
+                        records_read += len(station_ids)
+                        for station_id in station_ids:
+                            cur.execute(query, (city_name, station_id))
+                            records_written += cur.rowcount
+                    conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return UpsertResult(records_read=records_read, records_written=records_written)
+
     def upsert_commercial_categories(self, records: list[dict[str, Any]]) -> UpsertResult:
         query = """
         INSERT INTO commercial_categories
@@ -328,6 +362,28 @@ class SyncRepository:
         VALUES (%s, %s)
         ON CONFLICT (route_id, operating_date) DO NOTHING
         """
+        delete_operating_dates_query = """
+        DELETE FROM route_operating_dates WHERE route_id = %s
+        """
+        delete_connections_query = """
+        DELETE FROM route_connections WHERE route_id = %s
+        """
+        connection_query = """
+        INSERT INTO route_connections (
+            route_id, external_connection_id, type_code, type_name,
+            station_external_id, wagon_numbers,
+            train1_order_id, train1_station_order, train1_day_offset,
+            train2_order_id, train2_station_order, train2_day_offset
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """
+        connection_date_query = """
+        INSERT INTO route_connection_operating_dates
+            (route_connection_id, operating_date)
+        VALUES (%s, %s)
+        ON CONFLICT (route_connection_id, operating_date) DO NOTHING
+        """
         station_query = """
         INSERT INTO route_stations (
             route_id, station_external_id, order_number,
@@ -361,6 +417,9 @@ class SyncRepository:
             stop_type_name = EXCLUDED.stop_type_name,
             updated_at = NOW()
         """
+        delete_stations_query = """
+        DELETE FROM route_stations WHERE route_id = %s
+        """
         records_written = 0
         with self._tracer.start_as_current_span("db.routes.upsert"):
             conn = self._get_conn()
@@ -387,11 +446,56 @@ class SyncRepository:
                         route_id = int(row[0])
                         records_written += 1
 
+                        # A route detail is authoritative for every child collection.
+                        cur.execute(delete_operating_dates_query, (route_id,))
                         operating_dates: list[str] = route.get("operatingDates") or []
                         for od in operating_dates:
                             cur.execute(date_query, (route_id, _parse_date(od)))
 
+                        # The PLK payload is authoritative for a route, so replace its
+                        # connection set. This keeps the table idempotent despite the
+                        # legacy route_connections table having no natural-key constraint.
+                        cur.execute(delete_connections_query, (route_id,))
+                        connections: list[dict[str, Any]] = route.get("connections") or []
+                        for connection in connections:
+                            type_code = connection.get("typeCode")
+                            if not isinstance(type_code, str) or not type_code.strip():
+                                logger.warning(
+                                    "Skipping route connection without a nonempty typeCode: route_id=%d connection_id=%r",
+                                    route_id,
+                                    connection.get("id"),
+                                )
+                                continue
+                            cur.execute(
+                                connection_query,
+                                (
+                                    route_id,
+                                    connection.get("id"),
+                                    type_code,
+                                    connection.get("typeName"),
+                                    connection.get("stationId"),
+                                    connection.get("wagonNumbers"),
+                                    connection.get("train1OrderId"),
+                                    connection.get("train1StationOrder"),
+                                    connection.get("train1DayOffset"),
+                                    connection.get("train2OrderId"),
+                                    connection.get("train2StationOrder"),
+                                    connection.get("train2DayOffset"),
+                                ),
+                            )
+                            row = cur.fetchone()
+                            if row is None:
+                                raise RuntimeError("failed to upsert route connection")
+                            connection_id = int(row[0])
+                            connection_dates: list[str] = connection.get("operatingDates") or []
+                            for operating_date in connection_dates:
+                                cur.execute(
+                                    connection_date_query,
+                                    (connection_id, _parse_date(operating_date)),
+                                )
+
                         stations: list[dict[str, Any]] = route.get("stations") or []
+                        cur.execute(delete_stations_query, (route_id,))
                         for stn in stations:
                             cur.execute(
                                 station_query,
@@ -425,9 +529,7 @@ class SyncRepository:
 
     # ── Operation upserts ────────────────────────────────────────────────
 
-    def upsert_operations(
-        self, operations: list[dict[str, Any]], operating_date: date
-    ) -> UpsertResult:
+    def upsert_operations(self, operations: list[dict[str, Any]]) -> UpsertResult:
         op_query = """
         INSERT INTO train_operations
             (schedule_id, order_id, train_order_id, operating_date, train_status)
@@ -467,13 +569,16 @@ class SyncRepository:
             try:
                 with conn.cursor() as cur:
                     for op in operations:
+                        operating_date_value = op.get("operatingDate")
+                        if not isinstance(operating_date_value, str):
+                            raise ValueError("operation is missing operatingDate")
                         cur.execute(
                             op_query,
                             (
                                 op.get("scheduleId"),
                                 op.get("orderId"),
                                 op.get("trainOrderId"),
-                                operating_date,
+                                _parse_date(operating_date_value),
                                 op.get("trainStatus"),
                             ),
                         )
@@ -511,6 +616,30 @@ class SyncRepository:
         return UpsertResult(records_read=len(operations), records_written=records_written)
 
     # ── Disruption upserts ───────────────────────────────────────────────
+
+    def upsert_disruption_types(self, disruption_types: dict[str, str]) -> UpsertResult:
+        query = """
+        INSERT INTO disruption_types (code, name)
+        VALUES (%s, %s)
+        ON CONFLICT (code) DO UPDATE
+        SET name = EXCLUDED.name,
+            updated_at = NOW()
+        """
+        with self._tracer.start_as_current_span("db.disruption_types.upsert"):
+            conn = self._get_conn()
+            try:
+                with conn.cursor() as cur:
+                    for code, name in disruption_types.items():
+                        cur.execute(query, (code, name))
+                    conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return UpsertResult(
+            records_read=len(disruption_types), records_written=len(disruption_types)
+        )
 
     def upsert_disruptions(self, disruptions: list[dict[str, Any]]) -> UpsertResult:
         disruption_query = """

@@ -38,6 +38,10 @@ infra-up-airflow: ## Start infra + Airflow
 infra-up-all: ## Start everything
 	docker compose -f infra/docker-compose.yml --profile all up -d
 
+.PHONY: infra-upa-all-build
+infra-up-all-build: ## Start everything, rebuilding images
+	docker compose -f infra/docker-compose.yml --profile all up -d --build
+
 .PHONY: infra-down
 infra-down: ## Stop all infra containers (preserves volumes)
 	docker compose -f infra/docker-compose.yml --profile all down

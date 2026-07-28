@@ -38,7 +38,16 @@ def process_schedules(
             total_written = 0
             for env in envelopes:
                 payload = env.get("payload", {})
-                routes: list[dict[str, Any]] = payload.get("routes", [])
+                if not isinstance(payload, dict):
+                    continue
+                # The route-detail endpoint returns a RouteDto directly. Keep support
+                # for the older wrapped response while processing its actual shape.
+                routes: list[dict[str, Any]]
+                wrapped_routes = payload.get("routes")
+                if isinstance(wrapped_routes, list):
+                    routes = [route for route in wrapped_routes if isinstance(route, dict)]
+                else:
+                    routes = [payload]
                 if not routes:
                     continue
                 result = repository.upsert_routes(routes)

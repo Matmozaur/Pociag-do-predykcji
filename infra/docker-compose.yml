@@ -285,6 +285,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
       AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth
       _PIP_ADDITIONAL_REQUIREMENTS: httpx psycopg2-binary boto3 opentelemetry-sdk
         opentelemetry-api opentelemetry-exporter-otlp-proto-grpc
     volumes:

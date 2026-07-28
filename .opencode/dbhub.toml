@@ -1,0 +1,11 @@
+[[sources]]
+id = "pociag"
+description = "Local curated train-delay PostgreSQL database"
+dsn = "${OPENCODE_POSTGRES_DSN}"
+query_timeout = 30
+
+[[tools]]
+name = "execute_sql"
+source = "pociag"
+readonly = true
+max_rows = 1000
