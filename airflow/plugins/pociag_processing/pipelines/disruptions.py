@@ -38,6 +38,12 @@ def process_disruptions(
             total_written = 0
             for env in envelopes:
                 payload = env.get("payload", {})
+                disruption_types: dict[str, str] = payload.get("disruptionTypes") or {}
+                if disruption_types:
+                    result = repository.upsert_disruption_types(disruption_types)
+                    total_read += result.records_read
+                    total_written += result.records_written
+
                 disruptions: list[dict[str, Any]] = payload.get("disruptions", [])
                 if not disruptions:
                     continue

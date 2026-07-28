@@ -156,6 +156,32 @@ def test_upsert_operations_executes_correct_queries(mock_hook_cls: MagicMock) ->
 
 
 @patch("pociag_processing.repository.PostgresHook")
+def test_upsert_disruption_types_upserts_code_name_map(mock_hook_cls: MagicMock) -> None:
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    mock_hook_cls.return_value.get_conn.return_value = mock_conn
+
+    result = SyncRepository().upsert_disruption_types(
+        {"DELAY": "Delay", "CANCEL": "Cancellation"}
+    )
+
+    assert result.records_read == 2
+    assert result.records_written == 2
+    assert mock_cursor.execute.call_count == 2
+    assert all(
+        "INSERT INTO disruption_types (code, name)" in call.args[0]
+        for call in mock_cursor.execute.call_args_list
+    )
+    assert [call.args[1] for call in mock_cursor.execute.call_args_list] == [
+        ("DELAY", "Delay"),
+        ("CANCEL", "Cancellation"),
+    ]
+    mock_conn.commit.assert_called_once()
+
+
+@patch("pociag_processing.repository.PostgresHook")
 def test_upsert_disruptions_executes_correct_queries(mock_hook_cls: MagicMock) -> None:
     mock_conn = MagicMock()
     mock_cursor = MagicMock()

@@ -617,6 +617,30 @@ class SyncRepository:
 
     # ── Disruption upserts ───────────────────────────────────────────────
 
+    def upsert_disruption_types(self, disruption_types: dict[str, str]) -> UpsertResult:
+        query = """
+        INSERT INTO disruption_types (code, name)
+        VALUES (%s, %s)
+        ON CONFLICT (code) DO UPDATE
+        SET name = EXCLUDED.name,
+            updated_at = NOW()
+        """
+        with self._tracer.start_as_current_span("db.disruption_types.upsert"):
+            conn = self._get_conn()
+            try:
+                with conn.cursor() as cur:
+                    for code, name in disruption_types.items():
+                        cur.execute(query, (code, name))
+                    conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return UpsertResult(
+            records_read=len(disruption_types), records_written=len(disruption_types)
+        )
+
     def upsert_disruptions(self, disruptions: list[dict[str, Any]]) -> UpsertResult:
         disruption_query = """
         INSERT INTO disruptions (

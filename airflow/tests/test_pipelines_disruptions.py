@@ -20,6 +20,7 @@ def test_process_disruptions_success(mock_repo_cls: MagicMock, mock_lake_cls: Ma
         {
             "metadata": {},
             "payload": {
+                "disruptionTypes": {"DELAY": "Delay", "CANCEL": "Cancellation"},
                 "disruptions": [
                     {
                         "disruptionId": 999,
@@ -44,14 +45,20 @@ def test_process_disruptions_success(mock_repo_cls: MagicMock, mock_lake_cls: Ma
             },
         }
     ]
+    mock_repo.upsert_disruption_types.return_value = UpsertResult(
+        records_read=2, records_written=2
+    )
     mock_repo.upsert_disruptions.return_value = UpsertResult(records_read=1, records_written=1)
 
     result = process_disruptions(date_from=date(2025, 6, 1), date_to=date(2025, 6, 7))
 
     assert result.status == "success"
-    assert result.records_written == 1
+    assert result.records_written == 3
+    mock_repo.upsert_disruption_types.assert_called_once_with(
+        {"DELAY": "Delay", "CANCEL": "Cancellation"}
+    )
     mock_repo.upsert_disruptions.assert_called_once()
-    mock_repo.mark_processing_run_success.assert_called_once_with(1, 1, 1)
+    mock_repo.mark_processing_run_success.assert_called_once_with(1, 3, 3)
 
 
 @patch("pociag_processing.pipelines.disruptions.LakeReader")
@@ -97,3 +104,30 @@ def test_process_disruptions_empty_payload(mock_repo_cls: MagicMock, mock_lake_c
     assert result.status == "success"
     assert result.records_written == 0
     mock_repo.upsert_disruptions.assert_not_called()
+
+
+@patch("pociag_processing.pipelines.disruptions.LakeReader")
+@patch("pociag_processing.pipelines.disruptions.SyncRepository")
+def test_process_disruptions_persists_types_without_disruptions(
+    mock_repo_cls: MagicMock, mock_lake_cls: MagicMock
+) -> None:
+    mock_repo = mock_repo_cls.return_value
+    mock_lake = mock_lake_cls.return_value
+    mock_repo.is_pipeline_running.return_value = False
+    mock_repo.create_processing_run.return_value = 1
+    mock_lake.read_raw_disruptions.return_value = [
+        {
+            "metadata": {},
+            "payload": {"disruptionTypes": {"DELAY": "Delay"}, "disruptions": []},
+        }
+    ]
+    mock_repo.upsert_disruption_types.return_value = UpsertResult(
+        records_read=1, records_written=1
+    )
+
+    result = process_disruptions(date_from=date(2025, 6, 1), date_to=date(2025, 6, 7))
+
+    assert result.records_written == 1
+    mock_repo.upsert_disruption_types.assert_called_once_with({"DELAY": "Delay"})
+    mock_repo.upsert_disruptions.assert_not_called()
+    mock_repo.mark_processing_run_success.assert_called_once_with(1, 1, 1)
