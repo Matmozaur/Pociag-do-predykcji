@@ -3,12 +3,6 @@
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useState } from 'react'
 import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
-import type { Feature, Geometry } from 'geojson'
-import { circleMarker, type Layer } from 'leaflet'
-import {
-    stationGeoJSON,
-    type StationFeatureProperties,
-} from '@/lib/api'
 
 const POLAND_BOUNDS: [[number, number], [number, number]] = [
     [49.0, 14.1],
@@ -110,30 +104,6 @@ export function TrafficMapClient() {
                         interactive={false}
                     />
                 )}
-
-                <GeoJSON
-                    key="stations"
-                    data={stationGeoJSON as GeoJSON.FeatureCollection}
-                    pointToLayer={(_feature, latlng) =>
-                        circleMarker(latlng, {
-                            radius: 4,
-                            color: '#0f172a',
-                            weight: 1,
-                            fillColor: '#f8fafc',
-                            fillOpacity: 0.95,
-                        })
-                    }
-                    onEachFeature={(
-                        feature: Feature<Geometry, StationFeatureProperties>,
-                        layer: Layer,
-                    ) => {
-                        layer.bindPopup(
-                            `<div style="font-family:system-ui;min-width:120px">
-                              <p style="font-weight:600;margin:0">${feature.properties.station_name}</p>
-                            </div>`,
-                        )
-                    }}
-                />
 
             </MapContainer>
         </div>
