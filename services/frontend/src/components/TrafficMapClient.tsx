@@ -2,17 +2,11 @@
 
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useState } from 'react'
-import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
-import type { Feature, Geometry } from 'geojson'
-import { circleMarker, type Layer } from 'leaflet'
-import {
-    stationGeoJSON,
-    type StationFeatureProperties,
-} from '@/lib/api'
+import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
 
-const POLAND_BOUNDS: [[number, number], [number, number]] = [
-    [49.0, 14.1],
-    [54.9, 24.3],
+const INITIAL_MAP_BOUNDS: [[number, number], [number, number]] = [
+    [48.85, 13.85],
+    [54.98, 24.4],
 ]
 
 function buildMask(polandCoords: [number, number][][]): GeoJSON.Feature {
@@ -38,15 +32,6 @@ function buildMask(polandCoords: [number, number][][]): GeoJSON.Feature {
     }
 }
 
-function BoundsLock() {
-    const map = useMap()
-    useEffect(() => {
-        const zoom = map.getBoundsZoom(POLAND_BOUNDS)
-        map.setMinZoom(zoom)
-    }, [map])
-    return null
-}
-
 export function TrafficMapClient() {
     const [maskFeature, setMaskFeature] = useState<GeoJSON.Feature | null>(null)
 
@@ -64,22 +49,19 @@ export function TrafficMapClient() {
     return (
         <div className="relative h-full w-full">
             <MapContainer
-                bounds={POLAND_BOUNDS}
-                maxBounds={POLAND_BOUNDS}
-                maxBoundsViscosity={1.0}
+                bounds={INITIAL_MAP_BOUNDS}
+                minZoom={2}
                 maxZoom={19}
                 worldCopyJump={false}
                 style={{ width: '100%', height: '100%' }}
                 zoomControl={true}
             >
-                <BoundsLock />
                 <TileLayer
                     url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com">CARTO</a>'
                     subdomains="abcd"
                     maxZoom={20}
                     noWrap={true}
-                    bounds={POLAND_BOUNDS}
                     keepBuffer={2}
                 />
 
@@ -91,49 +73,24 @@ export function TrafficMapClient() {
                     zIndex={200}
                     maxZoom={19}
                     noWrap={true}
-                    bounds={POLAND_BOUNDS}
                     keepBuffer={2}
                     updateWhenIdle={true}
                 />
 
-                {/* Dark mask covering everything outside Poland's border */}
+                {/* Keep the surrounding map legible but visually recess it behind Poland. */}
                 {maskFeature && (
                     <GeoJSON
                         key="poland-mask"
                         data={maskFeature as GeoJSON.Feature<GeoJSON.Geometry>}
                         style={() => ({
                             fillColor: '#0a0c14',
-                            fillOpacity: 1,
-                            color: '#0a0c14',
-                            weight: 0,
+                            fillOpacity: 0.68,
+                            color: '#1e293b',
+                            weight: 0.5,
                         })}
                         interactive={false}
                     />
                 )}
-
-                <GeoJSON
-                    key="stations"
-                    data={stationGeoJSON as GeoJSON.FeatureCollection}
-                    pointToLayer={(_feature, latlng) =>
-                        circleMarker(latlng, {
-                            radius: 4,
-                            color: '#0f172a',
-                            weight: 1,
-                            fillColor: '#f8fafc',
-                            fillOpacity: 0.95,
-                        })
-                    }
-                    onEachFeature={(
-                        feature: Feature<Geometry, StationFeatureProperties>,
-                        layer: Layer,
-                    ) => {
-                        layer.bindPopup(
-                            `<div style="font-family:system-ui;min-width:120px">
-                              <p style="font-weight:600;margin:0">${feature.properties.station_name}</p>
-                            </div>`,
-                        )
-                    }}
-                />
 
             </MapContainer>
         </div>

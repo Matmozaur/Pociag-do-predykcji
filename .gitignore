@@ -219,3 +219,6 @@ __marimo__/
 
 #Playwright
 .playwright-mcp/
+
+# Local EnvSitter secret material
+.envsitter/pepper

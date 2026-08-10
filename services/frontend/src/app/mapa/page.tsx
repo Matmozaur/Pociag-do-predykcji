@@ -3,8 +3,8 @@ import dynamic from 'next/dynamic'
 import { NavShell } from '@/components/NavShell'
 import { Spinner } from '@/lib/ui'
 
-const TrafficMapClient = dynamic(
-    () => import('@/components/TrafficMapClient').then((m) => m.TrafficMapClient),
+const MapHomeClient = dynamic(
+    () => import('@/components/MapHomeClient').then((m) => m.MapHomeClient),
     {
         ssr: false,
         loading: () => (
@@ -18,8 +18,8 @@ const TrafficMapClient = dynamic(
 export default function MapaPage() {
     return (
         <NavShell title="Mapa sieci">
-            <div style={{ height: 'calc(100vh - 57px)' }} className="md:h-screen relative">
-                <TrafficMapClient />
+            <div style={{ height: 'calc(100vh - 57px)' }} className="relative overflow-hidden md:h-screen">
+                <MapHomeClient />
             </div>
         </NavShell>
     )

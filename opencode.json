@@ -31,6 +31,24 @@
         "set -ae; eval \"$(tr -d '\\r' < infra/.env)\"; . .opencode/.env; AIRFLOW_URL=http://127.0.0.1:8090 AIRFLOW_API_PREFIX=/api/v1 AIRFLOW_AUTH_MODE=basic AIRFLOW_USERNAME=\"$OPENCODE_AIRFLOW_USERNAME\" AIRFLOW_PASSWORD=\"$OPENCODE_AIRFLOW_PASSWORD\" exec uvx airflow-dev-mcp"
       ],
       "timeout": 30000
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "timeout": 30000
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ],
+      "timeout": 30000
     }
   },
   "instructions": [

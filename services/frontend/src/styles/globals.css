@@ -59,3 +59,10 @@ body {
 .leaflet-bar a:hover {
     background-color: #2d3148 !important;
 }
+
+/* Keep map credits above the mobile sheet rather than under its scrollable content. */
+@media (max-width: 767px) {
+    .map-home .leaflet-bottom {
+        bottom: calc(3.5rem + env(safe-area-inset-bottom) + min(52%, 28rem));
+    }
+}
