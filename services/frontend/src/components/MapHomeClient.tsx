@@ -104,7 +104,7 @@ export function MapHomeClient() {
                     {overviewQuery.isLoading ? <div className="grid grid-cols-3 gap-3" aria-label="Ładowanie wskaźników"><div className="h-12 animate-pulse rounded bg-white/5" /><div className="h-12 animate-pulse rounded bg-white/5" /><div className="h-12 animate-pulse rounded bg-white/5" /></div> : overviewQuery.isError ? <QueryMessage onRetry={() => overviewQuery.refetch()}>Nie udało się pobrać podsumowania sieci.</QueryMessage> : overviewQuery.data ? (
                         <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/8 bg-black/15 p-3">
                             <Metric label="W ruchu" value={overviewQuery.data.statistics.in_progress ?? '—'} tone="text-emerald-300" />
-                            <Metric label="Śr. opóźnienie" value={overviewQuery.data.statistics.avg_delay_minutes == null ? '—' : `${overviewQuery.data.statistics.avg_delay_minutes} min`} tone="text-amber-300" />
+                            <Metric label="Śr. opóźnienie" value={overviewQuery.data.statistics.avg_delay_minutes == null ? '—' : `${overviewQuery.data.statistics.avg_delay_minutes.toFixed(2)} min`} tone="text-amber-300" />
                             <Metric label="Utrudnienia" value={overviewQuery.data.disruptions_active} tone={overviewQuery.data.disruptions_active > 0 ? 'text-red-300' : 'text-emerald-300'} />
                         </div>
                     ) : null}
