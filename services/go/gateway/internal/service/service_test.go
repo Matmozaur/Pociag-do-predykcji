@@ -25,6 +25,10 @@ func (m *mockDataServiceClient) QueryStations(ctx context.Context, search string
 	return &dataservice.StationListResponse{}, nil
 }
 
+func (m *mockDataServiceClient) ListStationsWithCoordinates(ctx context.Context, limit int) (*dataservice.StationListResponse, error) {
+	return &dataservice.StationListResponse{}, nil
+}
+
 func (m *mockDataServiceClient) GetStationByExternalID(ctx context.Context, externalID int) (*dataservice.Station, error) {
 	if m.getStationByExternalIDFn != nil {
 		return m.getStationByExternalIDFn(ctx, externalID)

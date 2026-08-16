@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import date
+from importlib import resources
 from time import perf_counter
 from typing import Any
 
@@ -8,6 +10,17 @@ from pociag_processing.lake import LakeReader
 from pociag_processing.models import ProcessResult, UpsertResult
 from pociag_processing.repository import SyncRepository
 from pociag_processing.tracing import get_tracer
+
+
+def _load_station_coordinates() -> list[dict[str, Any]]:
+    resource = (
+        resources.files("pociag_processing")
+        .joinpath("data")
+        .joinpath("station_coordinates.json")
+    )
+    payload: dict[str, Any] = json.loads(resource.read_text(encoding="utf-8"))
+    stations = payload.get("stations", [])
+    return stations if isinstance(stations, list) else []
 
 
 def _upsert_dictionary(
@@ -83,6 +96,14 @@ def process_dictionaries(run_date: date, ingestion_run_id: int | None = None) ->
                 result = _upsert_dictionary(repository, "cities", payload)
                 total_read += result.records_read
                 total_written += result.records_written
+
+            # Attach static geographic coordinates to stations (keyed by
+            # external_id), which the PLK dictionaries do not provide.
+            coord_records = _load_station_coordinates()
+            if coord_records:
+                coord_result = repository.upsert_station_coordinates(coord_records)
+                total_read += coord_result.records_read
+                total_written += coord_result.records_written
 
             repository.mark_processing_run_success(run_id, total_read, total_written)
             duration_ms = int((perf_counter() - started) * 1000)

@@ -34,6 +34,9 @@ func (r *Repository) QueryStations(ctx context.Context, p service.QueryStationsP
 		params = append(params, intsToInt32s(p.ExternalIds))
 		paramIdx++
 	}
+	if p.HasCoordinates {
+		conditions = append(conditions, "s.latitude IS NOT NULL AND s.longitude IS NOT NULL")
+	}
 
 	params = append(params, p.Limit, p.Offset)
 	limitOffsetClause := fmt.Sprintf("LIMIT $%d OFFSET $%d", paramIdx, paramIdx+1)
@@ -44,7 +47,7 @@ func (r *Repository) QueryStations(ctx context.Context, p service.QueryStationsP
 	}
 
 	query := fmt.Sprintf(`
-		SELECT s.id, s.external_id, s.name, s.city, COUNT(*) OVER() AS total_count
+		SELECT s.id, s.external_id, s.name, s.city, s.latitude, s.longitude, COUNT(*) OVER() AS total_count
 		FROM stations s
 		%s
 		ORDER BY s.name
@@ -64,15 +67,23 @@ func (r *Repository) QueryStations(ctx context.Context, p service.QueryStationsP
 			externalID int32
 			name       string
 			city       pgtype.Text
+			latitude   pgtype.Float8
+			longitude  pgtype.Float8
 			totalCount int64
 		)
-		if err := rows.Scan(&id, &externalID, &name, &city, &totalCount); err != nil {
+		if err := rows.Scan(&id, &externalID, &name, &city, &latitude, &longitude, &totalCount); err != nil {
 			return nil, 0, fmt.Errorf("scan station row: %w", err)
 		}
 		total = totalCount
 		st := model.Station{ID: id, ExternalID: int(externalID), Name: name}
 		if city.Valid {
 			st.City = &city.String
+		}
+		if latitude.Valid {
+			st.Latitude = &latitude.Float64
+		}
+		if longitude.Valid {
+			st.Longitude = &longitude.Float64
 		}
 		results = append(results, st)
 	}
@@ -90,7 +101,7 @@ func (r *Repository) GetStationByExternalId(ctx context.Context, extID int) (*mo
 	defer span.End()
 
 	const query = `
-		SELECT id, external_id, name, city
+		SELECT id, external_id, name, city, latitude, longitude
 		FROM stations
 		WHERE external_id = $1`
 
@@ -99,8 +110,10 @@ func (r *Repository) GetStationByExternalId(ctx context.Context, extID int) (*mo
 		externalID int32
 		name       string
 		city       pgtype.Text
+		latitude   pgtype.Float8
+		longitude  pgtype.Float8
 	)
-	err := r.db.WithContext(ctx).Raw(query, int32(extID)).Row().Scan(&id, &externalID, &name, &city)
+	err := r.db.WithContext(ctx).Raw(query, int32(extID)).Row().Scan(&id, &externalID, &name, &city, &latitude, &longitude)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, fmt.Errorf("get station by external id: %w", ErrNotFound)
@@ -111,6 +124,12 @@ func (r *Repository) GetStationByExternalId(ctx context.Context, extID int) (*mo
 	st := &model.Station{ID: id, ExternalID: int(externalID), Name: name}
 	if city.Valid {
 		st.City = &city.String
+	}
+	if latitude.Valid {
+		st.Latitude = &latitude.Float64
+	}
+	if longitude.Valid {
+		st.Longitude = &longitude.Float64
 	}
 	return st, nil
 }

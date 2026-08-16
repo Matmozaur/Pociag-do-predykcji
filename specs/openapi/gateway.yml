@@ -92,6 +92,22 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
+  /api/v1/map/stations:
+    get:
+      summary: List stations for the map
+      description: |
+        Returns stations that have geographic coordinates, for rendering as
+        interactive markers on the network map.
+      operationId: getMapStations
+      tags: [map]
+      responses:
+        "200":
+          description: Stations with coordinates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StationMapResponse"
+
   # ── Schedules (Frontend Views) ─────────────────────────────────────────────
 
   /api/v1/schedules/search:
@@ -410,6 +426,38 @@ components:
           items:
             $ref: "#/components/schemas/StationSuggestion"
 
+    # ── Map ────────────────────────────────────────────────────────────────────
+    StationMapPoint:
+      type: object
+      required: [external_id, name, latitude, longitude]
+      additionalProperties: false
+      properties:
+        external_id:
+          type: integer
+          description: Station external ID
+        name:
+          type: string
+          description: Station name
+        city:
+          type: string
+          description: City grouping
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+
+    StationMapResponse:
+      type: object
+      required: [stations]
+      additionalProperties: false
+      properties:
+        stations:
+          type: array
+          items:
+            $ref: "#/components/schemas/StationMapPoint"
+
     # ── Schedule Search ────────────────────────────────────────────────────────
     ScheduleSearchResult:
       type: object
@@ -565,7 +613,8 @@ components:
           type: string
         status:
           type: string
-          enum: [not_started, in_progress, completed, cancelled, partial_cancelled]
+          enum:
+            [not_started, in_progress, completed, cancelled, partial_cancelled]
           description: Human-friendly status
         status_code:
           type: string
@@ -658,7 +707,8 @@ components:
           format: date
         status:
           type: string
-          enum: [not_started, in_progress, completed, cancelled, partial_cancelled]
+          enum:
+            [not_started, in_progress, completed, cancelled, partial_cancelled]
         status_code:
           type: string
         stops:

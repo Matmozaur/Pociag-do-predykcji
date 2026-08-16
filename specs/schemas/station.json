@@ -30,6 +30,16 @@
             "type": "string",
             "description": "City the station belongs to"
         },
+        "latitude": {
+            "type": "number",
+            "format": "double",
+            "description": "WGS84 latitude of the station, if known"
+        },
+        "longitude": {
+            "type": "number",
+            "format": "double",
+            "description": "WGS84 longitude of the station, if known"
+        },
         "created_at": {
             "type": "string",
             "format": "date-time"

@@ -1,0 +1,563 @@
+{
+    "source": "Curated WGS84 coordinates for major Polish railway stations, keyed by PLK external_id.",
+    "stations": [
+        {
+            "external_id": 33605,
+            "name": "Warszawa Centralna",
+            "latitude": 52.2288,
+            "longitude": 21.0030
+        },
+        {
+            "external_id": 38653,
+            "name": "Warszawa Wschodnia",
+            "latitude": 52.2519,
+            "longitude": 21.0512
+        },
+        {
+            "external_id": 33506,
+            "name": "Warszawa Zachodnia",
+            "latitude": 52.2196,
+            "longitude": 20.9663
+        },
+        {
+            "external_id": 36103,
+            "name": "Warszawa Gdańska",
+            "latitude": 52.2586,
+            "longitude": 20.9906
+        },
+        {
+            "external_id": 80416,
+            "name": "Kraków Główny",
+            "latitude": 50.0679,
+            "longitude": 19.9476
+        },
+        {
+            "external_id": 79905,
+            "name": "Kraków Płaszów",
+            "latitude": 50.0356,
+            "longitude": 19.9770
+        },
+        {
+            "external_id": 73312,
+            "name": "Katowice",
+            "latitude": 50.2578,
+            "longitude": 19.0166
+        },
+        {
+            "external_id": 72900,
+            "name": "Katowice Ligota",
+            "latitude": 50.2296,
+            "longitude": 18.9970
+        },
+        {
+            "external_id": 7500,
+            "name": "Gdańsk Główny",
+            "latitude": 54.3556,
+            "longitude": 18.6440
+        },
+        {
+            "external_id": 7534,
+            "name": "Gdańsk Wrzeszcz",
+            "latitude": 54.3811,
+            "longitude": 18.6017
+        },
+        {
+            "external_id": 7583,
+            "name": "Gdańsk Oliwa",
+            "latitude": 54.4093,
+            "longitude": 18.5620
+        },
+        {
+            "external_id": 5900,
+            "name": "Gdynia Główna",
+            "latitude": 54.5175,
+            "longitude": 18.5400
+        },
+        {
+            "external_id": 5942,
+            "name": "Sopot",
+            "latitude": 54.4418,
+            "longitude": 18.5600
+        },
+        {
+            "external_id": 60103,
+            "name": "Wrocław Główny",
+            "latitude": 51.0982,
+            "longitude": 17.0366
+        },
+        {
+            "external_id": 30601,
+            "name": "Poznań Główny",
+            "latitude": 52.4013,
+            "longitude": 16.9128
+        },
+        {
+            "external_id": 46458,
+            "name": "Łódź Fabryczna",
+            "latitude": 51.7690,
+            "longitude": 19.4680
+        },
+        {
+            "external_id": 46706,
+            "name": "Łódź Kaliska",
+            "latitude": 51.7455,
+            "longitude": 19.4400
+        },
+        {
+            "external_id": 46409,
+            "name": "Łódź Widzew",
+            "latitude": 51.7500,
+            "longitude": 19.5150
+        },
+        {
+            "external_id": 273,
+            "name": "Szczecin Główny",
+            "latitude": 53.4183,
+            "longitude": 14.5545
+        },
+        {
+            "external_id": 18408,
+            "name": "Bydgoszcz Główna",
+            "latitude": 53.1356,
+            "longitude": 18.0130
+        },
+        {
+            "external_id": 50500,
+            "name": "Lublin Główny",
+            "latitude": 51.2330,
+            "longitude": 22.5690
+        },
+        {
+            "external_id": 262848,
+            "name": "Lublin Zachodni",
+            "latitude": 51.2490,
+            "longitude": 22.5320
+        },
+        {
+            "external_id": 24000,
+            "name": "Białystok",
+            "latitude": 53.1354,
+            "longitude": 23.1360
+        },
+        {
+            "external_id": 82669,
+            "name": "Rzeszów Główny",
+            "latitude": 50.0420,
+            "longitude": 21.9990
+        },
+        {
+            "external_id": 9209,
+            "name": "Olsztyn Główny",
+            "latitude": 53.7710,
+            "longitude": 20.4930
+        },
+        {
+            "external_id": 63552,
+            "name": "Kielce Główne",
+            "latitude": 50.8760,
+            "longitude": 20.6360
+        },
+        {
+            "external_id": 60608,
+            "name": "Opole Główne",
+            "latitude": 50.6668,
+            "longitude": 17.9260
+        },
+        {
+            "external_id": 19703,
+            "name": "Toruń Główny",
+            "latitude": 53.0000,
+            "longitude": 18.5980
+        },
+        {
+            "external_id": 62653,
+            "name": "Częstochowa",
+            "latitude": 50.8080,
+            "longitude": 19.1250
+        },
+        {
+            "external_id": 69708,
+            "name": "Gliwice",
+            "latitude": 50.3020,
+            "longitude": 18.6760
+        },
+        {
+            "external_id": 69823,
+            "name": "Zabrze",
+            "latitude": 50.3050,
+            "longitude": 18.7880
+        },
+        {
+            "external_id": 74658,
+            "name": "Sosnowiec Główny",
+            "latitude": 50.2790,
+            "longitude": 19.1310
+        },
+        {
+            "external_id": 48355,
+            "name": "Radom Główny",
+            "latitude": 51.3920,
+            "longitude": 21.1450
+        },
+        {
+            "external_id": 32607,
+            "name": "Płock",
+            "latitude": 52.5480,
+            "longitude": 19.7050
+        },
+        {
+            "external_id": 8151,
+            "name": "Elbląg",
+            "latitude": 54.1580,
+            "longitude": 19.4020
+        },
+        {
+            "external_id": 4408,
+            "name": "Koszalin",
+            "latitude": 54.1940,
+            "longitude": 16.1900
+        },
+        {
+            "external_id": 4705,
+            "name": "Słupsk",
+            "latitude": 54.4650,
+            "longitude": 17.0290
+        },
+        {
+            "external_id": 27805,
+            "name": "Zielona Góra Główna",
+            "latitude": 51.9410,
+            "longitude": 15.4970
+        },
+        {
+            "external_id": 13904,
+            "name": "Gorzów Wielkopolski",
+            "latitude": 52.7360,
+            "longitude": 15.2280
+        },
+        {
+            "external_id": 84400,
+            "name": "Przemyśl Główny",
+            "latitude": 49.7830,
+            "longitude": 22.7760
+        },
+        {
+            "external_id": 80630,
+            "name": "Tarnów",
+            "latitude": 50.0290,
+            "longitude": 20.9930
+        },
+        {
+            "external_id": 81901,
+            "name": "Nowy Sącz",
+            "latitude": 49.6120,
+            "longitude": 20.7000
+        },
+        {
+            "external_id": 55806,
+            "name": "Jelenia Góra",
+            "latitude": 50.9040,
+            "longitude": 15.7480
+        },
+        {
+            "external_id": 55103,
+            "name": "Wałbrzych Główny",
+            "latitude": 50.7710,
+            "longitude": 16.2870
+        },
+        {
+            "external_id": 53009,
+            "name": "Legnica",
+            "latitude": 51.2110,
+            "longitude": 16.1620
+        },
+        {
+            "external_id": 45245,
+            "name": "Kalisz",
+            "latitude": 51.7570,
+            "longitude": 18.0850
+        },
+        {
+            "external_id": 45906,
+            "name": "Ostrów Wielkopolski",
+            "latitude": 51.6500,
+            "longitude": 17.8180
+        },
+        {
+            "external_id": 42606,
+            "name": "Leszno",
+            "latitude": 51.8410,
+            "longitude": 16.5800
+        },
+        {
+            "external_id": 7872,
+            "name": "Malbork",
+            "latitude": 54.0350,
+            "longitude": 19.0330
+        },
+        {
+            "external_id": 7112,
+            "name": "Tczew",
+            "latitude": 54.0930,
+            "longitude": 18.7900
+        },
+        {
+            "external_id": 18705,
+            "name": "Inowrocław",
+            "latitude": 52.7960,
+            "longitude": 18.2600
+        },
+        {
+            "external_id": 21600,
+            "name": "Włocławek",
+            "latitude": 52.6560,
+            "longitude": 19.0670
+        },
+        {
+            "external_id": 20503,
+            "name": "Grudziądz",
+            "latitude": 53.4840,
+            "longitude": 18.7530
+        },
+        {
+            "external_id": 14407,
+            "name": "Piła Główna",
+            "latitude": 53.1510,
+            "longitude": 16.7380
+        },
+        {
+            "external_id": 11809,
+            "name": "Ełk",
+            "latitude": 53.8280,
+            "longitude": 22.3620
+        },
+        {
+            "external_id": 12807,
+            "name": "Suwałki",
+            "latitude": 54.0960,
+            "longitude": 22.9300
+        },
+        {
+            "external_id": 50906,
+            "name": "Chełm",
+            "latitude": 51.1310,
+            "longitude": 23.4880
+        },
+        {
+            "external_id": 65904,
+            "name": "Zamość",
+            "latitude": 50.7200,
+            "longitude": 23.2520
+        },
+        {
+            "external_id": 48009,
+            "name": "Skarżysko-Kamienna",
+            "latitude": 51.1180,
+            "longitude": 20.8790
+        },
+        {
+            "external_id": 49809,
+            "name": "Dęblin",
+            "latitude": 51.5760,
+            "longitude": 21.8460
+        },
+        {
+            "external_id": 39404,
+            "name": "Siedlce",
+            "latitude": 52.1600,
+            "longitude": 22.2800
+        },
+        {
+            "external_id": 34108,
+            "name": "Pruszków",
+            "latitude": 52.1660,
+            "longitude": 20.8010
+        },
+        {
+            "external_id": 38885,
+            "name": "Otwock",
+            "latitude": 52.1050,
+            "longitude": 21.2610
+        },
+        {
+            "external_id": 76109,
+            "name": "Bielsko-Biała Główna",
+            "latitude": 49.8130,
+            "longitude": 19.0450
+        },
+        {
+            "external_id": 62109,
+            "name": "Brzeg",
+            "latitude": 50.8570,
+            "longitude": 17.4700
+        },
+        {
+            "external_id": 36939,
+            "name": "Ciechanów",
+            "latitude": 52.8790,
+            "longitude": 20.6110
+        },
+        {
+            "external_id": 22442,
+            "name": "Działdowo",
+            "latitude": 53.2330,
+            "longitude": 20.1730
+        },
+        {
+            "external_id": 81208,
+            "name": "Dębica",
+            "latitude": 50.0510,
+            "longitude": 21.4110
+        },
+        {
+            "external_id": 30809,
+            "name": "Gniezno",
+            "latitude": 52.5350,
+            "longitude": 17.5920
+        },
+        {
+            "external_id": 21808,
+            "name": "Iława Główna",
+            "latitude": 53.5940,
+            "longitude": 19.5680
+        },
+        {
+            "external_id": 83261,
+            "name": "Jarosław",
+            "latitude": 50.0170,
+            "longitude": 22.6780
+        },
+        {
+            "external_id": 33100,
+            "name": "Konin",
+            "latitude": 52.2100,
+            "longitude": 18.2510
+        },
+        {
+            "external_id": 4101,
+            "name": "Kołobrzeg",
+            "latitude": 54.1760,
+            "longitude": 15.5760
+        },
+        {
+            "external_id": 83501,
+            "name": "Krosno",
+            "latitude": 49.6900,
+            "longitude": 21.7660
+        },
+        {
+            "external_id": 32201,
+            "name": "Kutno",
+            "latitude": 52.2320,
+            "longitude": 19.3580
+        },
+        {
+            "external_id": 67009,
+            "name": "Kędzierzyn-Koźle",
+            "latitude": 50.3490,
+            "longitude": 18.2260
+        },
+        {
+            "external_id": 37226,
+            "name": "Mława",
+            "latitude": 53.1130,
+            "longitude": 20.3550
+        },
+        {
+            "external_id": 78907,
+            "name": "Nowy Targ",
+            "latitude": 49.4770,
+            "longitude": 20.0310
+        },
+        {
+            "external_id": 56606,
+            "name": "Nysa",
+            "latitude": 50.4720,
+            "longitude": 17.3320
+        },
+        {
+            "external_id": 23309,
+            "name": "Ostrołęka",
+            "latitude": 53.0810,
+            "longitude": 21.5560
+        },
+        {
+            "external_id": 22004,
+            "name": "Ostróda",
+            "latitude": 53.6960,
+            "longitude": 19.9740
+        },
+        {
+            "external_id": 77107,
+            "name": "Oświęcim",
+            "latitude": 50.0390,
+            "longitude": 19.2270
+        },
+        {
+            "external_id": 47704,
+            "name": "Piotrków Trybunalski",
+            "latitude": 51.4030,
+            "longitude": 19.7030
+        },
+        {
+            "external_id": 68700,
+            "name": "Racibórz",
+            "latitude": 50.0930,
+            "longitude": 18.2170
+        },
+        {
+            "external_id": 6098,
+            "name": "Rumia",
+            "latitude": 54.5710,
+            "longitude": 18.3880
+        },
+        {
+            "external_id": 83600,
+            "name": "Sanok",
+            "latitude": 49.5580,
+            "longitude": 22.2050
+        },
+        {
+            "external_id": 65003,
+            "name": "Stalowa Wola Rozwadów",
+            "latitude": 50.6120,
+            "longitude": 22.0480
+        },
+        {
+            "external_id": 2204,
+            "name": "Stargard",
+            "latitude": 53.3360,
+            "longitude": 15.0300
+        },
+        {
+            "external_id": 65466,
+            "name": "Tarnobrzeg",
+            "latitude": 50.5730,
+            "longitude": 21.6790
+        },
+        {
+            "external_id": 6304,
+            "name": "Wejherowo",
+            "latitude": 54.6050,
+            "longitude": 18.2360
+        },
+        {
+            "external_id": 79020,
+            "name": "Zakopane",
+            "latitude": 49.3010,
+            "longitude": 19.9570
+        },
+        {
+            "external_id": 23804,
+            "name": "Łomża",
+            "latitude": 53.1780,
+            "longitude": 22.0590
+        },
+        {
+            "external_id": 1008,
+            "name": "Świnoujście",
+            "latitude": 53.9120,
+            "longitude": 14.2480
+        }
+    ]
+}

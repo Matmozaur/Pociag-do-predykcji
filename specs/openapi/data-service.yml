@@ -400,6 +400,11 @@ paths:
           description: Comma-separated external IDs to fetch
           schema:
             type: string
+        - name: hasCoordinates
+          in: query
+          description: When true, only return stations that have geographic coordinates
+          schema:
+            type: boolean
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
@@ -549,6 +554,12 @@ components:
           type: string
         city:
           type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
 
     StationListResponse:
       type: object
@@ -853,7 +864,13 @@ components:
 
     OperationStation:
       type: object
-      required: [station_external_id, actual_sequence_number, is_confirmed, is_cancelled]
+      required:
+        [
+          station_external_id,
+          actual_sequence_number,
+          is_confirmed,
+          is_cancelled,
+        ]
       additionalProperties: false
       properties:
         station_external_id:
@@ -887,7 +904,8 @@ components:
 
     OperationDetail:
       type: object
-      required: [id, schedule_id, order_id, operating_date, train_status, stations]
+      required:
+        [id, schedule_id, order_id, operating_date, train_status, stations]
       additionalProperties: false
       properties:
         id:

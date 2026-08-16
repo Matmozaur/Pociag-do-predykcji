@@ -41,11 +41,12 @@ func (h *Handler) HandleQueryStations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stations, total, err := h.svc.QueryStations(ctx, service.QueryStationsParams{
-		Search:      r.URL.Query().Get("search"),
-		City:        r.URL.Query().Get("city"),
-		ExternalIds: externalIds,
-		Limit:       limit,
-		Offset:      offset,
+		Search:         r.URL.Query().Get("search"),
+		City:           r.URL.Query().Get("city"),
+		ExternalIds:    externalIds,
+		HasCoordinates: r.URL.Query().Get("hasCoordinates") == "true",
+		Limit:          limit,
+		Offset:         offset,
 	})
 	if err != nil {
 		span.RecordError(err)
