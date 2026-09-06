@@ -104,6 +104,26 @@ func (c *Client) GetStationByExternalID(ctx context.Context, externalID int) (*S
 	return &out, nil
 }
 
+// ListStationsWithCoordinates returns stations that have geographic coordinates,
+// for rendering on the map. The high limit fetches all geocoded stations at once.
+func (c *Client) ListStationsWithCoordinates(ctx context.Context, limit int) (*StationListResponse, error) {
+	q := url.Values{}
+	q.Set("hasCoordinates", "true")
+	q.Set("limit", strconv.Itoa(limit))
+	q.Set("offset", "0")
+
+	body, err := c.doRequest(ctx, http.MethodGet, "/api/v1/stations", q)
+	if err != nil {
+		return nil, fmt.Errorf("list stations with coordinates: %w", err)
+	}
+
+	var out StationListResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("decode station response: %w", err)
+	}
+	return &out, nil
+}
+
 func (c *Client) ListCarriers(ctx context.Context) (*CarrierListResponse, error) {
 	body, err := c.doRequest(ctx, http.MethodGet, "/api/v1/carriers", nil)
 	if err != nil {

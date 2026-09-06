@@ -21,6 +21,7 @@ import (
 type DataServiceClient interface {
 	Ready(ctx context.Context) error
 	QueryStations(ctx context.Context, search string, limit, offset int) (*dataservice.StationListResponse, error)
+	ListStationsWithCoordinates(ctx context.Context, limit int) (*dataservice.StationListResponse, error)
 	GetStationByExternalID(ctx context.Context, externalID int) (*dataservice.Station, error)
 	ListCarriers(ctx context.Context) (*dataservice.CarrierListResponse, error)
 
@@ -79,6 +80,34 @@ func (s *Service) SearchStations(ctx context.Context, q string, limit int) (*mod
 	}
 
 	return &model.StationSuggestionsResponse{Suggestions: suggestions}, nil
+}
+
+const mapStationsLimit = 5000
+
+func (s *Service) GetMapStations(ctx context.Context) (*model.StationMapResponse, error) {
+	ctx, span := s.tracer.Start(ctx, "stations.map")
+	defer span.End()
+
+	stations, err := s.client.ListStationsWithCoordinates(ctx, mapStationsLimit)
+	if err != nil {
+		return nil, fmt.Errorf("list map stations: %w", err)
+	}
+
+	points := make([]model.StationMapPoint, 0, len(stations.Data))
+	for _, st := range stations.Data {
+		if st.Latitude == nil || st.Longitude == nil {
+			continue
+		}
+		points = append(points, model.StationMapPoint{
+			ExternalID: st.ExternalID,
+			Name:       st.Name,
+			City:       st.City,
+			Latitude:   *st.Latitude,
+			Longitude:  *st.Longitude,
+		})
+	}
+
+	return &model.StationMapResponse{Stations: points}, nil
 }
 
 func (s *Service) SearchSchedules(ctx context.Context, from, to, date string, carriers, categories []string, sortBy string, limit, offset int) (*model.ScheduleSearchResponse, error) {

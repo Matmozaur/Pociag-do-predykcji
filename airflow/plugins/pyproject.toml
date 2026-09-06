@@ -26,3 +26,6 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["pociag_processing*"]
+
+[tool.setuptools.package-data]
+pociag_processing = ["data/*.json"]

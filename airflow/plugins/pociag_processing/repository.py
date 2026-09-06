@@ -277,6 +277,38 @@ class SyncRepository:
                 conn.close()
         return UpsertResult(records_read=records_read, records_written=records_written)
 
+    def upsert_station_coordinates(self, records: list[dict[str, Any]]) -> UpsertResult:
+        query = """
+        UPDATE stations
+        SET latitude = %s,
+            longitude = %s,
+            updated_at = NOW()
+        WHERE external_id = %s
+        """
+        records_read = 0
+        records_written = 0
+        with self._tracer.start_as_current_span("db.stations.coordinates.upsert"):
+            conn = self._get_conn()
+            try:
+                with conn.cursor() as cur:
+                    for rec in records:
+                        external_id = rec.get("external_id")
+                        latitude = rec.get("latitude")
+                        longitude = rec.get("longitude")
+                        if external_id is None or latitude is None or longitude is None:
+                            logger.warning("Skipping station coordinate record with missing fields")
+                            continue
+                        records_read += 1
+                        cur.execute(query, (latitude, longitude, external_id))
+                        records_written += cur.rowcount
+                    conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return UpsertResult(records_read=records_read, records_written=records_written)
+
     def upsert_commercial_categories(self, records: list[dict[str, Any]]) -> UpsertResult:
         query = """
         INSERT INTO commercial_categories

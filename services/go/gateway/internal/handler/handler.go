@@ -39,6 +39,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/search/stations", h.HandleSearchStations)
+		r.Get("/map/stations", h.HandleGetMapStations)
 		r.Get("/schedules/search", h.HandleSearchSchedules)
 		r.Get("/schedules/{routeId}", h.HandleGetScheduleDetail)
 		r.Get("/trains/live", h.HandleGetLiveTrains)
@@ -115,6 +116,29 @@ func (h *Handler) HandleSearchStations(w http.ResponseWriter, r *http.Request) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		h.writeError(w, http.StatusInternalServerError, "internal_error", "failed to search stations")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, response)
+}
+
+// HandleGetMapStations returns stations with coordinates for the network map.
+// @Summary		List stations for the map
+// @Description	Returns stations that have geographic coordinates, for interactive map markers.
+// @Tags		map
+// @Produce		json
+// @Success		200 {object} model.StationMapResponse
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/map/stations [get]
+func (h *Handler) HandleGetMapStations(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "stations.map")
+	defer span.End()
+
+	response, err := h.svc.GetMapStations(ctx)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		h.writeError(w, http.StatusInternalServerError, "internal_error", "failed to load map stations")
 		return
 	}
 

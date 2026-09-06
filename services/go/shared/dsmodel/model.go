@@ -19,10 +19,12 @@ type ErrorResponse struct {
 // ── Dictionaries ──────────────────────────────────────────────────────────────
 
 type Station struct {
-	ID         int64   `json:"id"`
-	ExternalID int     `json:"external_id"`
-	Name       string  `json:"name"`
-	City       *string `json:"city,omitempty"`
+	ID         int64    `json:"id"`
+	ExternalID int      `json:"external_id"`
+	Name       string   `json:"name"`
+	City       *string  `json:"city,omitempty"`
+	Latitude   *float64 `json:"latitude,omitempty"`
+	Longitude  *float64 `json:"longitude,omitempty"`
 }
 
 type StationListResponse struct {

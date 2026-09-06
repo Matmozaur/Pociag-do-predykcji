@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "gofmt + go vet",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; [ -n \"$f\" ] || exit 0; root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; case \"$f\" in /*) abs=\"$f\";; *) abs=\"$root/$f\";; esac; [ -f \"$abs\" ] || exit 0; case \"$abs\" in \"$root\"/services/go/*.go) d=$(dirname \"$abs\"); gofmt -w \"$abs\"; cd \"$d\" && go vet . ;; esac; }"
+          },
+          {
+            "type": "command",
+            "statusMessage": "ruff check",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; [ -n \"$f\" ] || exit 0; root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; case \"$f\" in /*) abs=\"$f\";; *) abs=\"$root/$f\";; esac; [ -f \"$abs\" ] || exit 0; case \"$abs\" in \"$root\"/airflow/*.py) cd \"$root/airflow\" && uv run ruff check \"$abs\" ;; esac; }"
+          },
+          {
+            "type": "command",
+            "async": true,
+            "asyncRewake": true,
+            "timeout": 180,
+            "statusMessage": "eslint (frontend)",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; [ -n \"$f\" ] || exit 0; root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; case \"$f\" in /*) abs=\"$f\";; *) abs=\"$root/$f\";; esac; [ -f \"$abs\" ] || exit 0; case \"$abs\" in \"$root\"/services/frontend/*.ts|\"$root\"/services/frontend/*.tsx) cd \"$root/services/frontend\" && node_modules/.bin/eslint \"$abs\" || exit 2 ;; esac; }"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -24,6 +24,18 @@ type StationSuggestionsResponse struct {
 	Suggestions []StationSuggestion `json:"suggestions"`
 }
 
+type StationMapPoint struct {
+	ExternalID int     `json:"external_id"`
+	Name       string  `json:"name"`
+	City       *string `json:"city,omitempty"`
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+}
+
+type StationMapResponse struct {
+	Stations []StationMapPoint `json:"stations"`
+}
+
 type CarrierInfo struct {
 	Code string `json:"code"`
 	Name string `json:"name"`

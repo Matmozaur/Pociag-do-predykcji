@@ -42,11 +42,12 @@ type QueryDisruptionsParams struct {
 }
 
 type QueryStationsParams struct {
-	Search      string
-	City        string
-	ExternalIds []int
-	Limit       int
-	Offset      int
+	Search         string
+	City           string
+	ExternalIds    []int
+	HasCoordinates bool
+	Limit          int
+	Offset         int
 }
 
 // ── Repository interface ──────────────────────────────────────────────────────

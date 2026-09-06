@@ -2,7 +2,9 @@
 
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useState } from 'react'
-import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
+import { useQuery } from '@tanstack/react-query'
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, Tooltip } from 'react-leaflet'
+import { gateway } from '@/lib/api'
 
 const INITIAL_MAP_BOUNDS: [[number, number], [number, number]] = [
     [48.85, 13.85],
@@ -34,6 +36,12 @@ function buildMask(polandCoords: [number, number][][]): GeoJSON.Feature {
 
 export function TrafficMapClient() {
     const [maskFeature, setMaskFeature] = useState<GeoJSON.Feature | null>(null)
+
+    const { data: stationsData } = useQuery({
+        queryKey: ['mapStations'],
+        queryFn: gateway.getMapStations,
+        staleTime: 60 * 60 * 1000,
+    })
 
     useEffect(() => {
         fetch('/poland-border.geojson')
@@ -91,6 +99,25 @@ export function TrafficMapClient() {
                         interactive={false}
                     />
                 )}
+
+                {stationsData?.stations.map((station) => (
+                    <CircleMarker
+                        key={station.external_id}
+                        center={[station.latitude, station.longitude]}
+                        radius={4}
+                        pathOptions={{
+                            color: '#38bdf8',
+                            weight: 1.5,
+                            fillColor: '#0ea5e9',
+                            fillOpacity: 0.85,
+                        }}
+                    >
+                        <Tooltip direction="top" offset={[0, -4]} opacity={1}>
+                            <span className="font-semibold">{station.name}</span>
+                            {station.city ? <span className="text-slate-400"> · {station.city}</span> : null}
+                        </Tooltip>
+                    </CircleMarker>
+                ))}
 
             </MapContainer>
         </div>
