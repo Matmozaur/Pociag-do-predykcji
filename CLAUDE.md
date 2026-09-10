@@ -51,6 +51,27 @@ endpoints / fields / events / columns not in the specs — change the spec first
 On doc conflicts trust: `infra/docker-compose.yml` → `.github/workflows/ci-cd.yaml` → `Makefile`.
 Full per-area rules are also in `.github/instructions/*.instructions.md` (mirror of the nested files).
 
+## Scope discipline — keep the diff small
+
+The change you ship should be the smallest one that does the task. Fewer touched files = faster
+review, easier revert, cleaner history.
+
+- **Out-of-scope findings → issue, not inline fix.** If you spot a bug or needed improvement
+  unrelated to the current task, do **not** fix it inline. Run `gh issue create` describing the
+  finding, its location (`file:line`), and why it matters, then continue what you were doing.
+  Mention the issue number in your summary.
+- **No drive-by edits.** Don't reformat, rename, re-order imports, "tidy" comments, bump
+  dependencies, or restructure code you're only reading. If a formatter/linter rewrites files you
+  didn't touch, revert those hunks before committing.
+- **Match the surrounding code.** Follow the existing patterns, naming, and structure of the file
+  you're in rather than introducing a new style — even one you'd prefer.
+- **Don't widen the interface.** No new endpoints / fields / events / columns / config keys / CLI
+  flags / exported functions beyond what the task needs (and the specs allow — see Contract-first).
+- **Ask before large refactors.** If the task seems to require touching many files or moving code
+  across modules, stop and confirm the approach with the user first.
+- **Leave TODOs and dead code alone** unless removing them *is* the task. File an issue instead.
+- **Tests and docs for what you changed**, not a sweep of pre-existing gaps.
+
 ## Repo-wide workflow
 
 ```bash
