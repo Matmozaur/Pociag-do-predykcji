@@ -160,6 +160,22 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/schedules/map-routes:
+    get:
+      summary: Get deduplicated route paths for the map
+      description: |
+        Returns one representative route per distinct sequence of coordinate-bearing
+        stations visited, for drawing route lines on the frontend map.
+      operationId: getMapRoutes
+      tags: [schedules]
+      responses:
+        "200":
+          description: Deduplicated map route list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapRouteListResponse"
+
   /api/v1/schedules/{routeId}/stations:
     get:
       summary: Get stations for a route
@@ -817,6 +833,40 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RouteConnection"
+
+    MapRoute:
+      type: object
+      required: [route_id, station_external_ids, route_count]
+      additionalProperties: false
+      properties:
+        route_id:
+          type: integer
+          format: int64
+          description: Representative route for this path
+        train_name:
+          type: string
+        carrier_code:
+          type: string
+        commercial_category_symbol:
+          type: string
+        station_external_ids:
+          type: array
+          items:
+            type: integer
+          description: Ordered external IDs of the coordinate-bearing stations this path visits
+        route_count:
+          type: integer
+          description: How many distinct routes share this exact station sequence
+
+    MapRouteListResponse:
+      type: object
+      required: [routes]
+      additionalProperties: false
+      properties:
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapRoute"
 
     # ── Operations ─────────────────────────────────────────────────────────────
     OperationSummary:

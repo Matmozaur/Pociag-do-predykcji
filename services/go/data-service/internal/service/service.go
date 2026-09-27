@@ -60,6 +60,7 @@ type Repository interface {
 	GetRouteByKey(ctx context.Context, scheduleID, orderID int) (*model.RouteDetail, error)
 	GetRouteStations(ctx context.Context, routeID int64) ([]model.RouteStation, error)
 	GetRouteOperatingDates(ctx context.Context, routeID int64, from, to *time.Time) ([]time.Time, error)
+	GetMapRoutes(ctx context.Context) ([]model.MapRoute, error)
 
 	QueryOperations(ctx context.Context, p QueryOperationsParams) ([]model.OperationSummary, int64, error)
 	GetOperationById(ctx context.Context, id int64) (*model.OperationDetail, error)

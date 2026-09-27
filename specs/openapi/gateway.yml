@@ -108,6 +108,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/StationMapResponse"
 
+  /api/v1/map/routes:
+    get:
+      summary: List route paths for the map
+      description: |
+        Returns deduplicated route paths between stations with coordinates,
+        for drawing connecting lines on the network map.
+      operationId: getMapRoutes
+      tags: [map]
+      responses:
+        "200":
+          description: Deduplicated map route paths
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapRoutesResponse"
+
   # ── Schedules (Frontend Views) ─────────────────────────────────────────────
 
   /api/v1/schedules/search:
@@ -458,7 +474,48 @@ components:
           items:
             $ref: "#/components/schemas/StationMapPoint"
 
+    MapRouteView:
+      type: object
+      required: [route_id, station_external_ids, route_count]
+      additionalProperties: false
+      properties:
+        route_id:
+          type: integer
+          format: int64
+        train_name:
+          type: string
+        carrier:
+          $ref: "#/components/schemas/CarrierInfo"
+        commercial_category:
+          type: string
+        station_external_ids:
+          type: array
+          items:
+            type: integer
+        route_count:
+          type: integer
+
+    MapRoutesResponse:
+      type: object
+      required: [routes]
+      additionalProperties: false
+      properties:
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapRouteView"
+
     # ── Schedule Search ────────────────────────────────────────────────────────
+    CarrierInfo:
+      type: object
+      required: [code, name]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+
     ScheduleSearchResult:
       type: object
       required: [route_id, train_name, carrier, departure, arrival]
@@ -472,14 +529,7 @@ components:
           type: string
           description: "Display name (e.g. 'IC 8301 Polonez')"
         carrier:
-          type: object
-          required: [code, name]
-          additionalProperties: false
-          properties:
-            code:
-              type: string
-            name:
-              type: string
+          $ref: "#/components/schemas/CarrierInfo"
         commercial_category:
           type: string
           description: Category symbol (IC, TLK, REG, etc.)
@@ -573,14 +623,7 @@ components:
         train_name:
           type: string
         carrier:
-          type: object
-          required: [code, name]
-          additionalProperties: false
-          properties:
-            code:
-              type: string
-            name:
-              type: string
+          $ref: "#/components/schemas/CarrierInfo"
         commercial_category:
           type: string
         national_number:

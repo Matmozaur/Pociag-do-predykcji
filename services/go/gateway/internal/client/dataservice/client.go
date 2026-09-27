@@ -220,6 +220,19 @@ func (c *Client) GetRouteStations(ctx context.Context, routeID int64) (*RouteSta
 	return &out, nil
 }
 
+func (c *Client) GetMapRoutes(ctx context.Context) (*MapRouteListResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/api/v1/schedules/map-routes", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get map routes: %w", err)
+	}
+
+	var out MapRouteListResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("decode map routes response: %w", err)
+	}
+	return &out, nil
+}
+
 func (c *Client) GetRouteOperatingDates(ctx context.Context, routeID int64) (*OperatingDatesResponse, error) {
 	p := "/api/v1/schedules/" + strconv.FormatInt(routeID, 10) + "/operating-dates"
 	body, err := c.doRequest(ctx, http.MethodGet, p, nil)

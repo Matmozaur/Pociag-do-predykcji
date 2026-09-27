@@ -140,6 +140,19 @@ type RouteDetail struct {
 	Connections               []RouteConnection `json:"connections,omitempty"`
 }
 
+type MapRoute struct {
+	RouteID                  int64   `json:"route_id"`
+	TrainName                *string `json:"train_name,omitempty"`
+	CarrierCode              *string `json:"carrier_code,omitempty"`
+	CommercialCategorySymbol *string `json:"commercial_category_symbol,omitempty"`
+	StationExternalIDs       []int   `json:"station_external_ids"`
+	RouteCount               int     `json:"route_count"`
+}
+
+type MapRouteListResponse struct {
+	Routes []MapRoute `json:"routes"`
+}
+
 // ── Operations ────────────────────────────────────────────────────────────────
 
 type OperationSummary struct {
