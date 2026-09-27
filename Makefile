@@ -19,8 +19,8 @@ help: ## Show this help message
 # ── Infrastructure stack ──────────────────────────────────────────────────────
 
 .PHONY: infra-up
-infra-up: ## Start core infra (postgres + otel-collector)
-	docker compose -f infra/docker-compose.yml up -d
+infra-up: ## Start everything
+	docker compose -f infra/docker-compose.yml --profile all up -d
 
 .PHONY: infra-up-tracing
 infra-up-tracing: ## Start infra + Jaeger tracing UI
@@ -33,10 +33,6 @@ infra-up-monitoring: ## Start infra + Prometheus + Grafana
 .PHONY: infra-up-airflow
 infra-up-airflow: ## Start infra + Airflow
 	docker compose -f infra/docker-compose.yml --profile airflow up -d
-
-.PHONY: infra-up-all
-infra-up-all: ## Start everything
-	docker compose -f infra/docker-compose.yml --profile all up -d
 
 .PHONY: infra-upa-all-build
 infra-up-all-build: ## Start everything, rebuilding images

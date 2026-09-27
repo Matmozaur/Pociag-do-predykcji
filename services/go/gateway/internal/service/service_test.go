@@ -17,6 +17,8 @@ type mockDataServiceClient struct {
 	getOperationStatsFn      func(ctx context.Context, date string) (*dataservice.OperationStatistics, error)
 	queryDisruptionsFn       func(ctx context.Context, p dataservice.QueryDisruptionsParams) (*dataservice.DisruptionListResponse, error)
 	getDisruptionByIDFn      func(ctx context.Context, disruptionID int64) (*dataservice.DisruptionDetail, error)
+	queryOperationsFn        func(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error)
+	getOperationByIDFn       func(ctx context.Context, operationID int64) (*dataservice.OperationDetail, error)
 }
 
 func (m *mockDataServiceClient) Ready(ctx context.Context) error { return nil }
@@ -67,10 +69,16 @@ func (m *mockDataServiceClient) GetRouteOperatingDates(ctx context.Context, rout
 }
 
 func (m *mockDataServiceClient) QueryOperations(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error) {
+	if m.queryOperationsFn != nil {
+		return m.queryOperationsFn(ctx, p)
+	}
 	return &dataservice.OperationListResponse{}, nil
 }
 
 func (m *mockDataServiceClient) GetOperationByID(ctx context.Context, operationID int64) (*dataservice.OperationDetail, error) {
+	if m.getOperationByIDFn != nil {
+		return m.getOperationByIDFn(ctx, operationID)
+	}
 	return &dataservice.OperationDetail{}, nil
 }
 
@@ -250,6 +258,49 @@ func TestGetDashboardOverview_ComputesStatistics(t *testing.T) {
 	}
 	if resp.DataFreshness.SchedulesLastUpdated != nil || resp.DataFreshness.OperationsLastUpdated != nil {
 		t.Fatal("expected data_freshness inner fields to be omitted")
+	}
+}
+
+func TestGetLiveTrains_ResolvesCurrentAndNextStation(t *testing.T) {
+	trainName := "IC 8301"
+	carrierCode := "IC"
+	station1 := "Warszawa Centralna"
+	station2 := "Krakow Glowny"
+
+	mockClient := &mockDataServiceClient{
+		queryOperationsFn: func(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error) {
+			return &dataservice.OperationListResponse{
+				Data:       []dataservice.OperationSummary{{ID: 1}},
+				Pagination: dataservice.Pagination{Total: 1},
+			}, nil
+		},
+		getOperationByIDFn: func(ctx context.Context, operationID int64) (*dataservice.OperationDetail, error) {
+			return &dataservice.OperationDetail{
+				ID:          1,
+				RouteName:   &trainName,
+				CarrierCode: &carrierCode,
+				TrainStatus: "P",
+				Stations: []dataservice.OperationStation{
+					{StationExternalID: 100, StationName: &station1, ActualSequenceNumber: 1, IsConfirmed: true},
+					{StationExternalID: 200, StationName: &station2, ActualSequenceNumber: 2},
+				},
+			}, nil
+		},
+	}
+
+	svc := New(mockClient)
+	resp, err := svc.GetLiveTrains(context.Background(), nil, nil, 20, 0)
+	if err != nil {
+		t.Fatalf("GetLiveTrains returned error: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Data))
+	}
+	if resp.Data[0].CurrentStation == nil || *resp.Data[0].CurrentStation != station1 {
+		t.Fatalf("expected current_station %q, got %v", station1, resp.Data[0].CurrentStation)
+	}
+	if resp.Data[0].NextStation == nil || *resp.Data[0].NextStation != station2 {
+		t.Fatalf("expected next_station %q, got %v", station2, resp.Data[0].NextStation)
 	}
 }
 

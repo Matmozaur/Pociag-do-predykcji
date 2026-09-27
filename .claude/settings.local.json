@@ -4,5 +4,10 @@
     "airflow",
     "playwright",
     "context7"
-  ]
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)"
+    ]
+  }
 }

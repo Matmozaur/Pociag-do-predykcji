@@ -1,41 +1,85 @@
 'use client'
 
 import 'leaflet/dist/leaflet.css'
-import { useEffect, useState } from 'react'
+import L from 'leaflet'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CircleMarker, GeoJSON, MapContainer, TileLayer, Tooltip } from 'react-leaflet'
-import { gateway } from '@/lib/api'
+import { CircleMarker, GeoJSON, MapContainer, Pane, Popup, TileLayer, Tooltip } from 'react-leaflet'
+import { gateway, type MapStation } from '@/lib/api'
 
-const INITIAL_MAP_BOUNDS: [[number, number], [number, number]] = [
+// Padded bounding box around Poland — used both to fit the initial view and to
+// lock panning so users can never scroll out into an empty void.
+const POLAND_VIEW_BOUNDS: L.LatLngBoundsExpression = [
     [48.85, 13.85],
     [54.98, 24.4],
 ]
+const MAX_BOUNDS = L.latLngBounds(POLAND_VIEW_BOUNDS).pad(0.15)
 
-function buildMask(polandCoords: [number, number][][]): GeoJSON.Feature {
-    // Outer ring: whole world (clockwise in GeoJSON = exterior for inverted polygon)
-    // Inner ring: Poland border (counterclockwise = hole)
-    // GeoJSON uses [longitude, latitude]
-    const worldRing: [number, number][] = [
-        [-180, -90],
-        [180, -90],
-        [180, 90],
-        [-180, 90],
-        [-180, -90],
+const POLAND_FILL_STYLE: L.PathOptions = {
+    fillColor: '#10141f',
+    fillOpacity: 1,
+    color: '#334155',
+    weight: 1.2,
+}
+
+// Everything outside Poland is painted over the railway tiles in the map background
+// colour (see `.leaflet-container` in globals.css), so tracks stop exactly at the border.
+const OUTSIDE_POLAND_STYLE: L.PathOptions = {
+    fillColor: '#1a1d27',
+    fillOpacity: 1,
+    color: '#334155',
+    weight: 1.2,
+}
+
+type PolandFeature = GeoJSON.Feature<GeoJSON.MultiPolygon>
+
+// World ring with every Polish land part (mainland + Baltic islands) cut out as a hole.
+// Latitude is capped at ±85 (the Web Mercator limit).
+function buildOutsideMask(poland: PolandFeature): GeoJSON.Feature<GeoJSON.Polygon> {
+    const worldRing: GeoJSON.Position[] = [
+        [-180, -85],
+        [180, -85],
+        [180, 85],
+        [-180, 85],
+        [-180, -85],
     ]
-    // Deep-copy and reverse to make it a hole (clockwise)
-    const polandHole: [number, number][] = [...polandCoords[0]].reverse()
+    const holes = poland.geometry.coordinates.map((polygon) => polygon[0])
     return {
         type: 'Feature',
         properties: {},
-        geometry: {
-            type: 'Polygon',
-            coordinates: [worldRing, polandHole],
-        },
+        geometry: { type: 'Polygon', coordinates: [worldRing, ...holes] },
     }
 }
 
+const STATION_PATH_OPTIONS: L.PathOptions = {
+    color: '#38bdf8',
+    weight: 1.5,
+    fillColor: '#0ea5e9',
+    fillOpacity: 0.85,
+}
+
+// Real-world track geometry from OpenRailwayMap (OSM data, CC-BY-SA). The tiles are
+// transparent, so they overlay the dark Poland fill without needing a base map. Dimmed
+// so the network reads as context and the station dots stay the focal layer.
+const RAILWAY_TILES_URL = 'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png'
+const RAILWAY_TILES_ATTRIBUTION =
+    'Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
+    'style: <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (CC-BY-SA)'
+
+function StationPopupContent({ station }: { station: MapStation }) {
+    return (
+        <div className="min-w-[160px] text-sm">
+            <p className="font-semibold text-white">{station.name}</p>
+            {station.city && station.city !== station.name ? (
+                <p className="text-xs text-slate-400">{station.city}</p>
+            ) : null}
+            <p className="mt-1 text-xs text-slate-500">ID: {station.external_id}</p>
+        </div>
+    )
+}
+
 export function TrafficMapClient() {
-    const [maskFeature, setMaskFeature] = useState<GeoJSON.Feature | null>(null)
+    const [polandGeo, setPolandGeo] = useState<PolandFeature | null>(null)
 
     const { data: stationsData } = useQuery({
         queryKey: ['mapStations'],
@@ -46,79 +90,84 @@ export function TrafficMapClient() {
     useEffect(() => {
         fetch('/poland-border.geojson')
             .then((r) => r.json())
-            .then((geojson: GeoJSON.Feature<GeoJSON.Polygon>) => {
-                setMaskFeature(buildMask(geojson.geometry.coordinates as [number, number][][]))
-            })
+            .then((geojson: PolandFeature) => setPolandGeo(geojson))
             .catch(() => {
-                // mask not critical — fail silently
+                // border shape not critical to interactivity — fail silently
             })
     }, [])
+
+    const outsideMask = useMemo(() => (polandGeo ? buildOutsideMask(polandGeo) : null), [polandGeo])
 
     return (
         <div className="relative h-full w-full">
             <MapContainer
-                bounds={INITIAL_MAP_BOUNDS}
-                minZoom={2}
+                bounds={POLAND_VIEW_BOUNDS}
+                maxBounds={MAX_BOUNDS}
+                maxBoundsViscosity={1.0}
+                minZoom={6}
                 maxZoom={19}
                 worldCopyJump={false}
                 style={{ width: '100%', height: '100%' }}
                 zoomControl={true}
             >
-                <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com">CARTO</a>'
-                    subdomains="abcd"
-                    maxZoom={20}
-                    noWrap={true}
-                    keepBuffer={2}
-                />
-
-                <TileLayer
-                    url="https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png"
-                    attribution='Map style: &copy; <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (CC-BY-SA)'
-                    subdomains="abc"
-                    opacity={0.55}
-                    zIndex={200}
-                    maxZoom={19}
-                    noWrap={true}
-                    keepBuffer={2}
-                    updateWhenIdle={true}
-                />
-
-                {/* Keep the surrounding map legible but visually recess it behind Poland. */}
-                {maskFeature && (
+                {polandGeo && (
                     <GeoJSON
-                        key="poland-mask"
-                        data={maskFeature as GeoJSON.Feature<GeoJSON.Geometry>}
-                        style={() => ({
-                            fillColor: '#0a0c14',
-                            fillOpacity: 0.68,
-                            color: '#1e293b',
-                            weight: 0.5,
-                        })}
+                        key="poland-shape"
+                        data={polandGeo}
+                        style={POLAND_FILL_STYLE}
                         interactive={false}
                     />
                 )}
 
-                {stationsData?.stations.map((station) => (
-                    <CircleMarker
-                        key={station.external_id}
-                        center={[station.latitude, station.longitude]}
-                        radius={4}
-                        pathOptions={{
-                            color: '#38bdf8',
-                            weight: 1.5,
-                            fillColor: '#0ea5e9',
-                            fillOpacity: 0.85,
-                        }}
-                    >
-                        <Tooltip direction="top" offset={[0, -4]} opacity={1}>
-                            <span className="font-semibold">{station.name}</span>
-                            {station.city ? <span className="text-slate-400"> · {station.city}</span> : null}
-                        </Tooltip>
-                    </CircleMarker>
-                ))}
+                {/* Explicit panes pin the paint order: Poland fill (overlayPane, z 400) →
+                    railway tiles → outside-Poland mask → station dots. */}
+                <Pane name="railwayPane" style={{ zIndex: 410 }}>
+                    <TileLayer
+                        url={RAILWAY_TILES_URL}
+                        attribution={RAILWAY_TILES_ATTRIBUTION}
+                        subdomains={['a', 'b', 'c']}
+                        maxZoom={19}
+                        opacity={0.6}
+                    />
+                </Pane>
 
+                <Pane name="outsideMaskPane" style={{ zIndex: 415 }}>
+                    {outsideMask && (
+                        <GeoJSON
+                            key="outside-poland-mask"
+                            data={outsideMask}
+                            style={OUTSIDE_POLAND_STYLE}
+                            interactive={false}
+                        />
+                    )}
+                </Pane>
+
+                <Pane name="stationsPane" style={{ zIndex: 420 }}>
+                    {stationsData?.stations.map((station) => (
+                        <CircleMarker
+                            key={station.external_id}
+                            center={[station.latitude, station.longitude]}
+                            radius={6}
+                            pathOptions={STATION_PATH_OPTIONS}
+                            eventHandlers={{
+                                click: (e) => e.target.openPopup(),
+                            }}
+                        >
+                            <Tooltip
+                                direction="top"
+                                offset={[0, -6]}
+                                opacity={1}
+                                permanent
+                                className="station-label-tooltip"
+                            >
+                                <span className="font-semibold">{station.name}</span>
+                            </Tooltip>
+                            <Popup>
+                                <StationPopupContent station={station} />
+                            </Popup>
+                        </CircleMarker>
+                    ))}
+                </Pane>
             </MapContainer>
         </div>
     )

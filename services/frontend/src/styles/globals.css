@@ -30,14 +30,14 @@ body {
 }
 
 .leaflet-popup-content-wrapper {
-    background: #222536;
+    background: #222536 !important;
     color: #f1f5f9;
     border: 1px solid #2d3148;
     border-radius: 8px;
 }
 
 .leaflet-popup-tip {
-    background: #222536;
+    background: #222536 !important;
 }
 
 .leaflet-control-attribution {
@@ -58,6 +58,25 @@ body {
 
 .leaflet-bar a:hover {
     background-color: #2d3148 !important;
+}
+
+/* Permanent station name labels — kept small and low-contrast so ~90 of them
+   stay legible without turning into visual noise; the speech-bubble tip is
+   hidden for a flatter, unobtrusive look. */
+.station-label-tooltip {
+    background: rgba(15, 17, 23, 0.72) !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #cbd5e1 !important;
+    font-size: 10px !important;
+    font-weight: 500;
+    line-height: 1.2;
+    padding: 1px 4px !important;
+    border-radius: 3px;
+}
+
+.station-label-tooltip::before {
+    display: none;
 }
 
 /* Keep map credits above the mobile sheet rather than under its scrollable content. */
