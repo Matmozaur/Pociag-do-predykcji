@@ -40,7 +40,6 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/search/stations", h.HandleSearchStations)
 		r.Get("/map/stations", h.HandleGetMapStations)
-		r.Get("/map/routes", h.HandleGetMapRoutes)
 		r.Get("/schedules/search", h.HandleSearchSchedules)
 		r.Get("/schedules/{routeId}", h.HandleGetScheduleDetail)
 		r.Get("/trains/live", h.HandleGetLiveTrains)
@@ -140,30 +139,6 @@ func (h *Handler) HandleGetMapStations(w http.ResponseWriter, r *http.Request) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		h.writeError(w, http.StatusInternalServerError, "internal_error", "failed to load map stations")
-		return
-	}
-
-	h.writeJSON(w, http.StatusOK, response)
-}
-
-// HandleGetMapRoutes returns deduplicated route paths between coordinate-bearing
-// stations, for drawing connecting lines on the network map.
-// @Summary		List route paths for the map
-// @Description	Returns deduplicated route paths between stations with coordinates, for connecting lines on the map.
-// @Tags		map
-// @Produce		json
-// @Success		200 {object} model.MapRoutesResponse
-// @Failure		500 {object} model.ErrorResponse "Internal server error"
-// @Router		/api/v1/map/routes [get]
-func (h *Handler) HandleGetMapRoutes(w http.ResponseWriter, r *http.Request) {
-	ctx, span := h.tracer.Start(r.Context(), "routes.map")
-	defer span.End()
-
-	response, err := h.svc.GetMapRoutes(ctx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		h.writeError(w, http.StatusInternalServerError, "internal_error", "failed to load map routes")
 		return
 	}
 

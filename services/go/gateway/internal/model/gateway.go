@@ -36,19 +36,6 @@ type StationMapResponse struct {
 	Stations []StationMapPoint `json:"stations"`
 }
 
-type MapRouteView struct {
-	RouteID            int64        `json:"route_id"`
-	TrainName          *string      `json:"train_name,omitempty"`
-	Carrier            *CarrierInfo `json:"carrier,omitempty"`
-	CommercialCategory *string      `json:"commercial_category,omitempty"`
-	StationExternalIDs []int        `json:"station_external_ids"`
-	RouteCount         int          `json:"route_count"`
-}
-
-type MapRoutesResponse struct {
-	Routes []MapRouteView `json:"routes"`
-}
-
 type CarrierInfo struct {
 	Code string `json:"code"`
 	Name string `json:"name"`

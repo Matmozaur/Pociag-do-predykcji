@@ -39,9 +39,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/schedules", func(r chi.Router) {
 			r.Get("/", h.HandleQueryRoutes)
-			// Static paths before parametric.
+			// Static path before parametric.
 			r.Get("/by-key/{scheduleId}/{orderId}", h.HandleGetRouteByKey)
-			r.Get("/map-routes", h.HandleGetMapRoutes)
 			r.Get("/{routeId}", h.HandleGetRouteById)
 			r.Get("/{routeId}/stations", h.HandleGetRouteStations)
 			r.Get("/{routeId}/operating-dates", h.HandleGetRouteOperatingDates)

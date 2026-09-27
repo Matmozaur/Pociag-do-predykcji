@@ -179,20 +179,3 @@ func (h *Handler) HandleGetRouteOperatingDates(w http.ResponseWriter, r *http.Re
 		Dates:   dateStrs,
 	})
 }
-
-// HandleGetMapRoutes retrieves one representative route per unique sequence of
-// coordinate-bearing stations, for drawing route lines on the frontend map.
-func (h *Handler) HandleGetMapRoutes(w http.ResponseWriter, r *http.Request) {
-	ctx, span := h.tracer.Start(r.Context(), "map_routes.list")
-	defer span.End()
-
-	routes, err := h.svc.GetMapRoutes(ctx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		h.writeError(w, span, http.StatusInternalServerError, "internal_error", "failed to fetch map routes")
-		return
-	}
-
-	h.writeJSON(w, span, http.StatusOK, model.MapRouteListResponse{Routes: routes})
-}

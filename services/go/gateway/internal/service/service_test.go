@@ -19,7 +19,6 @@ type mockDataServiceClient struct {
 	getDisruptionByIDFn      func(ctx context.Context, disruptionID int64) (*dataservice.DisruptionDetail, error)
 	queryOperationsFn        func(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error)
 	getOperationByIDFn       func(ctx context.Context, operationID int64) (*dataservice.OperationDetail, error)
-	getMapRoutesFn           func(ctx context.Context) (*dataservice.MapRouteListResponse, error)
 }
 
 func (m *mockDataServiceClient) Ready(ctx context.Context) error { return nil }
@@ -96,13 +95,6 @@ func (m *mockDataServiceClient) GetDisruptionByID(ctx context.Context, disruptio
 		return m.getDisruptionByIDFn(ctx, disruptionID)
 	}
 	return &dataservice.DisruptionDetail{}, nil
-}
-
-func (m *mockDataServiceClient) GetMapRoutes(ctx context.Context) (*dataservice.MapRouteListResponse, error) {
-	if m.getMapRoutesFn != nil {
-		return m.getMapRoutesFn(ctx)
-	}
-	return &dataservice.MapRouteListResponse{}, nil
 }
 
 func TestSearchSchedules_MultiCategoryDedupAndStationOrder(t *testing.T) {
@@ -309,51 +301,6 @@ func TestGetLiveTrains_ResolvesCurrentAndNextStation(t *testing.T) {
 	}
 	if resp.Data[0].NextStation == nil || *resp.Data[0].NextStation != station2 {
 		t.Fatalf("expected next_station %q, got %v", station2, resp.Data[0].NextStation)
-	}
-}
-
-func TestGetMapRoutes_ResolvesCarrierAndPassesThroughFields(t *testing.T) {
-	trainName := "IC 8301"
-	carrierCode := "IC"
-	category := "IC"
-
-	mockClient := &mockDataServiceClient{
-		listCarriersFn: func(ctx context.Context) (*dataservice.CarrierListResponse, error) {
-			return &dataservice.CarrierListResponse{Data: []dataservice.Carrier{{Code: "IC", Name: "Intercity"}}}, nil
-		},
-		getMapRoutesFn: func(ctx context.Context) (*dataservice.MapRouteListResponse, error) {
-			return &dataservice.MapRouteListResponse{
-				Routes: []dataservice.MapRoute{
-					{
-						RouteID:                  1,
-						TrainName:                &trainName,
-						CarrierCode:              &carrierCode,
-						CommercialCategorySymbol: &category,
-						StationExternalIDs:       []int{100, 200, 300},
-						RouteCount:               7,
-					},
-				},
-			}, nil
-		},
-	}
-
-	svc := New(mockClient)
-	resp, err := svc.GetMapRoutes(context.Background())
-	if err != nil {
-		t.Fatalf("GetMapRoutes returned error: %v", err)
-	}
-	if len(resp.Routes) != 1 {
-		t.Fatalf("expected 1 route, got %d", len(resp.Routes))
-	}
-	route := resp.Routes[0]
-	if route.Carrier == nil || route.Carrier.Code != "IC" || route.Carrier.Name != "Intercity" {
-		t.Fatalf("expected carrier IC/Intercity, got %+v", route.Carrier)
-	}
-	if len(route.StationExternalIDs) != 3 || route.StationExternalIDs[2] != 300 {
-		t.Fatalf("unexpected station_external_ids: %v", route.StationExternalIDs)
-	}
-	if route.RouteCount != 7 {
-		t.Fatalf("expected route_count 7, got %d", route.RouteCount)
 	}
 }
 

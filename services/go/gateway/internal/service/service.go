@@ -30,7 +30,6 @@ type DataServiceClient interface {
 	GetRouteByKey(ctx context.Context, scheduleID, orderID int) (*dataservice.RouteDetail, error)
 	GetRouteStations(ctx context.Context, routeID int64) (*dataservice.RouteStationListResponse, error)
 	GetRouteOperatingDates(ctx context.Context, routeID int64) (*dataservice.OperatingDatesResponse, error)
-	GetMapRoutes(ctx context.Context) (*dataservice.MapRouteListResponse, error)
 
 	QueryOperations(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error)
 	GetOperationByID(ctx context.Context, operationID int64) (*dataservice.OperationDetail, error)
@@ -109,40 +108,6 @@ func (s *Service) GetMapStations(ctx context.Context) (*model.StationMapResponse
 	}
 
 	return &model.StationMapResponse{Stations: points}, nil
-}
-
-func (s *Service) GetMapRoutes(ctx context.Context) (*model.MapRoutesResponse, error) {
-	ctx, span := s.tracer.Start(ctx, "routes.map")
-	defer span.End()
-
-	routes, err := s.client.GetMapRoutes(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get map routes: %w", err)
-	}
-
-	carrierMap, err := s.loadCarrierMap(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	views := make([]model.MapRouteView, 0, len(routes.Routes))
-	for _, route := range routes.Routes {
-		var carrier *model.CarrierInfo
-		if route.CarrierCode != nil {
-			c := carrierInfo(route.CarrierCode, carrierMap)
-			carrier = &c
-		}
-		views = append(views, model.MapRouteView{
-			RouteID:            route.RouteID,
-			TrainName:          route.TrainName,
-			Carrier:            carrier,
-			CommercialCategory: route.CommercialCategorySymbol,
-			StationExternalIDs: route.StationExternalIDs,
-			RouteCount:         route.RouteCount,
-		})
-	}
-
-	return &model.MapRoutesResponse{Routes: views}, nil
 }
 
 func (s *Service) SearchSchedules(ctx context.Context, from, to, date string, carriers, categories []string, sortBy string, limit, offset int) (*model.ScheduleSearchResponse, error) {

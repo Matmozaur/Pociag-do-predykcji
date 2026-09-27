@@ -23,8 +23,6 @@ type RouteStationListResponse = dsmodel.RouteStationListResponse
 type OperatingDatesResponse = dsmodel.OperatingDatesResponse
 type RouteConnection = dsmodel.RouteConnection
 type RouteDetail = dsmodel.RouteDetail
-type MapRoute = dsmodel.MapRoute
-type MapRouteListResponse = dsmodel.MapRouteListResponse
 
 // Operations
 type OperationSummary = dsmodel.OperationSummary

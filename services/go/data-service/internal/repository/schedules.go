@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -597,111 +596,4 @@ func (r *Repository) GetRouteOperatingDates(ctx context.Context, routeID int64, 
 		return nil, fmt.Errorf("iterate operating date rows: %w", err)
 	}
 	return dates, nil
-}
-
-// GetMapRoutes returns one representative route per distinct sequence of coordinate-bearing
-// stations visited, deduplicating the ~19k routes down to their unique map-drawable paths.
-func (r *Repository) GetMapRoutes(ctx context.Context) ([]model.MapRoute, error) {
-	ctx, span := r.tracer.Start(ctx, "db.map_routes.list")
-	defer span.End()
-
-	const query = `
-		WITH coord_stations AS (
-		  SELECT external_id FROM stations WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-		),
-		per_route AS (
-		  SELECT rs.route_id, array_agg(rs.station_external_id ORDER BY rs.order_number) AS seq
-		  FROM route_stations rs
-		  JOIN coord_stations cs ON cs.external_id = rs.station_external_id
-		  GROUP BY rs.route_id
-		  HAVING count(*) >= 2
-		),
-		grouped AS (
-		  SELECT
-		    (array_agg(pr.route_id ORDER BY pr.route_id))[1] AS representative_route_id,
-		    pr.seq AS station_external_ids,
-		    count(*) AS route_count
-		  FROM per_route pr
-		  GROUP BY pr.seq
-		)
-		SELECT
-		  g.representative_route_id,
-		  r.name,
-		  r.carrier_code,
-		  r.commercial_category_symbol,
-		  array_to_string(g.station_external_ids, ','),
-		  g.route_count
-		FROM grouped g
-		JOIN routes r ON r.id = g.representative_route_id
-		ORDER BY g.representative_route_id`
-
-	rows, err := r.db.WithContext(ctx).Raw(query).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("query map routes: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var results []model.MapRoute
-	for rows.Next() {
-		var (
-			routeID                  int64
-			name                     pgtype.Text
-			carrierCode              pgtype.Text
-			commercialCategorySymbol pgtype.Text
-			stationExternalIDsCSV    string
-			routeCount               int64
-		)
-		if err := rows.Scan(
-			&routeID, &name, &carrierCode, &commercialCategorySymbol,
-			&stationExternalIDsCSV, &routeCount,
-		); err != nil {
-			return nil, fmt.Errorf("scan map route row: %w", err)
-		}
-
-		stationExternalIDs, err := parseIntCSV(stationExternalIDsCSV)
-		if err != nil {
-			return nil, fmt.Errorf("parse map route station ids: %w", err)
-		}
-
-		row := model.MapRoute{
-			RouteID:            routeID,
-			StationExternalIDs: stationExternalIDs,
-			RouteCount:         int(routeCount),
-		}
-		if name.Valid {
-			row.TrainName = &name.String
-		}
-		if carrierCode.Valid {
-			row.CarrierCode = &carrierCode.String
-		}
-		if commercialCategorySymbol.Valid {
-			row.CommercialCategorySymbol = &commercialCategorySymbol.String
-		}
-		results = append(results, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate map route rows: %w", err)
-	}
-	if results == nil {
-		results = []model.MapRoute{}
-	}
-	return results, nil
-}
-
-// parseIntCSV parses a comma-separated list of integers, as produced by
-// array_to_string() over an integer array column.
-func parseIntCSV(s string) ([]int, error) {
-	if s == "" {
-		return []int{}, nil
-	}
-	parts := strings.Split(s, ",")
-	result := make([]int, 0, len(parts))
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return nil, fmt.Errorf("invalid station external id %q: %w", p, err)
-		}
-		result = append(result, n)
-	}
-	return result, nil
 }
