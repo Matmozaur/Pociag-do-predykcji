@@ -12,6 +12,10 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// activeOperationGrace is how long after its expected end at the last stop an in-progress
+// operation is still considered live (PLK leaves some operations in status P indefinitely).
+const activeOperationGrace = 30 * time.Minute
+
 func (r *Repository) QueryOperations(ctx context.Context, p service.QueryOperationsParams) ([]model.OperationSummary, int64, error) {
 	ctx, span := r.tracer.Start(ctx, "db.train_operations.query")
 	defer span.End()
@@ -21,8 +25,24 @@ func (r *Repository) QueryOperations(ctx context.Context, p service.QueryOperati
 	paramIdx := 1
 
 	if p.Date != nil {
-		conditions = append(conditions, fmt.Sprintf("to2.operating_date = $%d::date", paramIdx))
+		if p.ActiveOnly {
+			// Include the previous operating date to cover overnight trains.
+			conditions = append(conditions, fmt.Sprintf("to2.operating_date IN ($%d::date, $%d::date - 1)", paramIdx, paramIdx))
+		} else {
+			conditions = append(conditions, fmt.Sprintf("to2.operating_date = $%d::date", paramIdx))
+		}
 		params = append(params, p.Date.Format("2006-01-02"))
+		paramIdx++
+	}
+	if p.ActiveOnly {
+		conditions = append(conditions, fmt.Sprintf("to2.train_status = $%d", paramIdx))
+		params = append(params, "P")
+		paramIdx++
+		conditions = append(conditions, fmt.Sprintf(
+			"(SELECT MAX(COALESCE(os4.actual_arrival, os4.planned_arrival + make_interval(mins => COALESCE(os4.arrival_delay_minutes, 0)), os4.planned_departure)) FROM operation_stations os4 WHERE os4.train_operation_id = to2.id) >= now() - $%d::interval",
+			paramIdx,
+		))
+		params = append(params, fmt.Sprintf("%d minutes", int(activeOperationGrace.Minutes())))
 		paramIdx++
 	}
 	if len(p.StationExternalIds) > 0 {
@@ -307,7 +327,8 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 		        GREATEST(
 		            COALESCE(MAX(os.arrival_delay_minutes), 0),
 		            COALESCE(MAX(os.departure_delay_minutes), 0)
-		        ) AS max_delay
+		        ) AS max_delay,
+		        MAX(to2.updated_at) AS updated_at
 		    FROM train_operations to2
 		    LEFT JOIN operation_stations os ON os.train_operation_id = to2.id
 		    WHERE to2.operating_date = $1::date
@@ -324,7 +345,8 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 		    COUNT(*) FILTER (WHERE max_delay > 5  AND max_delay <= 15) AS slight_delay,
 		    COUNT(*) FILTER (WHERE max_delay > 15 AND max_delay <= 60) AS moderate_delay,
 		    COUNT(*) FILTER (WHERE max_delay > 60)          AS severe_delay,
-		    AVG(CASE WHEN max_delay > 0 THEN max_delay::float8 END) AS avg_delay
+		    AVG(CASE WHEN max_delay > 0 THEN max_delay::float8 END) AS avg_delay,
+		    MAX(updated_at)                                  AS last_updated_at
 		FROM op_delays`
 
 	var (
@@ -339,11 +361,12 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 		moderateDelay int64
 		severeDelay   int64
 		avgDelay      pgtype.Float8
+		lastUpdatedAt pgtype.Timestamptz
 	)
 	dateStr := date.Format("2006-01-02")
 	err := r.db.WithContext(ctx).Raw(query, dateStr).Row().Scan(
 		&total, &statusS, &statusP, &statusC, &statusX, &statusQ,
-		&onTime, &slightDelay, &moderateDelay, &severeDelay, &avgDelay,
+		&onTime, &slightDelay, &moderateDelay, &severeDelay, &avgDelay, &lastUpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get operation statistics: %w", err)
@@ -375,6 +398,9 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 	}
 	if avgDelay.Valid {
 		stats.AvgDelayMinutes = &avgDelay.Float64
+	}
+	if lastUpdatedAt.Valid {
+		stats.LastUpdatedAt = &lastUpdatedAt.Time
 	}
 	return stats, nil
 }
