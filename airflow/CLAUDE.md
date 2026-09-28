@@ -6,8 +6,9 @@ tables. This is an **Airflow plugin, not a standalone service**
 
 ## Layout
 
-- `dags/` — one file per pipeline (`ingest_operations_daily.py`, `ingest_schedules_weekly.py`,
-  `sync_dictionaries_weekly.py`). TaskFlow API: `@dag` / `@task`. DAGs are thin orchestration.
+- `dags/` — one file per pipeline (`ingest_operations_daily.py`, `ingest_operations_live.py`,
+  `ingest_schedules_weekly.py`, `sync_dictionaries_weekly.py`). TaskFlow API: `@dag` / `@task`.
+  DAGs are thin orchestration.
 - `plugins/pociag_processing/` — all real logic, a **separate installable package**
   (`plugins/pyproject.toml`, name `pociag-processing`):
   - `pipelines/{dictionaries,schedules,operations,disruptions}.py` — `process_*()` entrypoints

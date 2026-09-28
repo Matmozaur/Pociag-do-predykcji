@@ -157,6 +157,39 @@ raw_disruptions -> Processor /process/disruptions -> curated disruptions
 
 ---
 
+## DAG 3b: `ingest_operations_live`
+
+| Property | Value |
+|---|---|
+| Schedule | `*/10 * * * *` (every 10 minutes) |
+| Catchup | `False` |
+| Max active runs | 1 |
+| Retries | 1, delay 1min |
+| Run timeout | 9min (`dagrun_timeout`) |
+| Tags | `["pociag", "ingestion"]` |
+| Purpose | Keep `train_operations` close to the current PLK real-time snapshot for "live" views |
+
+### Tasks
+
+1. **fetch_operations** — `POST /api/v1/fetch/operations` via the `pociag_collector` connection
+   ```json
+   {
+     "force": false
+   }
+   ```
+   - If the collector answers `409` (fetch already running), log and succeed; the run is skipped
+     and `process_operations` does nothing.
+
+2. **process_operations** — plugin `process_operations(capture_date, ingestion_run_id)`
+   - Always passes the `ingestion_run_id` of this run's fetch so only the latest snapshot's
+     objects are processed.
+
+### Notes
+
+- `ingest_operations_daily` remains in place for disruptions and the end-of-day snapshot.
+
+---
+
 ## DAG 4: `ingest_operations_catchup`
 
 | Property | Value |
