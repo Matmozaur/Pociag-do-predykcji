@@ -71,6 +71,10 @@
         "**/.venv": true
     },
     // ─── GitHub Copilot ────────────────────────────────────────────────────────
+    "github.copilot.enable": {
+        "*": true,
+        "plaintext": true
+    },
     "github.copilot.chat.codeGeneration.useInstructionFiles": true,
     "github.copilot.chat.codeGeneration.instructions": [
         {
