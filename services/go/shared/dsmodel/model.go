@@ -201,6 +201,7 @@ type OperationStatistics struct {
 	ByStatus          map[string]int    `json:"by_status"`
 	DelayDistribution DelayDistribution `json:"delay_distribution"`
 	AvgDelayMinutes   *float64          `json:"avg_delay_minutes,omitempty"`
+	LastUpdatedAt     *time.Time        `json:"last_updated_at,omitempty"`
 }
 
 // ── Disruptions ───────────────────────────────────────────────────────────────

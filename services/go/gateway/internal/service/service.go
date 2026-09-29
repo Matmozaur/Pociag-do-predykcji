@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -37,6 +38,20 @@ type DataServiceClient interface {
 
 	QueryDisruptions(ctx context.Context, p dataservice.QueryDisruptionsParams) (*dataservice.DisruptionListResponse, error)
 	GetDisruptionByID(ctx context.Context, disruptionID int64) (*dataservice.DisruptionDetail, error)
+}
+
+// warsawLocation is loaded lazily so the embedded time/tzdata (imported in main) is registered first.
+var warsawLocation = sync.OnceValue(func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+})
+
+// warsawToday returns the Europe/Warsaw calendar date of now, which is the PLK operating date.
+func warsawToday(now time.Time) string {
+	return now.In(warsawLocation()).Format("2006-01-02")
 }
 
 type Service struct {
@@ -323,12 +338,12 @@ func (s *Service) GetLiveTrains(ctx context.Context, carriers []string, stationI
 	ctx, span := s.tracer.Start(ctx, "trains.live")
 	defer span.End()
 
-	today := time.Now().UTC().Format("2006-01-02")
+	today := warsawToday(time.Now())
 	operations, err := s.client.QueryOperations(ctx, dataservice.QueryOperationsParams{
 		Date:               &today,
 		StationExternalIDs: stationIDs,
-		Status:             "P",
 		CarrierCodes:       carriers,
+		ActiveOnly:         true,
 		Limit:              limit,
 		Offset:             offset,
 	})
@@ -436,7 +451,7 @@ func (s *Service) ListDisruptions(ctx context.Context, active bool, limit, offse
 	var dateFrom *string
 	var dateTo *string
 	if active {
-		today := time.Now().UTC().Format("2006-01-02")
+		today := warsawToday(time.Now())
 		dateFrom = &today
 		dateTo = &today
 	}
@@ -538,7 +553,7 @@ func (s *Service) GetDashboardOverview(ctx context.Context) (*model.DashboardOve
 	ctx, span := s.tracer.Start(ctx, "dashboard.overview")
 	defer span.End()
 
-	today := time.Now().UTC().Format("2006-01-02")
+	today := warsawToday(time.Now())
 	stats, err := s.client.GetOperationStatistics(ctx, today)
 	if err != nil {
 		return nil, fmt.Errorf("get dashboard statistics: %w", err)
@@ -574,7 +589,9 @@ func (s *Service) GetDashboardOverview(ctx context.Context) (*model.DashboardOve
 			OnTimePercentage: onTimePct,
 		},
 		DisruptionsActive: int(disruptions.Pagination.Total),
-		DataFreshness:     model.DashboardDataFreshness{},
+		DataFreshness: model.DashboardDataFreshness{
+			OperationsLastUpdated: stats.LastUpdatedAt,
+		},
 	}, nil
 }
 

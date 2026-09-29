@@ -28,6 +28,7 @@ type QueryOperationsParams struct {
 	Status             string
 	CarrierCodes       []string
 	MinDelay           *int
+	ActiveOnly         bool
 	Limit              int
 	Offset             int
 }

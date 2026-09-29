@@ -208,8 +208,11 @@ paths:
         Frontend view of currently running trains. Shows status, current position,
         and delay information. Aggregates operations with route names and station data.
 
-        Internally calls Data Service: queryOperations(date=today, status=P) +
-        route names + station resolution.
+        Internally calls Data Service: queryOperations(date=today, activeOnly=true) +
+        route names + station resolution. "Today" is the Europe/Warsaw date. `activeOnly`
+        keeps only status P trains whose expected end at the last stop is not earlier than
+        now minus 30 minutes (previous operating date included for overnight trains), so
+        stale PLK "in progress" records are not shown as live.
       operationId: getLiveTrains
       tags: [operations]
       parameters:
@@ -649,7 +652,9 @@ components:
         generated_at:
           type: string
           format: date-time
-          description: Timestamp of data (for freshness indication)
+          description: >-
+            Time the response was generated (server clock). Freshness of the underlying data
+            is carried by DashboardOverview.data_freshness.operations_last_updated.
 
     # ── Train Detail ───────────────────────────────────────────────────────────
     TrainStopView:

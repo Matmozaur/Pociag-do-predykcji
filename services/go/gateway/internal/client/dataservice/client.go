@@ -33,6 +33,7 @@ type QueryOperationsParams struct {
 	StationExternalIDs []int
 	Status             string
 	CarrierCodes       []string
+	ActiveOnly         bool
 	Limit              int
 	Offset             int
 }
@@ -251,6 +252,9 @@ func (c *Client) QueryOperations(ctx context.Context, p QueryOperationsParams) (
 	}
 	if len(p.CarrierCodes) > 0 {
 		q.Set("carrierCodes", strings.Join(p.CarrierCodes, ","))
+	}
+	if p.ActiveOnly {
+		q.Set("activeOnly", "true")
 	}
 	q.Set("limit", strconv.Itoa(p.Limit))
 	q.Set("offset", strconv.Itoa(p.Offset))
