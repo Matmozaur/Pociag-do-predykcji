@@ -31,6 +31,8 @@ type OperationStation = dsmodel.OperationStation
 type OperationDetail = dsmodel.OperationDetail
 type DelayDistribution = dsmodel.DelayDistribution
 type OperationStatistics = dsmodel.OperationStatistics
+type StationBoardEntry = dsmodel.StationBoardEntry
+type StationBoardResponse = dsmodel.StationBoardResponse
 
 // Disruptions
 type DisruptionSummary = dsmodel.DisruptionSummary

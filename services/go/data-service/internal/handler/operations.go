@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -138,4 +139,94 @@ func (h *Handler) HandleGetOperationStatistics(w http.ResponseWriter, r *http.Re
 	}
 
 	h.writeJSON(w, span, http.StatusOK, stats)
+}
+
+// HandleGetStationBoard returns the bucketed station board (at station, arrivals, departures).
+// @Summary		Get station board (arrivals, departures, at station)
+// @Description	Returns stops at the station bucketed into at_station, arrival and departure, each ordered by board time and truncated to limit
+// @Tags		operations
+// @Produce		json
+// @Param		externalId path int true "Station external ID"
+// @Param		at query string false "Reference instant (RFC 3339); defaults to the current time"
+// @Param		limit query int false "Maximum number of entries per bucket (1-50)" default(10)
+// @Param		horizonMinutes query int false "How far ahead of at to look for trains, in minutes (30-1440)" default(720)
+// @Param		lookbackMinutes query int false "How far before at to read stops by planned time, in minutes (0-720)" default(360)
+// @Success		200 {object} model.StationBoardResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		404 {object} model.ErrorResponse "Station not found"
+// @Router		/api/v1/stations/{externalId}/board [get]
+func (h *Handler) HandleGetStationBoard(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "station.board")
+	defer span.End()
+
+	externalID, err := strconv.Atoi(chi.URLParam(r, "externalId"))
+	if err != nil {
+		h.writeError(w, span, http.StatusBadRequest, "invalid_request", "externalId must be a valid integer")
+		return
+	}
+
+	now, err := boardNow(r)
+	if err != nil {
+		h.writeError(w, span, http.StatusBadRequest, "invalid_request", "at: "+err.Error())
+		return
+	}
+
+	limit, err := parseIntInRange(r, "limit", 10, 1, 50)
+	if err != nil {
+		h.writeError(w, span, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	horizonMinutes, err := parseIntInRange(r, "horizonMinutes", 720, 30, 1440)
+	if err != nil {
+		h.writeError(w, span, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	lookbackMinutes, err := parseIntInRange(r, "lookbackMinutes", 360, 0, 720)
+	if err != nil {
+		h.writeError(w, span, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+
+	if _, err := h.svc.GetStationByExternalId(ctx, externalID); err != nil {
+		h.handleNotFoundOrInternalError(w, span, err, "station")
+		return
+	}
+
+	board, err := h.svc.GetStationBoard(ctx, externalID, now,
+		time.Duration(horizonMinutes)*time.Minute, time.Duration(lookbackMinutes)*time.Minute, limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		h.writeError(w, span, http.StatusInternalServerError, "internal_error", "failed to get station board")
+		return
+	}
+
+	h.writeJSON(w, span, http.StatusOK, board)
+}
+
+// boardNow is the station board reference instant: the optional `at` query param (RFC 3339)
+// or the current time. Stored stop times are true UTC instants, so no timezone shim is needed.
+func boardNow(r *http.Request) (time.Time, error) {
+	raw := r.URL.Query().Get("at")
+	if raw == "" {
+		return time.Now().UTC(), nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid date-time %q, expected RFC 3339", raw)
+	}
+	return t.UTC(), nil
+}
+
+// parseIntInRange parses an optional integer query param, rejecting values outside [lo, hi].
+func parseIntInRange(r *http.Request, name string, def, lo, hi int) (int, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return def, nil
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < lo || v > hi {
+		return 0, fmt.Errorf("%s must be an integer between %d and %d", name, lo, hi)
+	}
+	return v, nil
 }
