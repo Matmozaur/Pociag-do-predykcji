@@ -2,6 +2,7 @@ package trainutil
 
 import (
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -48,10 +49,20 @@ func ParseCSV(raw string) []string {
 	return out
 }
 
+// warsawLocation is loaded lazily so a binary's embedded time/tzdata is registered first.
+var warsawLocation = sync.OnceValue(func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+})
+
+// FormatClock formats ts as an HH:MM wall-clock time in Europe/Warsaw.
 func FormatClock(ts *time.Time) *string {
 	if ts == nil {
 		return nil
 	}
-	clock := ts.Format("15:04")
+	clock := ts.In(warsawLocation()).Format("15:04")
 	return &clock
 }

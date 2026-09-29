@@ -6,7 +6,7 @@ PostgreSQL schema, managed with **golang-migrate**. This is the single schema sh
 ## Rules
 
 - Every migration is a pair: `NNN_description.up.sql` + `NNN_description.down.sql`, `NNN`
-  zero-padded and monotonically increasing (next is `010_`). `.down.sql` must fully and safely
+  zero-padded and monotonically increasing (next is `011_`). `.down.sql` must fully and safely
   reverse `.up.sql`.
 - Use `IF [NOT] EXISTS` guards and explicit column lists. Add indexes for new FKs and for
   predicates the queries actually filter on (check `data-service/internal/repository/*.go` and

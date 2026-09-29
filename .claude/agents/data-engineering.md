@@ -40,7 +40,7 @@ first. Key points:
 - Parameterized SQL only; keep all SQL in `repository.py`.
 - Event/record shapes must match `specs/asyncapi/` and `specs/schemas/`; curated
   table shapes must match `db/migrations/`. Change the spec/migration first.
-- Migrations: paired `NNN_name.up.sql` / `.down.sql` (next is `010_`), `.down` fully
+- Migrations: paired `NNN_name.up.sql` / `.down.sql` (next is `011_`), `.down` fully
   reverses `.up`, add indexes for new FKs and filtered predicates, keep aligned with
   the queries in both `pociag_processing/repository.py` and `data-service`.
 

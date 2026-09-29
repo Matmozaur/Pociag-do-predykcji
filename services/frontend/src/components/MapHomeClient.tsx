@@ -10,6 +10,7 @@ import {
     Signal,
     Train,
 } from 'lucide-react'
+import { DataFreshness } from '@/components/DataFreshness'
 import { TrafficMapClient } from '@/components/TrafficMapClient'
 import {
     delayVariant,
@@ -112,6 +113,7 @@ export function MapHomeClient() {
 
                 <section aria-labelledby="live-trains-heading" className="border-t border-white/8 pt-4">
                     <div className="mb-1 flex items-center justify-between"><h2 id="live-trains-heading" className="text-sm font-semibold text-white">Pociągi w ruchu</h2><Link href="/pociagi" className="text-xs font-medium text-blue-300 hover:text-blue-200">Zobacz wszystkie</Link></div>
+                    <DataFreshness lastUpdated={overviewQuery.data?.data_freshness.operations_last_updated} className="mb-2" />
                     {trainsQuery.isLoading ? <div className="flex justify-center py-5"><Spinner /></div> : trainsQuery.isError ? <QueryMessage onRetry={() => trainsQuery.refetch()}>Nie udało się pobrać pociągów.</QueryMessage> : trainsQuery.data?.data.length ? <div>{trainsQuery.data.data.map((train) => <TrainRow key={train.operation_id} train={train} />)}</div> : <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><CheckCircle2 size={17} className="text-emerald-400" /> Brak pociągów w ruchu.</div>}
                 </section>
 

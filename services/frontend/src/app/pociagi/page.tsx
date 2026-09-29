@@ -1,12 +1,11 @@
 'use client'
 import { useQuery } from '@tanstack/react-query'
-import { format } from 'date-fns'
-import { pl } from 'date-fns/locale'
 import Link from 'next/link'
 import { ArrowRight, MapPin, RefreshCw, Train } from 'lucide-react'
 import { delayVariant, formatDelay, gateway, statusLabel, statusVariant, type LiveTrainSummary } from '@/lib/api'
 import { Badge, Button, Card, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
+import { DataFreshness } from '@/components/DataFreshness'
 
 function LiveTrainCard({ train }: { train: LiveTrainSummary }) {
     return (
@@ -50,6 +49,12 @@ export default function PociagiPage() {
         refetchInterval: 60_000,
         staleTime: 30_000,
     })
+    const overviewQuery = useQuery({
+        queryKey: ['dashboardOverview'],
+        queryFn: gateway.getDashboardOverview,
+        refetchInterval: 60_000,
+        staleTime: 30_000,
+    })
 
     return (
         <NavShell title="Pociągi na żywo">
@@ -57,16 +62,18 @@ export default function PociagiPage() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-xl font-bold text-white">Pociągi na żywo</h1>
-                        {trainsQuery.dataUpdatedAt > 0 && (
-                            <p className="text-xs text-slate-500 mt-0.5">
-                                Odświeżono: {format(trainsQuery.dataUpdatedAt, 'HH:mm:ss', { locale: pl })}
-                            </p>
-                        )}
+                        <DataFreshness
+                            lastUpdated={overviewQuery.data?.data_freshness.operations_last_updated}
+                            className="mt-0.5"
+                        />
                     </div>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => trainsQuery.refetch()}
+                        onClick={() => {
+                            void trainsQuery.refetch()
+                            void overviewQuery.refetch()
+                        }}
                         disabled={trainsQuery.isFetching}
                     >
                         <RefreshCw size={14} className={trainsQuery.isFetching ? 'animate-spin' : ''} />

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/pociag-do-predykcji/services/go/gateway/internal/client/dataservice"
 )
@@ -225,6 +226,7 @@ func TestGetDisruptionDetail_MissingOperatingDate_ReturnsError(t *testing.T) {
 }
 
 func TestGetDashboardOverview_ComputesStatistics(t *testing.T) {
+	lastUpdated := time.Date(2026, 7, 5, 6, 13, 20, 0, time.UTC)
 	mockClient := &mockDataServiceClient{
 		getOperationStatsFn: func(ctx context.Context, date string) (*dataservice.OperationStatistics, error) {
 			avg := 6.5
@@ -238,6 +240,7 @@ func TestGetDashboardOverview_ComputesStatistics(t *testing.T) {
 				},
 				DelayDistribution: dataservice.DelayDistribution{OnTime: 7},
 				AvgDelayMinutes:   &avg,
+				LastUpdatedAt:     &lastUpdated,
 			}, nil
 		},
 		queryDisruptionsFn: func(ctx context.Context, p dataservice.QueryDisruptionsParams) (*dataservice.DisruptionListResponse, error) {
@@ -256,8 +259,58 @@ func TestGetDashboardOverview_ComputesStatistics(t *testing.T) {
 	if resp.DisruptionsActive != 4 {
 		t.Fatalf("expected disruptions active 4, got %d", resp.DisruptionsActive)
 	}
-	if resp.DataFreshness.SchedulesLastUpdated != nil || resp.DataFreshness.OperationsLastUpdated != nil {
-		t.Fatal("expected data_freshness inner fields to be omitted")
+	if resp.DataFreshness.SchedulesLastUpdated != nil {
+		t.Fatal("expected data_freshness.schedules_last_updated to be omitted")
+	}
+	if resp.DataFreshness.OperationsLastUpdated == nil || !resp.DataFreshness.OperationsLastUpdated.Equal(lastUpdated) {
+		t.Fatalf("expected data_freshness.operations_last_updated %v, got %v", lastUpdated, resp.DataFreshness.OperationsLastUpdated)
+	}
+}
+
+func TestWarsawToday(t *testing.T) {
+	tests := []struct {
+		name string
+		now  time.Time
+		want string
+	}{
+		{name: "CEST after local midnight", now: time.Date(2026, 9, 27, 22, 30, 0, 0, time.UTC), want: "2026-09-28"},
+		{name: "CET after local midnight", now: time.Date(2026, 1, 15, 23, 30, 0, 0, time.UTC), want: "2026-01-16"},
+		{name: "CEST before local midnight", now: time.Date(2026, 9, 27, 21, 30, 0, 0, time.UTC), want: "2026-09-27"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := warsawToday(tt.now); got != tt.want {
+				t.Fatalf("warsawToday(%s) = %s, want %s", tt.now, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetLiveTrains_RequestsActiveOperationsForWarsawToday(t *testing.T) {
+	var got dataservice.QueryOperationsParams
+	mockClient := &mockDataServiceClient{
+		queryOperationsFn: func(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error) {
+			got = p
+			return &dataservice.OperationListResponse{}, nil
+		},
+	}
+
+	svc := New(mockClient)
+	if _, err := svc.GetLiveTrains(context.Background(), []string{"IC"}, nil, 20, 0); err != nil {
+		t.Fatalf("GetLiveTrains returned error: %v", err)
+	}
+	if !got.ActiveOnly {
+		t.Fatal("expected ActiveOnly=true")
+	}
+	if got.Status != "" {
+		t.Fatalf("expected no explicit status filter, got %q", got.Status)
+	}
+	want := warsawToday(time.Now())
+	if got.Date == nil || *got.Date != want {
+		t.Fatalf("expected date %s, got %v", want, got.Date)
+	}
+	if len(got.CarrierCodes) != 1 || got.CarrierCodes[0] != "IC" {
+		t.Fatalf("expected carrier codes [IC], got %v", got.CarrierCodes)
 	}
 }
 

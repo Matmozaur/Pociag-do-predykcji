@@ -254,6 +254,16 @@ paths:
           description: Minimum delay in minutes (filters trains with delay >= this value)
           schema:
             type: integer
+        - name: activeOnly
+          in: query
+          description: >-
+            When true, return only operations with status P whose expected end (last stop's
+            actual arrival, else planned arrival + arrival delay, else planned arrival/departure)
+            is not earlier than now minus 30 minutes; when `date` is also given, the previous
+            operating date is included to cover overnight trains.
+          schema:
+            type: boolean
+            default: false
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
@@ -884,15 +894,19 @@ components:
         planned_arrival:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         planned_departure:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         actual_arrival:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         actual_departure:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         arrival_delay_minutes:
           type: integer
         departure_delay_minutes:
@@ -965,6 +979,12 @@ components:
         avg_delay_minutes:
           type: number
           format: float
+        last_updated_at:
+          type: string
+          format: date-time
+          description: >-
+            MAX(train_operations.updated_at) for the requested date: when operations for this
+            date were last refreshed from PLK
 
     # ── Disruptions ────────────────────────────────────────────────────────────
     DisruptionSummary:

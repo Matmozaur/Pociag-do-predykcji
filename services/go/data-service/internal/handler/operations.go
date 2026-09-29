@@ -19,6 +19,7 @@ import (
 // @Produce		json
 // @Param		date query string false "Filter operations for a specific date (YYYY-MM-DD)"
 // @Param		station query string false "Filter by station external ID"
+// @Param		activeOnly query bool false "Only status P operations whose expected end is not older than 30 minutes"
 // @Param		limit query int false "Limit (default 50, max 1000)" default(50)
 // @Param		offset query int false "Offset for pagination (default 0)" default(0)
 // @Success		200 {array} model.TrainOperation
@@ -59,12 +60,23 @@ func (h *Handler) HandleQueryOperations(w http.ResponseWriter, r *http.Request) 
 		minDelay = &v
 	}
 
+	activeOnly := false
+	if rawActiveOnly := r.URL.Query().Get("activeOnly"); rawActiveOnly != "" {
+		v, err := strconv.ParseBool(rawActiveOnly)
+		if err != nil {
+			h.writeError(w, span, http.StatusBadRequest, "invalid_request", "activeOnly must be a boolean")
+			return
+		}
+		activeOnly = v
+	}
+
 	operations, total, err := h.svc.QueryOperations(ctx, service.QueryOperationsParams{
 		Date:               date,
 		StationExternalIds: stationExternalIds,
 		Status:             r.URL.Query().Get("status"),
 		CarrierCodes:       parseCommaStrings(r.URL.Query().Get("carrierCodes")),
 		MinDelay:           minDelay,
+		ActiveOnly:         activeOnly,
 		Limit:              limit,
 		Offset:             offset,
 	})
