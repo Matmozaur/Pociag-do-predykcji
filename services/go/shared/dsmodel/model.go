@@ -204,6 +204,48 @@ type OperationStatistics struct {
 	LastUpdatedAt     *time.Time        `json:"last_updated_at,omitempty"`
 }
 
+type StationBoardEntry struct {
+	Bucket                       string     `json:"bucket"`
+	OperationID                  int64      `json:"operation_id"`
+	ScheduleID                   int        `json:"schedule_id"`
+	OrderID                      int        `json:"order_id"`
+	TrainOrderID                 *int       `json:"train_order_id,omitempty"`
+	OperatingDate                string     `json:"operating_date"`
+	TrainStatus                  string     `json:"train_status"`
+	SequenceNumber               int        `json:"sequence_number"`
+	RouteID                      *int64     `json:"route_id,omitempty"`
+	RouteName                    *string    `json:"route_name,omitempty"`
+	CarrierCode                  *string    `json:"carrier_code,omitempty"`
+	CommercialCategory           *string    `json:"commercial_category,omitempty"`
+	NationalNumber               *string    `json:"national_number,omitempty"`
+	TrainNumber                  *string    `json:"train_number,omitempty"`
+	ArrivalPlatform              *string    `json:"arrival_platform,omitempty"`
+	ArrivalTrack                 *string    `json:"arrival_track,omitempty"`
+	DeparturePlatform            *string    `json:"departure_platform,omitempty"`
+	DepartureTrack               *string    `json:"departure_track,omitempty"`
+	PlannedArrival               *time.Time `json:"planned_arrival,omitempty"`
+	PlannedDeparture             *time.Time `json:"planned_departure,omitempty"`
+	ExpectedArrival              *time.Time `json:"expected_arrival,omitempty"`
+	ExpectedDeparture            *time.Time `json:"expected_departure,omitempty"`
+	ArrivalDelayMinutes          *int       `json:"arrival_delay_minutes,omitempty"`
+	DepartureDelayMinutes        *int       `json:"departure_delay_minutes,omitempty"`
+	IsConfirmed                  bool       `json:"is_confirmed"`
+	IsCancelled                  bool       `json:"is_cancelled"`
+	OriginStationExternalID      *int       `json:"origin_station_external_id,omitempty"`
+	OriginStationName            *string    `json:"origin_station_name,omitempty"`
+	DestinationStationExternalID *int       `json:"destination_station_external_id,omitempty"`
+	DestinationStationName       *string    `json:"destination_station_name,omitempty"`
+}
+
+type StationBoardResponse struct {
+	StationExternalID int                 `json:"station_external_id"`
+	At                time.Time           `json:"at"`
+	Limit             int                 `json:"limit"`
+	HorizonMinutes    int                 `json:"horizon_minutes"`
+	DataAsOf          *time.Time          `json:"data_as_of,omitempty"`
+	Entries           []StationBoardEntry `json:"entries"`
+}
+
 // ── Disruptions ───────────────────────────────────────────────────────────────
 
 type DisruptionSummary struct {

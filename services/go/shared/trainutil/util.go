@@ -1,6 +1,7 @@
 package trainutil
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -65,4 +66,33 @@ func FormatClock(ts *time.Time) *string {
 	}
 	clock := ts.In(warsawLocation()).Format("15:04")
 	return &clock
+}
+
+// DisplayName is the human-facing name of a train. Fallback chain: routeName, then
+// "<category> <nationalNumber>", then "Pociąg <trainNumber>", then "Pociąg <scheduleID>/<orderID>".
+// Empty or whitespace-only strings count as missing. A national number without a category is
+// shown as "Pociąg <nationalNumber>" (it identifies the train on its own); a category without a
+// national number does not identify the train and is skipped.
+func DisplayName(routeName, category, nationalNumber, trainNumber *string, scheduleID, orderID int) string {
+	if name := trimmed(routeName); name != "" {
+		return name
+	}
+	cat, nat := trimmed(category), trimmed(nationalNumber)
+	if cat != "" && nat != "" {
+		return cat + " " + nat
+	}
+	if nat != "" {
+		return "Pociąg " + nat
+	}
+	if num := trimmed(trainNumber); num != "" {
+		return "Pociąg " + num
+	}
+	return "Pociąg " + strconv.Itoa(scheduleID) + "/" + strconv.Itoa(orderID)
+}
+
+func trimmed(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(*v)
 }

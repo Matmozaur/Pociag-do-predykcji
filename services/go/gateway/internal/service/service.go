@@ -24,6 +24,7 @@ type DataServiceClient interface {
 	QueryStations(ctx context.Context, search string, limit, offset int) (*dataservice.StationListResponse, error)
 	ListStationsWithCoordinates(ctx context.Context, limit int) (*dataservice.StationListResponse, error)
 	GetStationByExternalID(ctx context.Context, externalID int) (*dataservice.Station, error)
+	GetStationBoard(ctx context.Context, externalID int, limit int) (*dataservice.StationBoardResponse, error)
 	ListCarriers(ctx context.Context) (*dataservice.CarrierListResponse, error)
 
 	QueryRoutes(ctx context.Context, p dataservice.QueryRoutesParams) (*dataservice.RouteListResponse, error)
@@ -123,6 +124,109 @@ func (s *Service) GetMapStations(ctx context.Context) (*model.StationMapResponse
 	}
 
 	return &model.StationMapResponse{Stations: points}, nil
+}
+
+// Station board buckets (StationBoardEntry.bucket in specs/openapi/data-service.yml).
+const (
+	boardBucketAtStation = "at_station"
+	boardBucketArrival   = "arrival"
+	boardBucketDeparture = "departure"
+)
+
+// GetStationBoard builds the station board view. data-service has already bucketed, ordered and
+// truncated the entries, so this only splits them into sections and shapes each row.
+func (s *Service) GetStationBoard(ctx context.Context, externalID, limit int) (*model.StationBoardView, error) {
+	ctx, span := s.tracer.Start(ctx, "station.board")
+	defer span.End()
+
+	station, err := s.client.GetStationByExternalID(ctx, externalID)
+	if err != nil {
+		return nil, fmt.Errorf("get station board station: %w", err)
+	}
+
+	board, err := s.client.GetStationBoard(ctx, externalID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get station board: %w", err)
+	}
+
+	carrierMap, err := s.loadCarrierMap(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	view := &model.StationBoardView{
+		Station: model.StationBoardStation{
+			ExternalID: station.ExternalID,
+			Name:       station.Name,
+			City:       station.City,
+			Latitude:   station.Latitude,
+			Longitude:  station.Longitude,
+		},
+		GeneratedAt: time.Now().UTC(),
+		DataAsOf:    board.DataAsOf,
+		AtStation:   []model.StationBoardRow{},
+		Arrivals:    []model.StationBoardRow{},
+		Departures:  []model.StationBoardRow{},
+	}
+	for _, e := range board.Entries {
+		row := mapStationBoardRow(e, carrierMap)
+		switch e.Bucket {
+		case boardBucketAtStation:
+			view.AtStation = append(view.AtStation, row)
+		case boardBucketArrival:
+			view.Arrivals = append(view.Arrivals, row)
+		case boardBucketDeparture:
+			view.Departures = append(view.Departures, row)
+		}
+	}
+	return view, nil
+}
+
+// mapStationBoardRow shapes one board entry. Arrivals show the arrival side of the stop;
+// departures and at_station show the departure side, except a terminus (no departure), which
+// falls back to the arrival side. The expected time falls back to the planned one.
+func mapStationBoardRow(e dataservice.StationBoardEntry, carrierMap map[string]string) model.StationBoardRow {
+	planned, expected := e.PlannedArrival, e.ExpectedArrival
+	delay, platform, track := e.ArrivalDelayMinutes, e.ArrivalPlatform, e.ArrivalTrack
+	if e.Bucket != boardBucketArrival && e.PlannedDeparture != nil {
+		planned, expected = e.PlannedDeparture, e.ExpectedDeparture
+		delay, platform, track = e.DepartureDelayMinutes, e.DeparturePlatform, e.DepartureTrack
+	}
+	if expected == nil {
+		expected = planned
+	}
+	var expectedAt *time.Time
+	if expected != nil {
+		utc := expected.UTC()
+		expectedAt = &utc
+	}
+
+	var carrier *model.TrainCarrier
+	if code := stringOrEmpty(e.CarrierCode); code != "" {
+		carrier = &model.TrainCarrier{Code: &code}
+		if name := carrierMap[code]; name != "" {
+			carrier.Name = &name
+		}
+	}
+
+	return model.StationBoardRow{
+		OperationID:        e.OperationID,
+		TrainName:          trainutil.DisplayName(e.RouteName, e.CommercialCategory, e.NationalNumber, e.TrainNumber, e.ScheduleID, e.OrderID),
+		TrainNumber:        e.TrainNumber,
+		CommercialCategory: e.CommercialCategory,
+		Carrier:            carrier,
+		Origin:             e.OriginStationName,
+		Destination:        e.DestinationStationName,
+		PlannedTime:        trainutil.FormatClock(planned),
+		ExpectedTime:       trainutil.FormatClock(expected),
+		ExpectedAt:         expectedAt,
+		DelayMinutes:       delay,
+		Platform:           platform,
+		Track:              track,
+		Status:             trainutil.StatusLabel(e.TrainStatus),
+		IsCancelled:        e.IsCancelled,
+		IsConfirmed:        e.IsConfirmed,
+	}
 }
 
 func (s *Service) SearchSchedules(ctx context.Context, from, to, date string, carriers, categories []string, sortBy string, limit, offset int) (*model.ScheduleSearchResponse, error) {

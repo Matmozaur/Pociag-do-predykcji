@@ -105,6 +105,24 @@ func (c *Client) GetStationByExternalID(ctx context.Context, externalID int) (*S
 	return &out, nil
 }
 
+// GetStationBoard returns the station board entries (at_station, arrival, departure buckets),
+// already truncated to limit per bucket and ordered by data-service.
+func (c *Client) GetStationBoard(ctx context.Context, externalID int, limit int) (*StationBoardResponse, error) {
+	q := url.Values{}
+	q.Set("limit", strconv.Itoa(limit))
+
+	body, err := c.doRequest(ctx, http.MethodGet, "/api/v1/stations/"+strconv.Itoa(externalID)+"/board", q)
+	if err != nil {
+		return nil, fmt.Errorf("get station board: %w", err)
+	}
+
+	var out StationBoardResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("decode station board: %w", err)
+	}
+	return &out, nil
+}
+
 // ListStationsWithCoordinates returns stations that have geographic coordinates,
 // for rendering on the map. The high limit fetches all geocoded stations at once.
 func (c *Client) ListStationsWithCoordinates(ctx context.Context, limit int) (*StationListResponse, error) {

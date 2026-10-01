@@ -57,6 +57,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		})
 		r.Get("/stations", h.HandleQueryStations)
 		r.Get("/stations/{externalId}", h.HandleGetStationByExternalId)
+		r.Get("/stations/{externalId}/board", h.HandleGetStationBoard)
 		r.Get("/carriers", h.HandleListCarriers)
 		r.Get("/commercial-categories", h.HandleListCommercialCategories)
 		r.Get("/stop-types", h.HandleListStopTypes)

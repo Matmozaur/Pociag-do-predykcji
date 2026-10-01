@@ -31,7 +31,7 @@ func (f *fakeRepo) GetOperationStatistics(_ context.Context, _ time.Time) (*mode
 	return f.statistics, nil
 }
 
-func newTestRouter(repo *fakeRepo) http.Handler {
+func newTestRouter(repo service.Repository) http.Handler {
 	r := chi.NewRouter()
 	New(service.New(repo)).RegisterRoutes(r)
 	return r

@@ -36,6 +36,42 @@ type StationMapResponse struct {
 	Stations []StationMapPoint `json:"stations"`
 }
 
+type StationBoardStation struct {
+	ExternalID int      `json:"external_id"`
+	Name       string   `json:"name"`
+	City       *string  `json:"city,omitempty"`
+	Latitude   *float64 `json:"latitude,omitempty"`
+	Longitude  *float64 `json:"longitude,omitempty"`
+}
+
+type StationBoardRow struct {
+	OperationID        int64         `json:"operation_id"`
+	TrainName          string        `json:"train_name"`
+	TrainNumber        *string       `json:"train_number,omitempty"`
+	CommercialCategory *string       `json:"commercial_category,omitempty"`
+	Carrier            *TrainCarrier `json:"carrier,omitempty"`
+	Origin             *string       `json:"origin,omitempty"`
+	Destination        *string       `json:"destination,omitempty"`
+	PlannedTime        *string       `json:"planned_time,omitempty"`
+	ExpectedTime       *string       `json:"expected_time,omitempty"`
+	ExpectedAt         *time.Time    `json:"expected_at,omitempty"`
+	DelayMinutes       *int          `json:"delay_minutes,omitempty"`
+	Platform           *string       `json:"platform,omitempty"`
+	Track              *string       `json:"track,omitempty"`
+	Status             string        `json:"status"`
+	IsCancelled        bool          `json:"is_cancelled"`
+	IsConfirmed        bool          `json:"is_confirmed"`
+}
+
+type StationBoardView struct {
+	Station     StationBoardStation `json:"station"`
+	GeneratedAt time.Time           `json:"generated_at"`
+	DataAsOf    *time.Time          `json:"data_as_of,omitempty"`
+	AtStation   []StationBoardRow   `json:"at_station"`
+	Arrivals    []StationBoardRow   `json:"arrivals"`
+	Departures  []StationBoardRow   `json:"departures"`
+}
+
 type CarrierInfo struct {
 	Code string `json:"code"`
 	Name string `json:"name"`
