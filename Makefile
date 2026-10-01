@@ -34,8 +34,8 @@ infra-up-monitoring: ## Start infra + Prometheus + Grafana
 infra-up-airflow: ## Start infra + Airflow
 	docker compose -f infra/docker-compose.yml --profile airflow up -d
 
-.PHONY: infra-upa-all-build
-infra-up-all-build: ## Start everything, rebuilding images
+.PHONY: infra-up-build
+infra-up-build: ## Start everything, rebuilding images
 	docker compose -f infra/docker-compose.yml --profile all up -d --build
 
 .PHONY: infra-down
