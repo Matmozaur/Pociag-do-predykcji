@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pociag_processing.repository import SyncRepository
+from pociag_processing.repository import SyncRepository, _parse_plk_local_timestamp
 
 
 @patch("pociag_processing.repository.PostgresHook")
@@ -135,7 +135,7 @@ def test_upsert_operations_executes_correct_queries(mock_hook_cls: MagicMock) ->
                     "plannedSequenceNumber": 1,
                     "actualSequenceNumber": 1,
                     "plannedArrival": None,
-                    "plannedDeparture": "2025-06-01T08:00:00+02:00",
+                    "plannedDeparture": "2025-06-01T08:00:00",
                     "arrivalDelayMinutes": None,
                     "departureDelayMinutes": 0,
                     "actualArrival": None,
@@ -152,7 +152,33 @@ def test_upsert_operations_executes_correct_queries(mock_hook_cls: MagicMock) ->
     assert result.records_written == 1
     assert result.records_read == 1
     assert mock_cursor.execute.call_count == 2  # 1 op + 1 station
+    station_params = mock_cursor.execute.call_args_list[1].args[1]
+    expected_departure = datetime(2025, 6, 1, 6, 0, tzinfo=UTC)
+    assert station_params[4] is None  # planned_arrival
+    assert station_params[5] == expected_departure  # naive PLK value read as Europe/Warsaw
+    assert station_params[5].utcoffset() == timedelta(hours=2)
+    assert station_params[9] == expected_departure  # offset-aware value kept as-is
     mock_conn.commit.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-07-01T10:30:00", datetime(2026, 7, 1, 8, 30, tzinfo=UTC)),
+        ("2026-01-15T10:30:00", datetime(2026, 1, 15, 9, 30, tzinfo=UTC)),
+        (
+            "2025-06-01T08:00:00+02:00",
+            datetime(2025, 6, 1, 8, 0, tzinfo=timezone(timedelta(hours=2))),
+        ),
+        (None, None),
+    ],
+)
+def test_parse_plk_local_timestamp(value: str | None, expected: datetime | None) -> None:
+    parsed = _parse_plk_local_timestamp(value)
+
+    assert parsed == expected
+    if expected is not None:
+        assert parsed is not None and parsed.tzinfo is not None
 
 
 @patch("pociag_processing.repository.PostgresHook")

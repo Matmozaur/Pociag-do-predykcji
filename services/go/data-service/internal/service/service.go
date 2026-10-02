@@ -28,6 +28,7 @@ type QueryOperationsParams struct {
 	Status             string
 	CarrierCodes       []string
 	MinDelay           *int
+	ActiveOnly         bool
 	Limit              int
 	Offset             int
 }
@@ -64,6 +65,7 @@ type Repository interface {
 	QueryOperations(ctx context.Context, p QueryOperationsParams) ([]model.OperationSummary, int64, error)
 	GetOperationById(ctx context.Context, id int64) (*model.OperationDetail, error)
 	GetOperationStatistics(ctx context.Context, date time.Time) (*model.OperationStatistics, error)
+	QueryStationBoardCandidates(ctx context.Context, stationExtID int, now time.Time, horizon, lookback time.Duration) ([]StationBoardCandidate, error)
 
 	QueryDisruptions(ctx context.Context, p QueryDisruptionsParams) ([]model.DisruptionSummary, int64, error)
 	GetDisruptionById(ctx context.Context, id int64) (*model.DisruptionDetail, error)

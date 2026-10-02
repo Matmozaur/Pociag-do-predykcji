@@ -225,3 +225,6 @@ __marimo__/
 
 # PNG files in the repository root (e.g. ad-hoc screenshots)
 /*.png
+
+# Prompt playground
+.prompt-playground/*

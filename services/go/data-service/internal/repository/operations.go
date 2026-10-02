@@ -12,6 +12,10 @@ import (
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
+// activeOperationGrace is how long after its expected end at the last stop an in-progress
+// operation is still considered live (PLK leaves some operations in status P indefinitely).
+const activeOperationGrace = 30 * time.Minute
+
 func (r *Repository) QueryOperations(ctx context.Context, p service.QueryOperationsParams) ([]model.OperationSummary, int64, error) {
 	ctx, span := r.tracer.Start(ctx, "db.train_operations.query")
 	defer span.End()
@@ -21,8 +25,24 @@ func (r *Repository) QueryOperations(ctx context.Context, p service.QueryOperati
 	paramIdx := 1
 
 	if p.Date != nil {
-		conditions = append(conditions, fmt.Sprintf("to2.operating_date = $%d::date", paramIdx))
+		if p.ActiveOnly {
+			// Include the previous operating date to cover overnight trains.
+			conditions = append(conditions, fmt.Sprintf("to2.operating_date IN ($%d::date, $%d::date - 1)", paramIdx, paramIdx))
+		} else {
+			conditions = append(conditions, fmt.Sprintf("to2.operating_date = $%d::date", paramIdx))
+		}
 		params = append(params, p.Date.Format("2006-01-02"))
+		paramIdx++
+	}
+	if p.ActiveOnly {
+		conditions = append(conditions, fmt.Sprintf("to2.train_status = $%d", paramIdx))
+		params = append(params, "P")
+		paramIdx++
+		conditions = append(conditions, fmt.Sprintf(
+			"(SELECT MAX(COALESCE(os4.actual_arrival, os4.planned_arrival + make_interval(mins => COALESCE(os4.arrival_delay_minutes, 0)), os4.planned_departure)) FROM operation_stations os4 WHERE os4.train_operation_id = to2.id) >= now() - $%d::interval",
+			paramIdx,
+		))
+		params = append(params, fmt.Sprintf("%d minutes", int(activeOperationGrace.Minutes())))
 		paramIdx++
 	}
 	if len(p.StationExternalIds) > 0 {
@@ -307,7 +327,8 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 		        GREATEST(
 		            COALESCE(MAX(os.arrival_delay_minutes), 0),
 		            COALESCE(MAX(os.departure_delay_minutes), 0)
-		        ) AS max_delay
+		        ) AS max_delay,
+		        MAX(to2.updated_at) AS updated_at
 		    FROM train_operations to2
 		    LEFT JOIN operation_stations os ON os.train_operation_id = to2.id
 		    WHERE to2.operating_date = $1::date
@@ -324,7 +345,8 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 		    COUNT(*) FILTER (WHERE max_delay > 5  AND max_delay <= 15) AS slight_delay,
 		    COUNT(*) FILTER (WHERE max_delay > 15 AND max_delay <= 60) AS moderate_delay,
 		    COUNT(*) FILTER (WHERE max_delay > 60)          AS severe_delay,
-		    AVG(CASE WHEN max_delay > 0 THEN max_delay::float8 END) AS avg_delay
+		    AVG(CASE WHEN max_delay > 0 THEN max_delay::float8 END) AS avg_delay,
+		    MAX(updated_at)                                  AS last_updated_at
 		FROM op_delays`
 
 	var (
@@ -339,11 +361,12 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 		moderateDelay int64
 		severeDelay   int64
 		avgDelay      pgtype.Float8
+		lastUpdatedAt pgtype.Timestamptz
 	)
 	dateStr := date.Format("2006-01-02")
 	err := r.db.WithContext(ctx).Raw(query, dateStr).Row().Scan(
 		&total, &statusS, &statusP, &statusC, &statusX, &statusQ,
-		&onTime, &slightDelay, &moderateDelay, &severeDelay, &avgDelay,
+		&onTime, &slightDelay, &moderateDelay, &severeDelay, &avgDelay, &lastUpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get operation statistics: %w", err)
@@ -376,5 +399,179 @@ func (r *Repository) GetOperationStatistics(ctx context.Context, date time.Time)
 	if avgDelay.Valid {
 		stats.AvgDelayMinutes = &avgDelay.Float64
 	}
+	if lastUpdatedAt.Valid {
+		stats.LastUpdatedAt = &lastUpdatedAt.Time
+	}
 	return stats, nil
+}
+
+// QueryStationBoardCandidates returns every stop at the station whose planned departure (else
+// planned arrival) lies in [now - lookback, now + horizon], for operations not fully cancelled,
+// ordered by expected departure (else expected arrival). The time predicate must match the
+// expression of idx_operation_stations_station_planned_time (db/migrations/011).
+func (r *Repository) QueryStationBoardCandidates(ctx context.Context, stationExtID int, now time.Time, horizon, lookback time.Duration) ([]service.StationBoardCandidate, error) {
+	ctx, span := r.tracer.Start(ctx, "db.station_board.query")
+	defer span.End()
+
+	const query = `
+		WITH cand AS (
+		  SELECT t.id AS operation_id, t.schedule_id, t.order_id, t.train_order_id,
+		         t.operating_date, t.train_status, t.updated_at,
+		         os.actual_sequence_number, os.planned_sequence_number,
+		         os.planned_arrival, os.planned_departure,
+		         CASE WHEN os.planned_arrival IS NOT NULL THEN COALESCE(os.actual_arrival,
+		              os.planned_arrival + make_interval(mins => COALESCE(os.arrival_delay_minutes, 0))) END AS exp_arr,
+		         CASE WHEN os.planned_departure IS NOT NULL THEN COALESCE(os.actual_departure,
+		              os.planned_departure + make_interval(mins => COALESCE(os.departure_delay_minutes, 0))) END AS exp_dep,
+		         os.arrival_delay_minutes, os.departure_delay_minutes, os.is_confirmed, os.is_cancelled
+		  FROM operation_stations os
+		  JOIN train_operations t ON t.id = os.train_operation_id
+		  WHERE os.station_external_id = $1
+		    AND COALESCE(os.planned_departure, os.planned_arrival) BETWEEN $2::timestamptz - $4::interval AND $2::timestamptz + $3::interval
+		    AND t.train_status <> 'X'
+		)
+		SELECT c.*,
+		       r.id AS route_id, r.name, r.carrier_code, r.commercial_category_symbol, r.national_number,
+		       COALESCE(rs.departure_train_number, rs.arrival_train_number) AS train_number,
+		       rs.arrival_platform, rs.arrival_track, rs.departure_platform, rs.departure_track,
+		       o.station_external_id AS origin_id,  so.name AS origin_name,
+		       d.station_external_id AS dest_id,    sd.name AS dest_name
+		FROM cand c
+		LEFT JOIN routes r          ON r.schedule_id = c.schedule_id AND r.order_id = c.order_id
+		LEFT JOIN route_stations rs ON rs.route_id = r.id AND rs.order_number = c.planned_sequence_number
+		LEFT JOIN LATERAL (SELECT station_external_id FROM operation_stations
+		                   WHERE train_operation_id = c.operation_id
+		                   ORDER BY actual_sequence_number ASC  LIMIT 1) o ON TRUE
+		LEFT JOIN LATERAL (SELECT station_external_id FROM operation_stations
+		                   WHERE train_operation_id = c.operation_id
+		                   ORDER BY actual_sequence_number DESC LIMIT 1) d ON TRUE
+		LEFT JOIN stations so ON so.external_id = o.station_external_id
+		LEFT JOIN stations sd ON sd.external_id = d.station_external_id
+		ORDER BY COALESCE(c.exp_dep, c.exp_arr)`
+
+	rows, err := r.db.WithContext(ctx).Raw(query,
+		int32(stationExtID),
+		now,
+		fmt.Sprintf("%d minutes", int(horizon.Minutes())),
+		fmt.Sprintf("%d minutes", int(lookback.Minutes())),
+	).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query station board candidates: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	results := []service.StationBoardCandidate{}
+	for rows.Next() {
+		var (
+			operationID       int64
+			scheduleID        int32
+			orderID           int32
+			trainOrderID      pgtype.Int4
+			operatingDate     pgtype.Date
+			trainStatus       string
+			updatedAt         time.Time
+			actualSeq         int32
+			plannedSeq        pgtype.Int4
+			plannedArrival    pgtype.Timestamptz
+			plannedDeparture  pgtype.Timestamptz
+			expectedArrival   pgtype.Timestamptz
+			expectedDeparture pgtype.Timestamptz
+			arrivalDelay      pgtype.Int4
+			departureDelay    pgtype.Int4
+			isConfirmed       bool
+			isCancelled       bool
+			routeID           pgtype.Int8
+			routeName         pgtype.Text
+			carrierCode       pgtype.Text
+			category          pgtype.Text
+			nationalNumber    pgtype.Text
+			trainNumber       pgtype.Text
+			arrivalPlatform   pgtype.Text
+			arrivalTrack      pgtype.Text
+			departurePlatform pgtype.Text
+			departureTrack    pgtype.Text
+			originID          pgtype.Int4
+			originName        pgtype.Text
+			destID            pgtype.Int4
+			destName          pgtype.Text
+		)
+		if err := rows.Scan(
+			&operationID, &scheduleID, &orderID, &trainOrderID,
+			&operatingDate, &trainStatus, &updatedAt,
+			&actualSeq, &plannedSeq,
+			&plannedArrival, &plannedDeparture,
+			&expectedArrival, &expectedDeparture,
+			&arrivalDelay, &departureDelay, &isConfirmed, &isCancelled,
+			&routeID, &routeName, &carrierCode, &category, &nationalNumber,
+			&trainNumber,
+			&arrivalPlatform, &arrivalTrack, &departurePlatform, &departureTrack,
+			&originID, &originName,
+			&destID, &destName,
+		); err != nil {
+			return nil, fmt.Errorf("scan station board row: %w", err)
+		}
+		e := model.StationBoardEntry{
+			OperationID:    operationID,
+			ScheduleID:     int(scheduleID),
+			OrderID:        int(orderID),
+			TrainStatus:    trainStatus,
+			SequenceNumber: int(actualSeq),
+			IsConfirmed:    isConfirmed,
+			IsCancelled:    isCancelled,
+		}
+		if operatingDate.Valid {
+			e.OperatingDate = operatingDate.Time.Format("2006-01-02")
+		}
+		e.TrainOrderID = optionalInt(trainOrderID)
+		e.ArrivalDelayMinutes = optionalInt(arrivalDelay)
+		e.DepartureDelayMinutes = optionalInt(departureDelay)
+		e.OriginStationExternalID = optionalInt(originID)
+		e.DestinationStationExternalID = optionalInt(destID)
+		if routeID.Valid {
+			e.RouteID = &routeID.Int64
+		}
+		e.PlannedArrival = optionalTime(plannedArrival)
+		e.PlannedDeparture = optionalTime(plannedDeparture)
+		e.ExpectedArrival = optionalTime(expectedArrival)
+		e.ExpectedDeparture = optionalTime(expectedDeparture)
+		e.RouteName = optionalText(routeName)
+		e.CarrierCode = optionalText(carrierCode)
+		e.CommercialCategory = optionalText(category)
+		e.NationalNumber = optionalText(nationalNumber)
+		e.TrainNumber = optionalText(trainNumber)
+		e.ArrivalPlatform = optionalText(arrivalPlatform)
+		e.ArrivalTrack = optionalText(arrivalTrack)
+		e.DeparturePlatform = optionalText(departurePlatform)
+		e.DepartureTrack = optionalText(departureTrack)
+		e.OriginStationName = optionalText(originName)
+		e.DestinationStationName = optionalText(destName)
+
+		results = append(results, service.StationBoardCandidate{Entry: e, UpdatedAt: updatedAt})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate station board rows: %w", err)
+	}
+	return results, nil
+}
+
+func optionalInt(v pgtype.Int4) *int {
+	if !v.Valid {
+		return nil
+	}
+	i := int(v.Int32)
+	return &i
+}
+
+func optionalTime(v pgtype.Timestamptz) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Time
+}
+
+func optionalText(v pgtype.Text) *string {
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
 }

@@ -40,6 +40,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/search/stations", h.HandleSearchStations)
 		r.Get("/map/stations", h.HandleGetMapStations)
+		r.Get("/stations/{externalId}/board", h.HandleGetStationBoard)
 		r.Get("/schedules/search", h.HandleSearchSchedules)
 		r.Get("/schedules/{routeId}", h.HandleGetScheduleDetail)
 		r.Get("/trains/live", h.HandleGetLiveTrains)
@@ -139,6 +140,47 @@ func (h *Handler) HandleGetMapStations(w http.ResponseWriter, r *http.Request) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		h.writeError(w, http.StatusInternalServerError, "internal_error", "failed to load map stations")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, response)
+}
+
+// HandleGetStationBoard returns the station board: trains at the station, next arrivals and next departures.
+// @Summary		Get station board
+// @Description	Trains at the station, next arrivals and next departures (up to limit per section)
+// @Tags		stations
+// @Produce		json
+// @Param		externalId path int true "Station external ID"
+// @Param		limit query int false "Maximum number of rows per section (1-50)" default(10)
+// @Success		200 {object} model.StationBoardView
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		404 {object} model.ErrorResponse "Station not found"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/stations/{externalId}/board [get]
+func (h *Handler) HandleGetStationBoard(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "station.board")
+	defer span.End()
+
+	externalID, err := strconv.Atoi(chi.URLParam(r, "externalId"))
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid_request", "externalId must be a valid integer")
+		return
+	}
+
+	limit := 10
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			h.writeError(w, http.StatusBadRequest, "invalid_request", "limit must be an integer between 1 and 50")
+			return
+		}
+		limit = parsed
+	}
+
+	response, err := h.svc.GetStationBoard(ctx, externalID, limit)
+	if err != nil {
+		h.handleDataServiceError(w, span, err, "failed to fetch station board")
 		return
 	}
 

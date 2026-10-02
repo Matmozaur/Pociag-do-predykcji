@@ -2,14 +2,20 @@
 
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useRef } from 'react'
 import {
     AlertTriangle,
+    ArrowLeft,
     ArrowRight,
+    Maximize2,
     CheckCircle2,
     RefreshCw,
     Signal,
     Train,
 } from 'lucide-react'
+import { DataFreshness } from '@/components/DataFreshness'
+import { StationBoard } from '@/components/StationBoard'
 import { TrafficMapClient } from '@/components/TrafficMapClient'
 import {
     delayVariant,
@@ -76,6 +82,42 @@ function DisruptionRow({ disruption }: { disruption: DisruptionSummaryView }) {
 }
 
 export function MapHomeClient() {
+    return (
+        <Suspense fallback={null}>
+            <MapHome />
+        </Suspense>
+    )
+}
+
+function MapHome() {
+    const router = useRouter()
+    const pathname = usePathname()
+    const searchParams = useSearchParams()
+    const stationParam = searchParams.get('station')
+    const selectedStationId = stationParam && /^\d+$/.test(stationParam) ? Number(stationParam) : undefined
+    const boardHeadingRef = useRef<HTMLHeadingElement>(null)
+
+    const selectStation = useCallback(
+        (externalId?: number) => {
+            const params = new URLSearchParams(searchParams.toString())
+            if (externalId == null) params.delete('station')
+            else params.set('station', String(externalId))
+            const query = params.toString()
+            router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+        },
+        [pathname, router, searchParams],
+    )
+
+    useEffect(() => {
+        if (selectedStationId == null) return
+        boardHeadingRef.current?.focus()
+        function onKeyDown(e: KeyboardEvent) {
+            if (e.key === 'Escape') selectStation(undefined)
+        }
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [selectedStationId, selectStation])
+
     const overviewQuery = useQuery({ queryKey: ['dashboardOverview'], queryFn: gateway.getDashboardOverview, staleTime: 30_000 })
     const trainsQuery = useQuery({ queryKey: ['mapLiveTrains'], queryFn: () => gateway.getLiveTrains({ limit: 4 }), staleTime: 30_000, refetchInterval: 60_000 })
     const disruptionsQuery = useQuery({ queryKey: ['mapDisruptions'], queryFn: () => gateway.listDisruptions(true, 3), staleTime: 60_000 })
@@ -84,11 +126,30 @@ export function MapHomeClient() {
 
     return (
         <div className="map-home h-full w-full bg-[#0a0c14]">
-            <TrafficMapClient />
+            <TrafficMapClient selectedStationId={selectedStationId} onStationSelect={(station) => selectStation(station.external_id)} />
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(10,12,20,.48),transparent_45%),linear-gradient(0deg,rgba(10,12,20,.35),transparent_40%)]" aria-hidden="true" />
 
-            <section aria-labelledby="map-home-title" className="map-operations-panel absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[500] mx-2 max-h-[min(52%,28rem)] touch-pan-y overflow-y-auto overscroll-contain rounded-t-2xl border border-white/10 bg-[#121622]/95 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:inset-x-auto md:bottom-auto md:left-5 md:top-5 md:mx-0 md:max-h-[calc(100%-2.5rem)] md:w-[390px] md:rounded-2xl md:p-5">
+            <section aria-labelledby={selectedStationId == null ? 'map-home-title' : undefined} aria-label={selectedStationId == null ? undefined : 'Tablica stacyjna'} className="map-operations-panel absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[500] mx-2 max-h-[min(52%,28rem)] touch-pan-y overflow-y-auto overscroll-contain rounded-t-2xl border border-white/10 bg-[#121622]/95 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:inset-x-auto md:bottom-auto md:left-5 md:top-5 md:mx-0 md:max-h-[calc(100%-2.5rem)] md:w-[390px] md:rounded-2xl md:p-5">
                 <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20 md:hidden" aria-hidden="true" />
+                {selectedStationId != null ? (
+                    <>
+                        <button type="button" onClick={() => selectStation(undefined)} className="mb-3 inline-flex items-center gap-1.5 rounded-md text-sm text-slate-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                            <ArrowLeft size={14} aria-hidden="true" /> Przegląd sieci
+                        </button>
+                        <StationBoard
+                            key={selectedStationId}
+                            stationId={selectedStationId}
+                            variant="panel"
+                            headingRef={boardHeadingRef}
+                            actions={
+                                <Link href={`/stations/${selectedStationId}`} className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-300 hover:text-blue-200">
+                                    <Maximize2 size={13} aria-hidden="true" /> Pełna tablica
+                                </Link>
+                            }
+                        />
+                    </>
+                ) : (
+                <>
                 <div className="mb-5 flex items-start justify-between gap-3">
                     <div>
                         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-300"><Signal size={14} /> Centrum operacyjne</div>
@@ -112,6 +173,7 @@ export function MapHomeClient() {
 
                 <section aria-labelledby="live-trains-heading" className="border-t border-white/8 pt-4">
                     <div className="mb-1 flex items-center justify-between"><h2 id="live-trains-heading" className="text-sm font-semibold text-white">Pociągi w ruchu</h2><Link href="/pociagi" className="text-xs font-medium text-blue-300 hover:text-blue-200">Zobacz wszystkie</Link></div>
+                    <DataFreshness lastUpdated={overviewQuery.data?.data_freshness.operations_last_updated} className="mb-2" />
                     {trainsQuery.isLoading ? <div className="flex justify-center py-5"><Spinner /></div> : trainsQuery.isError ? <QueryMessage onRetry={() => trainsQuery.refetch()}>Nie udało się pobrać pociągów.</QueryMessage> : trainsQuery.data?.data.length ? <div>{trainsQuery.data.data.map((train) => <TrainRow key={train.operation_id} train={train} />)}</div> : <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><CheckCircle2 size={17} className="text-emerald-400" /> Brak pociągów w ruchu.</div>}
                 </section>
 
@@ -120,6 +182,8 @@ export function MapHomeClient() {
                     {disruptionsQuery.isLoading ? <div className="flex justify-center py-5"><Spinner /></div> : disruptionsQuery.isError ? <QueryMessage onRetry={() => disruptionsQuery.refetch()}>Nie udało się pobrać utrudnień.</QueryMessage> : disruptionsQuery.data?.data.length ? <div>{disruptionsQuery.data.data.map((disruption) => <DisruptionRow key={disruption.id} disruption={disruption} />)}</div> : <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><CheckCircle2 size={17} className="text-emerald-400" /> Brak aktywnych utrudnień.</div>}
                 </section>
                 <p className="mt-4 border-t border-white/8 pt-3 text-[11px] leading-relaxed text-slate-500">Mapa pokazuje infrastrukturę kolejową. Dane operacyjne są prezentowane na liście, bez przybliżania pozycji pociągów.</p>
+                </>
+                )}
             </section>
             <div className="pointer-events-none absolute right-4 top-4 z-[400] hidden rounded-full border border-white/10 bg-[#121622]/85 px-3 py-1.5 text-xs text-slate-300 shadow-lg backdrop-blur md:block">Warstwa infrastruktury kolejowej</div>
         </div>

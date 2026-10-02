@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CircleMarker, GeoJSON, MapContainer, Pane, Popup, TileLayer, Tooltip } from 'react-leaflet'
+import { CircleMarker, GeoJSON, MapContainer, Pane, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import { gateway, type MapStation } from '@/lib/api'
 
 // Padded bounding box around Poland — used both to fit the initial view and to
@@ -66,19 +66,28 @@ const RAILWAY_TILES_ATTRIBUTION =
     'Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
     'style: <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (CC-BY-SA)'
 
-function StationPopupContent({ station }: { station: MapStation }) {
-    return (
-        <div className="min-w-[160px] text-sm">
-            <p className="font-semibold text-white">{station.name}</p>
-            {station.city && station.city !== station.name ? (
-                <p className="text-xs text-slate-400">{station.city}</p>
-            ) : null}
-            <p className="mt-1 text-xs text-slate-500">ID: {station.external_id}</p>
-        </div>
-    )
+const SELECTED_STATION_PATH_OPTIONS: L.PathOptions = {
+    color: '#fde68a',
+    weight: 2.5,
+    fillColor: '#f59e0b',
+    fillOpacity: 1,
 }
 
-export function TrafficMapClient() {
+// Pans (without changing zoom) to the selected station whenever the selection changes.
+function PanToStation({ station }: { station?: MapStation }) {
+    const map = useMap()
+    useEffect(() => {
+        if (station) map.panTo([station.latitude, station.longitude], { animate: true })
+    }, [map, station])
+    return null
+}
+
+interface TrafficMapClientProps {
+    selectedStationId?: number
+    onStationSelect?: (station: MapStation) => void
+}
+
+export function TrafficMapClient({ selectedStationId, onStationSelect }: TrafficMapClientProps = {}) {
     const [polandGeo, setPolandGeo] = useState<PolandFeature | null>(null)
 
     const { data: stationsData } = useQuery({
@@ -97,6 +106,7 @@ export function TrafficMapClient() {
     }, [])
 
     const outsideMask = useMemo(() => (polandGeo ? buildOutsideMask(polandGeo) : null), [polandGeo])
+    const selectedStation = stationsData?.stations.find((s) => s.external_id === selectedStationId)
 
     return (
         <div className="relative h-full w-full">
@@ -147,10 +157,10 @@ export function TrafficMapClient() {
                         <CircleMarker
                             key={station.external_id}
                             center={[station.latitude, station.longitude]}
-                            radius={6}
-                            pathOptions={STATION_PATH_OPTIONS}
+                            radius={station.external_id === selectedStationId ? 10 : 6}
+                            pathOptions={station.external_id === selectedStationId ? SELECTED_STATION_PATH_OPTIONS : STATION_PATH_OPTIONS}
                             eventHandlers={{
-                                click: (e) => e.target.openPopup(),
+                                click: () => onStationSelect?.(station),
                             }}
                         >
                             <Tooltip
@@ -162,12 +172,10 @@ export function TrafficMapClient() {
                             >
                                 <span className="font-semibold">{station.name}</span>
                             </Tooltip>
-                            <Popup>
-                                <StationPopupContent station={station} />
-                            </Popup>
                         </CircleMarker>
                     ))}
                 </Pane>
+                <PanToStation station={selectedStation} />
             </MapContainer>
         </div>
     )

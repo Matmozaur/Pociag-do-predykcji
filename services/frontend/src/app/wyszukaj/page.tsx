@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import Link from 'next/link'
-import { Clock, MapPin, Search, Train } from 'lucide-react'
+import { ArrowRight, Clock, MapPin, Search, Train } from 'lucide-react'
 import { gateway, type ScheduleSearchResult, type StationSuggestion } from '@/lib/api'
 import { Button, Card, EmptyState, Input, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
@@ -119,6 +119,19 @@ function StationAutocomplete({ label, placeholder, value, onSelect }: StationAut
     )
 }
 
+function StationBoardLink({ station }: { station: StationSuggestion | null }) {
+    if (!station) return null
+    return (
+        <Link
+            href={`/stations/${station.external_id}`}
+            className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-blue-400 hover:text-blue-300"
+        >
+            Tablica stacyjna <ArrowRight size={12} aria-hidden="true" />
+            <span className="sr-only">: {station.name}</span>
+        </Link>
+    )
+}
+
 function ConnectionResultCard({ result }: { result: ScheduleSearchResult }) {
     const category = result.commercial_category ?? result.carrier.code
     const colorClass = CARRIER_COLORS[category] ?? 'bg-blue-500/20 text-blue-400'
@@ -196,18 +209,24 @@ export default function WyszukajPage() {
 
                 {/* Search form */}
                 <div className="bg-[#1a1d27] border border-[#2d3148] rounded-xl p-4 space-y-4">
-                    <StationAutocomplete
-                        label="Skąd"
-                        placeholder="Stacja odjazdu..."
-                        value={fromStation?.name ?? ''}
-                        onSelect={setFromStation}
-                    />
-                    <StationAutocomplete
-                        label="Dokąd"
-                        placeholder="Stacja docelowa..."
-                        value={toStation?.name ?? ''}
-                        onSelect={setToStation}
-                    />
+                    <div>
+                        <StationAutocomplete
+                            label="Skąd"
+                            placeholder="Stacja odjazdu..."
+                            value={fromStation?.name ?? ''}
+                            onSelect={setFromStation}
+                        />
+                        <StationBoardLink station={fromStation} />
+                    </div>
+                    <div>
+                        <StationAutocomplete
+                            label="Dokąd"
+                            placeholder="Stacja docelowa..."
+                            value={toStation?.name ?? ''}
+                            onSelect={setToStation}
+                        />
+                        <StationBoardLink station={toStation} />
+                    </div>
                     <div className="flex flex-col gap-1">
                         <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">
                             Data podróży

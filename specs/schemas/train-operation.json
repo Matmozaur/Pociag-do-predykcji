@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://pociag-do-predykcji/schemas/train-operation",
     "title": "TrainOperation",
-    "description": "A record of actual train execution for a specific operating date",
+    "description": "A record of actual train execution for a specific operating date. Per-stop times (operation_stations planned_/actual_ arrival/departure) are stored as UTC instants; PLK sends them as naive Europe/Warsaw wall-clock values, which are interpreted in that zone on ingest.",
     "type": "object",
     "required": [
         "id",

@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -40,6 +41,18 @@ def _parse_timestamp(value: str | None) -> datetime | None:
     if value is None:
         return None
     return datetime.fromisoformat(value)
+
+
+_PLK_LOCAL_TZ = ZoneInfo("Europe/Warsaw")
+
+
+def _parse_plk_local_timestamp(value: str | None) -> datetime | None:
+    """Parse a PLK operations timestamp; naive values are Europe/Warsaw wall-clock time."""
+    parsed = _parse_timestamp(value)
+    if parsed is None or parsed.tzinfo is not None:
+        return parsed
+    # Ambiguous DST fall-back times resolve to the first occurrence (zoneinfo fold=0).
+    return parsed.replace(tzinfo=_PLK_LOCAL_TZ)
 
 
 class SyncRepository:
@@ -629,12 +642,12 @@ class SyncRepository:
                                     stn.get("stationId"),
                                     stn.get("plannedSequenceNumber"),
                                     stn.get("actualSequenceNumber"),
-                                    _parse_timestamp(stn.get("plannedArrival")),
-                                    _parse_timestamp(stn.get("plannedDeparture")),
+                                    _parse_plk_local_timestamp(stn.get("plannedArrival")),
+                                    _parse_plk_local_timestamp(stn.get("plannedDeparture")),
                                     stn.get("arrivalDelayMinutes"),
                                     stn.get("departureDelayMinutes"),
-                                    _parse_timestamp(stn.get("actualArrival")),
-                                    _parse_timestamp(stn.get("actualDeparture")),
+                                    _parse_plk_local_timestamp(stn.get("actualArrival")),
+                                    _parse_plk_local_timestamp(stn.get("actualDeparture")),
                                     stn.get("isConfirmed", False),
                                     stn.get("isCancelled", False),
                                 ),

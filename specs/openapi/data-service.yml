@@ -2,7 +2,7 @@ openapi: "3.1.0"
 
 info:
   title: "Pociag Data Service API"
-  version: "0.1.0"
+  version: "0.2.0"
   description: |
     Internal domain read service.
     Exposes curated schedules, operations, disruptions, and dictionaries.
@@ -254,6 +254,16 @@ paths:
           description: Minimum delay in minutes (filters trains with delay >= this value)
           schema:
             type: integer
+        - name: activeOnly
+          in: query
+          description: >-
+            When true, return only operations with status P whose expected end (last stop's
+            actual arrival, else planned arrival + arrival delay, else planned arrival/departure)
+            is not earlier than now minus 30 minutes; when `date` is also given, the previous
+            operating date is included to cover overnight trains.
+          schema:
+            type: boolean
+            default: false
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
@@ -433,6 +443,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Station"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/stations/{externalId}/board:
+    get:
+      summary: Get station board (arrivals, departures, at station)
+      description: >-
+        Returns the station board for the reference instant `at`. For each stop at the station
+        whose operation is not fully cancelled (train_status <> 'X'), the expected arrival /
+        departure is actual, else planned + delay, else planned. Stops are bucketed into
+        `at_station` (not cancelled, arrived at or before `at`, and either expected to depart
+        after `at` or a terminus arrival within the last 5 minutes), `arrival` (expected
+        arrival in (at, at + horizonMinutes]) and `departure` (expected departure in
+        (at, at + horizonMinutes], not in `at_station`). A through train yields both an
+        `arrival` and a `departure` entry. Cancelled stops stay in `arrival` / `departure`
+        and count toward `limit`. Each bucket is ordered by board time (expected arrival for
+        `arrival`, expected departure otherwise) and truncated to `limit`. Only stops whose
+        planned departure (else planned arrival) lies in [at - lookbackMinutes,
+        at + horizonMinutes] are considered.
+      operationId: getStationBoard
+      tags: [operations]
+      parameters:
+        - name: externalId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: at
+          in: query
+          description: Reference instant (RFC 3339); defaults to the current time
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum number of entries per bucket
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+        - name: horizonMinutes
+          in: query
+          description: How far ahead of `at` to look for trains, in minutes
+          schema:
+            type: integer
+            default: 720
+            minimum: 30
+            maximum: 1440
+        - name: lookbackMinutes
+          in: query
+          description: >-
+            How far before `at` to read stops by planned time, in minutes (covers delayed
+            trains)
+          schema:
+            type: integer
+            default: 360
+            minimum: 0
+            maximum: 720
+      responses:
+        "200":
+          description: Station board entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StationBoardResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -884,15 +962,19 @@ components:
         planned_arrival:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         planned_departure:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         actual_arrival:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         actual_departure:
           type: string
           format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
         arrival_delay_minutes:
           type: integer
         departure_delay_minutes:
@@ -965,6 +1047,133 @@ components:
         avg_delay_minutes:
           type: number
           format: float
+        last_updated_at:
+          type: string
+          format: date-time
+          description: >-
+            MAX(train_operations.updated_at) for the requested date: when operations for this
+            date were last refreshed from PLK
+
+    StationBoardEntry:
+      type: object
+      required:
+        [
+          operation_id,
+          schedule_id,
+          order_id,
+          operating_date,
+          train_status,
+          sequence_number,
+          bucket,
+          is_confirmed,
+          is_cancelled,
+        ]
+      additionalProperties: false
+      properties:
+        bucket:
+          type: string
+          enum: [at_station, arrival, departure]
+        operation_id:
+          type: integer
+          format: int64
+        schedule_id:
+          type: integer
+        order_id:
+          type: integer
+        train_order_id:
+          type: integer
+        operating_date:
+          type: string
+          format: date
+        train_status:
+          type: string
+        sequence_number:
+          type: integer
+          description: Actual sequence number of this stop within the operation
+        route_id:
+          type: integer
+          format: int64
+          description: Omitted when the route is missing from the routes table
+        route_name:
+          type: string
+        carrier_code:
+          type: string
+        commercial_category:
+          type: string
+        national_number:
+          type: string
+        train_number:
+          type: string
+          description: Route stop departure train number, else arrival train number
+        arrival_platform:
+          type: string
+        arrival_track:
+          type: string
+        departure_platform:
+          type: string
+        departure_track:
+          type: string
+        planned_arrival:
+          type: string
+          format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
+        planned_departure:
+          type: string
+          format: date-time
+          description: UTC instant (PLK naive values are interpreted as Europe/Warsaw local time)
+        expected_arrival:
+          type: string
+          format: date-time
+          description: Actual arrival, else planned arrival + arrival delay, else planned arrival
+        expected_departure:
+          type: string
+          format: date-time
+          description: >-
+            Actual departure, else planned departure + departure delay, else planned departure
+        arrival_delay_minutes:
+          type: integer
+        departure_delay_minutes:
+          type: integer
+        is_confirmed:
+          type: boolean
+        is_cancelled:
+          type: boolean
+        origin_station_external_id:
+          type: integer
+        origin_station_name:
+          type: string
+        destination_station_external_id:
+          type: integer
+        destination_station_name:
+          type: string
+
+    StationBoardResponse:
+      type: object
+      required: [station_external_id, at, limit, horizon_minutes, entries]
+      additionalProperties: false
+      properties:
+        station_external_id:
+          type: integer
+        at:
+          type: string
+          format: date-time
+          description: The reference instant actually used
+        limit:
+          type: integer
+          description: Per-bucket limit actually used
+        horizon_minutes:
+          type: integer
+        data_as_of:
+          type: string
+          format: date-time
+          description: >-
+            MAX(train_operations.updated_at) over the returned operations; omitted when there
+            are no entries
+        entries:
+          type: array
+          description: Bucketed entries, truncated per bucket, ordered by board time
+          items:
+            $ref: "#/components/schemas/StationBoardEntry"
 
     # ── Disruptions ────────────────────────────────────────────────────────────
     DisruptionSummary:

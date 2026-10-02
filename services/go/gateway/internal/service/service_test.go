@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/pociag-do-predykcji/services/go/gateway/internal/client/dataservice"
 )
@@ -12,6 +13,7 @@ type mockDataServiceClient struct {
 	queryRoutesFn            func(ctx context.Context, p dataservice.QueryRoutesParams) (*dataservice.RouteListResponse, error)
 	getRouteStationsFn       func(ctx context.Context, routeID int64) (*dataservice.RouteStationListResponse, error)
 	getStationByExternalIDFn func(ctx context.Context, externalID int) (*dataservice.Station, error)
+	getStationBoardFn        func(ctx context.Context, externalID int, limit int) (*dataservice.StationBoardResponse, error)
 	getRouteByKeyFn          func(ctx context.Context, scheduleID, orderID int) (*dataservice.RouteDetail, error)
 	listCarriersFn           func(ctx context.Context) (*dataservice.CarrierListResponse, error)
 	getOperationStatsFn      func(ctx context.Context, date string) (*dataservice.OperationStatistics, error)
@@ -36,6 +38,10 @@ func (m *mockDataServiceClient) GetStationByExternalID(ctx context.Context, exte
 		return m.getStationByExternalIDFn(ctx, externalID)
 	}
 	return &dataservice.Station{}, nil
+}
+
+func (m *mockDataServiceClient) GetStationBoard(ctx context.Context, externalID int, limit int) (*dataservice.StationBoardResponse, error) {
+	return m.getStationBoardFn(ctx, externalID, limit)
 }
 
 func (m *mockDataServiceClient) ListCarriers(ctx context.Context) (*dataservice.CarrierListResponse, error) {
@@ -225,6 +231,7 @@ func TestGetDisruptionDetail_MissingOperatingDate_ReturnsError(t *testing.T) {
 }
 
 func TestGetDashboardOverview_ComputesStatistics(t *testing.T) {
+	lastUpdated := time.Date(2026, 7, 5, 6, 13, 20, 0, time.UTC)
 	mockClient := &mockDataServiceClient{
 		getOperationStatsFn: func(ctx context.Context, date string) (*dataservice.OperationStatistics, error) {
 			avg := 6.5
@@ -238,6 +245,7 @@ func TestGetDashboardOverview_ComputesStatistics(t *testing.T) {
 				},
 				DelayDistribution: dataservice.DelayDistribution{OnTime: 7},
 				AvgDelayMinutes:   &avg,
+				LastUpdatedAt:     &lastUpdated,
 			}, nil
 		},
 		queryDisruptionsFn: func(ctx context.Context, p dataservice.QueryDisruptionsParams) (*dataservice.DisruptionListResponse, error) {
@@ -256,8 +264,58 @@ func TestGetDashboardOverview_ComputesStatistics(t *testing.T) {
 	if resp.DisruptionsActive != 4 {
 		t.Fatalf("expected disruptions active 4, got %d", resp.DisruptionsActive)
 	}
-	if resp.DataFreshness.SchedulesLastUpdated != nil || resp.DataFreshness.OperationsLastUpdated != nil {
-		t.Fatal("expected data_freshness inner fields to be omitted")
+	if resp.DataFreshness.SchedulesLastUpdated != nil {
+		t.Fatal("expected data_freshness.schedules_last_updated to be omitted")
+	}
+	if resp.DataFreshness.OperationsLastUpdated == nil || !resp.DataFreshness.OperationsLastUpdated.Equal(lastUpdated) {
+		t.Fatalf("expected data_freshness.operations_last_updated %v, got %v", lastUpdated, resp.DataFreshness.OperationsLastUpdated)
+	}
+}
+
+func TestWarsawToday(t *testing.T) {
+	tests := []struct {
+		name string
+		now  time.Time
+		want string
+	}{
+		{name: "CEST after local midnight", now: time.Date(2026, 9, 27, 22, 30, 0, 0, time.UTC), want: "2026-09-28"},
+		{name: "CET after local midnight", now: time.Date(2026, 1, 15, 23, 30, 0, 0, time.UTC), want: "2026-01-16"},
+		{name: "CEST before local midnight", now: time.Date(2026, 9, 27, 21, 30, 0, 0, time.UTC), want: "2026-09-27"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := warsawToday(tt.now); got != tt.want {
+				t.Fatalf("warsawToday(%s) = %s, want %s", tt.now, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetLiveTrains_RequestsActiveOperationsForWarsawToday(t *testing.T) {
+	var got dataservice.QueryOperationsParams
+	mockClient := &mockDataServiceClient{
+		queryOperationsFn: func(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error) {
+			got = p
+			return &dataservice.OperationListResponse{}, nil
+		},
+	}
+
+	svc := New(mockClient)
+	if _, err := svc.GetLiveTrains(context.Background(), []string{"IC"}, nil, 20, 0); err != nil {
+		t.Fatalf("GetLiveTrains returned error: %v", err)
+	}
+	if !got.ActiveOnly {
+		t.Fatal("expected ActiveOnly=true")
+	}
+	if got.Status != "" {
+		t.Fatalf("expected no explicit status filter, got %q", got.Status)
+	}
+	want := warsawToday(time.Now())
+	if got.Date == nil || *got.Date != want {
+		t.Fatalf("expected date %s, got %v", want, got.Date)
+	}
+	if len(got.CarrierCodes) != 1 || got.CarrierCodes[0] != "IC" {
+		t.Fatalf("expected carrier codes [IC], got %v", got.CarrierCodes)
 	}
 }
 
@@ -301,6 +359,152 @@ func TestGetLiveTrains_ResolvesCurrentAndNextStation(t *testing.T) {
 	}
 	if resp.Data[0].NextStation == nil || *resp.Data[0].NextStation != station2 {
 		t.Fatalf("expected next_station %q, got %v", station2, resp.Data[0].NextStation)
+	}
+}
+
+func TestGetStationBoard_ShapesSections(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	at := func(hh, mm int) *time.Time {
+		v := time.Date(2026, 9, 29, hh, mm, 0, 0, loc)
+		return &v
+	}
+	intPtr := func(v int) *int { return &v }
+	dataAsOf := time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
+
+	var gotLimit int
+	mockClient := &mockDataServiceClient{
+		getStationByExternalIDFn: func(ctx context.Context, externalID int) (*dataservice.Station, error) {
+			return &dataservice.Station{ExternalID: externalID, Name: "Kraków Główny", City: ptr("Kraków")}, nil
+		},
+		getStationBoardFn: func(ctx context.Context, externalID int, limit int) (*dataservice.StationBoardResponse, error) {
+			gotLimit = limit
+			return &dataservice.StationBoardResponse{
+				StationExternalID: externalID,
+				DataAsOf:          &dataAsOf,
+				Entries: []dataservice.StationBoardEntry{
+					// Terminus standing at the platform: no departure, falls back to arrival fields.
+					{Bucket: "at_station", OperationID: 1, ScheduleID: 2026, OrderID: 1, TrainStatus: "P",
+						RouteName: ptr("Pieniny"), CarrierCode: ptr("IC"),
+						PlannedArrival: at(20, 0), ExpectedArrival: at(20, 5), ArrivalDelayMinutes: intPtr(5),
+						ArrivalPlatform: ptr("II"), ArrivalTrack: ptr("3"), IsConfirmed: true},
+					// Through train: arrival row uses arrival fields, departure row departure fields.
+					{Bucket: "arrival", OperationID: 2, ScheduleID: 2026, OrderID: 2, TrainStatus: "P",
+						CommercialCategory: ptr("TLK"), NationalNumber: ptr("31100"), CarrierCode: ptr("XX"),
+						PlannedArrival: at(20, 10), ExpectedArrival: at(20, 12), ArrivalDelayMinutes: intPtr(2),
+						ArrivalPlatform: ptr("I"), ArrivalTrack: ptr("1"),
+						PlannedDeparture: at(20, 15), ExpectedDeparture: at(20, 17), DepartureDelayMinutes: intPtr(2),
+						DeparturePlatform: ptr("IV"), DepartureTrack: ptr("7")},
+					{Bucket: "departure", OperationID: 2, ScheduleID: 2026, OrderID: 2, TrainStatus: "P",
+						CommercialCategory: ptr("TLK"), NationalNumber: ptr("31100"), CarrierCode: ptr("XX"),
+						PlannedArrival: at(20, 10), ExpectedArrival: at(20, 12), ArrivalDelayMinutes: intPtr(2),
+						ArrivalPlatform: ptr("I"), ArrivalTrack: ptr("1"),
+						PlannedDeparture: at(20, 15), ExpectedDeparture: at(20, 17), DepartureDelayMinutes: intPtr(2),
+						DeparturePlatform: ptr("IV"), DepartureTrack: ptr("7")},
+					// Missing route: only train number known; cancelled stop; no expected time.
+					{Bucket: "departure", OperationID: 3, ScheduleID: 2026, OrderID: 3, TrainStatus: "S",
+						TrainNumber: ptr("91234"), PlannedDeparture: at(21, 0), IsCancelled: true},
+					// Missing route and train number: schedule/order fallback.
+					{Bucket: "departure", OperationID: 4, ScheduleID: 2026, OrderID: 4, TrainStatus: "S",
+						PlannedDeparture: at(21, 30)},
+				},
+			}, nil
+		},
+		listCarriersFn: func(ctx context.Context) (*dataservice.CarrierListResponse, error) {
+			return &dataservice.CarrierListResponse{Data: []dataservice.Carrier{{Code: "IC", Name: "PKP Intercity"}}}, nil
+		},
+	}
+
+	svc := New(mockClient)
+	resp, err := svc.GetStationBoard(context.Background(), 33506, 7)
+	if err != nil {
+		t.Fatalf("GetStationBoard returned error: %v", err)
+	}
+	if gotLimit != 7 {
+		t.Fatalf("expected limit 7 passed to data-service, got %d", gotLimit)
+	}
+	if resp.Station.ExternalID != 33506 || resp.Station.Name != "Kraków Główny" {
+		t.Fatalf("unexpected station %+v", resp.Station)
+	}
+	if resp.DataAsOf == nil || !resp.DataAsOf.Equal(dataAsOf) {
+		t.Fatalf("expected data_as_of %v, got %v", dataAsOf, resp.DataAsOf)
+	}
+	if len(resp.AtStation) != 1 || len(resp.Arrivals) != 1 || len(resp.Departures) != 3 {
+		t.Fatalf("unexpected section sizes: at_station=%d arrivals=%d departures=%d", len(resp.AtStation), len(resp.Arrivals), len(resp.Departures))
+	}
+
+	term := resp.AtStation[0]
+	if term.TrainName != "Pieniny" || *term.PlannedTime != "20:00" || *term.ExpectedTime != "20:05" ||
+		*term.DelayMinutes != 5 || *term.Platform != "II" || *term.Track != "3" {
+		t.Fatalf("terminus row should use arrival fields, got %+v", term)
+	}
+	if term.Carrier == nil || *term.Carrier.Code != "IC" || term.Carrier.Name == nil || *term.Carrier.Name != "PKP Intercity" {
+		t.Fatalf("expected resolved carrier IC / PKP Intercity, got %+v", term.Carrier)
+	}
+	if term.Status != "in_progress" || !term.IsConfirmed {
+		t.Fatalf("unexpected status fields %+v", term)
+	}
+	if term.ExpectedAt == nil || term.ExpectedAt.Location() != time.UTC || !term.ExpectedAt.Equal(*at(20, 5)) {
+		t.Fatalf("expected expected_at %v in UTC, got %v", at(20, 5), term.ExpectedAt)
+	}
+
+	arr := resp.Arrivals[0]
+	if arr.TrainName != "TLK 31100" || *arr.PlannedTime != "20:10" || *arr.ExpectedTime != "20:12" || *arr.Platform != "I" || *arr.Track != "1" {
+		t.Fatalf("arrival row should use arrival fields, got %+v", arr)
+	}
+	if arr.Carrier == nil || *arr.Carrier.Code != "XX" || arr.Carrier.Name != nil {
+		t.Fatalf("unknown carrier should keep code without name, got %+v", arr.Carrier)
+	}
+
+	dep := resp.Departures[0]
+	if *dep.PlannedTime != "20:15" || *dep.ExpectedTime != "20:17" || *dep.Platform != "IV" || *dep.Track != "7" {
+		t.Fatalf("departure row should use departure fields, got %+v", dep)
+	}
+
+	noRoute := resp.Departures[1]
+	if noRoute.TrainName != "Pociąg 91234" || noRoute.Carrier != nil || !noRoute.IsCancelled || noRoute.Status != "not_started" {
+		t.Fatalf("unexpected missing-route row %+v", noRoute)
+	}
+	if noRoute.ExpectedTime == nil || *noRoute.ExpectedTime != "21:00" {
+		t.Fatalf("expected time should fall back to planned, got %v", noRoute.ExpectedTime)
+	}
+	if resp.Departures[2].TrainName != "Pociąg 2026/4" {
+		t.Fatalf("expected schedule/order fallback name, got %q", resp.Departures[2].TrainName)
+	}
+}
+
+func TestGetStationBoard_EmptyBoardReturnsEmptySections(t *testing.T) {
+	mockClient := &mockDataServiceClient{
+		getStationBoardFn: func(ctx context.Context, externalID int, limit int) (*dataservice.StationBoardResponse, error) {
+			return &dataservice.StationBoardResponse{}, nil
+		},
+	}
+
+	resp, err := New(mockClient).GetStationBoard(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("GetStationBoard returned error: %v", err)
+	}
+	if resp.AtStation == nil || resp.Arrivals == nil || resp.Departures == nil {
+		t.Fatalf("expected non-nil empty sections, got %+v", resp)
+	}
+}
+
+func TestGetStationBoard_StationNotFound_ReturnsErrNotFound(t *testing.T) {
+	mockClient := &mockDataServiceClient{
+		getStationByExternalIDFn: func(ctx context.Context, externalID int) (*dataservice.Station, error) {
+			return nil, dataservice.ErrNotFound
+		},
+		getStationBoardFn: func(ctx context.Context, externalID int, limit int) (*dataservice.StationBoardResponse, error) {
+			t.Fatal("board should not be requested for a missing station")
+			return nil, nil
+		},
+	}
+
+	_, err := New(mockClient).GetStationBoard(context.Background(), 1, 10)
+	if !errors.Is(err, dataservice.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 
