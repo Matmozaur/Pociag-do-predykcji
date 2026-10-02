@@ -45,6 +45,11 @@ type QueryDisruptionsParams struct {
 	Offset   int
 }
 
+type ListActiveOperationsParams struct {
+	CarrierCodes []string
+	Limit        int
+}
+
 type Client struct {
 	baseURL    *url.URL
 	httpClient *http.Client
@@ -353,6 +358,28 @@ func (c *Client) GetDisruptionByID(ctx context.Context, disruptionID int64) (*Di
 	var out DisruptionDetail
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("decode disruption detail: %w", err)
+	}
+	return &out, nil
+}
+
+// ListActiveOperations returns the trains running now with their estimated positions.
+func (c *Client) ListActiveOperations(ctx context.Context, p ListActiveOperationsParams) (*ActiveTrainListResponse, error) {
+	q := url.Values{}
+	if len(p.CarrierCodes) > 0 {
+		q.Set("carrierCodes", strings.Join(p.CarrierCodes, ","))
+	}
+	if p.Limit > 0 {
+		q.Set("limit", strconv.Itoa(p.Limit))
+	}
+
+	body, err := c.doRequest(ctx, http.MethodGet, "/api/v1/operations/active", q)
+	if err != nil {
+		return nil, fmt.Errorf("list active operations: %w", err)
+	}
+
+	var out ActiveTrainListResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("decode active operations response: %w", err)
 	}
 	return &out, nil
 }

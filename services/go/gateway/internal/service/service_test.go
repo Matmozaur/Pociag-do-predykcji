@@ -21,6 +21,7 @@ type mockDataServiceClient struct {
 	getDisruptionByIDFn      func(ctx context.Context, disruptionID int64) (*dataservice.DisruptionDetail, error)
 	queryOperationsFn        func(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error)
 	getOperationByIDFn       func(ctx context.Context, operationID int64) (*dataservice.OperationDetail, error)
+	listActiveOperationsFn   func(ctx context.Context, p dataservice.ListActiveOperationsParams) (*dataservice.ActiveTrainListResponse, error)
 }
 
 func (m *mockDataServiceClient) Ready(ctx context.Context) error { return nil }
@@ -90,6 +91,10 @@ func (m *mockDataServiceClient) GetOperationByID(ctx context.Context, operationI
 
 func (m *mockDataServiceClient) GetOperationStatistics(ctx context.Context, date string) (*dataservice.OperationStatistics, error) {
 	return m.getOperationStatsFn(ctx, date)
+}
+
+func (m *mockDataServiceClient) ListActiveOperations(ctx context.Context, p dataservice.ListActiveOperationsParams) (*dataservice.ActiveTrainListResponse, error) {
+	return m.listActiveOperationsFn(ctx, p)
 }
 
 func (m *mockDataServiceClient) QueryDisruptions(ctx context.Context, p dataservice.QueryDisruptionsParams) (*dataservice.DisruptionListResponse, error) {
@@ -505,6 +510,107 @@ func TestGetStationBoard_StationNotFound_ReturnsErrNotFound(t *testing.T) {
 	_, err := New(mockClient).GetStationBoard(context.Background(), 1, 10)
 	if !errors.Is(err, dataservice.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGetMapTrains_MapsPositionedTrainsAndCountsUnpositioned(t *testing.T) {
+	generatedAt := time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
+	dataAsOf := generatedAt.Add(-3 * time.Minute)
+	prevTime := generatedAt.Add(-5 * time.Minute)
+	nextTime := generatedAt.Add(7 * time.Minute)
+	lat, lon := 50.067, 19.945
+	delay := 4
+	var gotParams dataservice.ListActiveOperationsParams
+	mockClient := &mockDataServiceClient{
+		listActiveOperationsFn: func(ctx context.Context, p dataservice.ListActiveOperationsParams) (*dataservice.ActiveTrainListResponse, error) {
+			gotParams = p
+			return &dataservice.ActiveTrainListResponse{
+				Data: []dataservice.ActiveTrain{
+					{
+						OperationID:  1,
+						ScheduleID:   2026,
+						OrderID:      11,
+						TrainStatus:  "P",
+						RouteName:    ptr("Kraków Główny - Warszawa Centralna"),
+						CarrierCode:  ptr("IC"),
+						Origin:       &dataservice.StopRef{StationExternalID: 1, StationName: ptr("Kraków Główny")},
+						Destination:  &dataservice.StopRef{StationExternalID: 2, StationName: ptr("Warszawa Centralna")},
+						Phase:        "en_route",
+						PreviousStop: &dataservice.StopTiming{StationExternalID: 1, StationName: ptr("Kraków Główny"), Time: prevTime, Latitude: &lat, Longitude: &lon},
+						NextStop:     &dataservice.StopTiming{StationExternalID: 3, Time: nextTime},
+						DelayMinutes: &delay,
+						Position:     &dataservice.TrainPosition{Latitude: 50.1, Longitude: 19.9, Progress: 0.4, Method: "interpolated"},
+						Confidence:   "high",
+					},
+					{OperationID: 2, ScheduleID: 2026, OrderID: 12, TrainStatus: "S", Phase: "not_departed", Confidence: "low"},
+					{
+						OperationID: 3, ScheduleID: 2026, OrderID: 13, TrainStatus: "S", RouteName: ptr("  "),
+						Phase: "at_station", Confidence: "medium",
+						Position: &dataservice.TrainPosition{Latitude: 52.2, Longitude: 21.0, Method: "station"},
+					},
+					{
+						OperationID: 4, ScheduleID: 2026, OrderID: 14, TrainStatus: "P", CarrierCode: ptr("KM"),
+						Phase: "en_route", Confidence: "medium",
+						Position: &dataservice.TrainPosition{Latitude: 52.0, Longitude: 20.0, Progress: 0.5, Method: "interpolated_sparse"},
+					},
+				},
+				Total:       4,
+				GeneratedAt: generatedAt,
+				DataAsOf:    dataAsOf,
+			}, nil
+		},
+	}
+
+	resp, err := New(mockClient).GetMapTrains(context.Background(), []string{"IC", "KM"})
+	if err != nil {
+		t.Fatalf("GetMapTrains returned error: %v", err)
+	}
+	if len(gotParams.CarrierCodes) != 2 || gotParams.CarrierCodes[0] != "IC" || gotParams.Limit != mapTrainsLimit {
+		t.Fatalf("unexpected params: %+v", gotParams)
+	}
+	if resp.UnpositionedCount != 1 {
+		t.Fatalf("expected 1 unpositioned train, got %d", resp.UnpositionedCount)
+	}
+	if !resp.GeneratedAt.Equal(generatedAt) || !resp.DataAsOf.Equal(dataAsOf) {
+		t.Fatalf("unexpected timestamps: %v %v", resp.GeneratedAt, resp.DataAsOf)
+	}
+	if len(resp.Trains) != 3 {
+		t.Fatalf("expected 3 positioned trains, got %d", len(resp.Trains))
+	}
+
+	first := resp.Trains[0]
+	if first.OperationID != 1 || first.TrainName != "Kraków Główny - Warszawa Centralna" || first.Status != "in_progress" ||
+		first.Phase != "en_route" || first.Latitude != 50.1 || first.Longitude != 19.9 || first.Progress != 0.4 ||
+		first.Method != "interpolated" || first.Confidence != "high" || *first.DelayMinutes != 4 || *first.CarrierCode != "IC" {
+		t.Fatalf("unexpected first train: %+v", first)
+	}
+	if first.Origin == nil || *first.Origin != "Kraków Główny" || first.Destination == nil || *first.Destination != "Warszawa Centralna" {
+		t.Fatalf("unexpected origin/destination: %v %v", first.Origin, first.Destination)
+	}
+	if first.PreviousStop == nil || !first.PreviousStop.Time.Equal(prevTime) || *first.PreviousStop.Latitude != lat {
+		t.Fatalf("unexpected previous stop: %+v", first.PreviousStop)
+	}
+	if first.NextStop == nil || !first.NextStop.Time.Equal(nextTime) || first.NextStop.StationName != nil || first.NextStop.Latitude != nil {
+		t.Fatalf("unexpected next stop: %+v", first.NextStop)
+	}
+
+	if got := resp.Trains[1]; got.TrainName != "Pociąg 2026/13" || got.Status != "not_started" || got.PreviousStop != nil || got.Origin != nil {
+		t.Fatalf("expected fallback name without carrier, got %+v", got)
+	}
+	if got := resp.Trains[2].TrainName; got != "KM 2026/14" {
+		t.Fatalf("expected carrier fallback name, got %q", got)
+	}
+}
+
+func TestGetMapTrains_ClientError_ReturnsError(t *testing.T) {
+	mockClient := &mockDataServiceClient{
+		listActiveOperationsFn: func(ctx context.Context, p dataservice.ListActiveOperationsParams) (*dataservice.ActiveTrainListResponse, error) {
+			return nil, errors.New("boom")
+		},
+	}
+
+	if _, err := New(mockClient).GetMapTrains(context.Background(), nil); err == nil {
+		t.Fatal("expected error")
 	}
 }
 
