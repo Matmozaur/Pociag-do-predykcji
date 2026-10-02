@@ -64,6 +64,39 @@ export interface StationMapResponse {
     stations: MapStation[]
 }
 
+export interface TrainMapStop {
+    station_name?: string
+    /** RFC 3339 instant: effective departure for previous_stop, effective arrival for next_stop. */
+    time: string
+    latitude?: number
+    longitude?: number
+}
+
+export interface TrainMapPoint {
+    operation_id: number
+    train_name: string
+    carrier_code?: string
+    status: 'not_started' | 'in_progress' | 'completed' | 'cancelled' | 'partial_cancelled'
+    phase: 'not_departed' | 'at_station' | 'en_route' | 'arrived'
+    delay_minutes?: number
+    latitude: number
+    longitude: number
+    progress: number
+    method: 'station' | 'interpolated' | 'interpolated_sparse'
+    confidence: 'high' | 'medium' | 'low'
+    previous_stop?: TrainMapStop
+    next_stop?: TrainMapStop
+    origin?: string
+    destination?: string
+}
+
+export interface TrainMapResponse {
+    trains: TrainMapPoint[]
+    unpositioned_count: number
+    generated_at: string
+    data_as_of: string
+}
+
 export interface StationBoardRow {
     operation_id: number
     train_name: string
@@ -283,6 +316,9 @@ export const gateway = {
     getDashboardOverview: () => apiFetch<DashboardOverview>('/api/v1/dashboard/overview'),
 
     getMapStations: () => apiFetch<StationMapResponse>('/api/v1/map/stations'),
+
+    getMapTrains: (carriers?: string) =>
+        apiFetch<TrainMapResponse>('/api/v1/map/trains', { carriers }),
 
     getStationBoard: (externalId: number, limit?: number) =>
         apiFetch<StationBoardView>(`/api/v1/stations/${externalId}/board`, {
