@@ -2,7 +2,7 @@ openapi: "3.1.0"
 
 info:
   title: "Pociag Gateway (BFF) API"
-  version: "0.3.0"
+  version: "0.4.0"
   description: |
     Backend-for-Frontend (BFF) gateway for the Pociag do Predykcji platform.
     This is the ONLY service exposed to the frontend.
@@ -109,6 +109,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StationMapResponse"
+
+  /api/v1/map/trains:
+    get:
+      summary: List train positions for the map
+      description: |
+        Returns the estimated current position of every active train that has one, for
+        rendering as moving markers on the network map. Active trains and their positions are
+        defined by Data Service listActiveOperations (status P, or S once departed; Q is
+        excluded; no post-arrival grace period, so `phase` is never `arrived`). Trains without
+        an estimated position are left out and counted in `unpositioned_count`.
+
+        `previous_stop` and `next_stop` carry the segment times and coordinates so the client
+        can animate between polls without new requests.
+
+        Internally calls Data Service: listActiveOperations(carrierCodes=carriers).
+      operationId: getMapTrains
+      tags: [map]
+      parameters:
+        - name: carriers
+          in: query
+          description: Filter by carrier codes (comma-separated)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Active trains with positions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainMapResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 
   # ── Stations (Frontend Views) ──────────────────────────────────────────────
 
@@ -503,6 +535,117 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StationMapPoint"
+
+    TrainMapStop:
+      type: object
+      required: [time]
+      additionalProperties: false
+      properties:
+        station_name:
+          type: string
+        time:
+          type: string
+          format: date-time
+          description: >-
+            RFC 3339 instant; effective departure for previous_stop, effective arrival for
+            next_stop
+        latitude:
+          type: number
+          format: double
+          description: Omitted when the station has no coordinates
+        longitude:
+          type: number
+          format: double
+          description: Omitted when the station has no coordinates
+
+    TrainMapPoint:
+      type: object
+      required:
+        [
+          operation_id,
+          train_name,
+          status,
+          phase,
+          latitude,
+          longitude,
+          progress,
+          method,
+          confidence,
+        ]
+      additionalProperties: false
+      properties:
+        operation_id:
+          type: integer
+          format: int64
+          description: Internal operation ID (for linking to train detail)
+        train_name:
+          type: string
+          description: Route name, else "<carrier_code> <schedule_id>/<order_id>"
+        carrier_code:
+          type: string
+        status:
+          type: string
+          enum:
+            [not_started, in_progress, completed, cancelled, partial_cancelled]
+          description: Human-friendly status
+        phase:
+          type: string
+          enum: [not_departed, at_station, en_route, arrived]
+          description: Not currently returned as `arrived` (see getMapTrains)
+        delay_minutes:
+          type: integer
+          description: >-
+            Delay at the last confirmed stop; negative when early. Omitted when no stop is
+            confirmed.
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        progress:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Fraction of the previous_stop to next_stop segment covered
+        method:
+          type: string
+          enum: [station, interpolated, interpolated_sparse]
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        previous_stop:
+          $ref: "#/components/schemas/TrainMapStop"
+        next_stop:
+          $ref: "#/components/schemas/TrainMapStop"
+        origin:
+          type: string
+          description: Origin station name
+        destination:
+          type: string
+          description: Destination station name
+
+    TrainMapResponse:
+      type: object
+      required: [trains, unpositioned_count, generated_at, data_as_of]
+      additionalProperties: false
+      properties:
+        trains:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrainMapPoint"
+        unpositioned_count:
+          type: integer
+          description: Active trains left out because they have no estimated position
+        generated_at:
+          type: string
+          format: date-time
+          description: Time the response was generated (server clock)
+        data_as_of:
+          type: string
+          format: date-time
+          description: When the underlying operations were last refreshed from PLK
 
     # ── Station Board ──────────────────────────────────────────────────────────
     StationBoardRow:
