@@ -47,6 +47,7 @@ SELECT EXISTS(
     WHERE pipeline = $1
       AND run_date = $2
       AND status = 'running'
+      AND started_at > NOW() - interval '30 minutes'
 )`
 
 	var exists bool

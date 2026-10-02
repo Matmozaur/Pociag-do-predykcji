@@ -381,7 +381,7 @@ func (s *Service) fetchStations(ctx context.Context, runID int64) (int, string, 
 }
 
 func (s *Service) fetchOperationsPages(ctx context.Context, captureDate time.Time, runID int64) (int, int, string, error) {
-	const pageSize = 1000
+	const pageSize = 5000
 	totalRecords, pagesLanded := 0, 0
 	var lakePrefix string
 
