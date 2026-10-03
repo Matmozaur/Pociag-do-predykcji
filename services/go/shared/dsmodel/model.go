@@ -246,6 +246,55 @@ type StationBoardResponse struct {
 	Entries           []StationBoardEntry `json:"entries"`
 }
 
+type StopRef struct {
+	StationExternalID int     `json:"station_external_id"`
+	StationName       *string `json:"station_name,omitempty"`
+}
+
+type StopTiming struct {
+	StationExternalID int       `json:"station_external_id"`
+	StationName       *string   `json:"station_name,omitempty"`
+	SequenceNumber    int       `json:"sequence_number"`
+	Time              time.Time `json:"time"`
+	IsConfirmed       bool      `json:"is_confirmed"`
+	Latitude          *float64  `json:"latitude,omitempty"`
+	Longitude         *float64  `json:"longitude,omitempty"`
+}
+
+type TrainPosition struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Progress  float64 `json:"progress"`
+	Method    string  `json:"method"`
+}
+
+type ActiveTrain struct {
+	OperationID       int64          `json:"operation_id"`
+	ScheduleID        int            `json:"schedule_id"`
+	OrderID           int            `json:"order_id"`
+	OperatingDate     string         `json:"operating_date"`
+	TrainStatus       string         `json:"train_status"`
+	RouteName         *string        `json:"route_name,omitempty"`
+	CarrierCode       *string        `json:"carrier_code,omitempty"`
+	Origin            *StopRef       `json:"origin,omitempty"`
+	Destination       *StopRef       `json:"destination,omitempty"`
+	Phase             string         `json:"phase"`
+	PreviousStop      *StopTiming    `json:"previous_stop,omitempty"`
+	NextStop          *StopTiming    `json:"next_stop,omitempty"`
+	LastConfirmedStop *StopTiming    `json:"last_confirmed_stop,omitempty"`
+	DelayMinutes      *int           `json:"delay_minutes,omitempty"`
+	Position          *TrainPosition `json:"position,omitempty"`
+	Confidence        string         `json:"confidence"`
+	LastSeenAt        time.Time      `json:"last_seen_at"`
+}
+
+type ActiveTrainListResponse struct {
+	Data        []ActiveTrain `json:"data"`
+	Total       int           `json:"total"`
+	GeneratedAt time.Time     `json:"generated_at"`
+	DataAsOf    time.Time     `json:"data_as_of"`
+}
+
 // ── Disruptions ───────────────────────────────────────────────────────────────
 
 type DisruptionSummary struct {

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/model"
+	"github.com/pociag-do-predykcji/services/go/data-service/internal/position"
 	"github.com/pociag-do-predykcji/services/go/data-service/internal/service"
 )
 
@@ -554,6 +555,165 @@ func (r *Repository) QueryStationBoardCandidates(ctx context.Context, stationExt
 	return results, nil
 }
 
+// ListActiveOperationCandidates returns the S/P operations on the given operating dates that were
+// seen within position.SnapshotWindow of MAX(train_operations.updated_at), with their
+// non-cancelled stops (station name and coordinates included), ordered by operation id and actual
+// sequence number. It also returns MAX(train_operations.updated_at). The time window here is a
+// superset of the active predicate (earliest/latest effective time over all stops); the exact
+// predicate is applied by the caller (position.IsActive). Effective times use the same expression
+// as QueryStationBoardCandidates.
+func (r *Repository) ListActiveOperationCandidates(ctx context.Context, at time.Time, dates []time.Time, carrierCodes []string) ([]service.ActiveOperationCandidate, time.Time, error) {
+	ctx, span := r.tracer.Start(ctx, "db.train_operations.list_active")
+	defer span.End()
+
+	dateStrs := make([]string, len(dates))
+	for i, d := range dates {
+		dateStrs[i] = d.Format("2006-01-02")
+	}
+	params := []any{
+		dateStrs,
+		fmt.Sprintf("%d minutes", int(position.SnapshotWindow.Minutes())),
+		fmt.Sprintf("%d minutes", int(position.PreDepartureWindow.Minutes())),
+		at,
+	}
+	carrierFilter := ""
+	if len(carrierCodes) > 0 {
+		params = append(params, carrierCodes)
+		carrierFilter = fmt.Sprintf("WHERE r.carrier_code = ANY($%d)", len(params))
+	}
+
+	query := fmt.Sprintf(`
+		WITH snap AS (
+		  SELECT MAX(updated_at) AS max_updated_at FROM train_operations
+		),
+		ops AS (
+		  SELECT t.id, t.schedule_id, t.order_id, t.operating_date, t.train_status, t.updated_at
+		  FROM train_operations t CROSS JOIN snap
+		  WHERE t.operating_date = ANY($1::date[])
+		    AND t.train_status IN ('S', 'P')
+		    AND t.updated_at >= snap.max_updated_at - $2::interval
+		),
+		stops AS (
+		  SELECT os.train_operation_id, os.station_external_id, os.actual_sequence_number,
+		         os.planned_arrival, os.planned_departure, os.actual_arrival, os.actual_departure,
+		         os.arrival_delay_minutes, os.departure_delay_minutes, os.is_confirmed,
+		         COALESCE(os.actual_arrival,
+		                  os.planned_arrival + make_interval(mins => COALESCE(os.arrival_delay_minutes, 0))) AS eff_arr,
+		         COALESCE(os.actual_departure,
+		                  os.planned_departure + make_interval(mins => COALESCE(os.departure_delay_minutes, 0))) AS eff_dep
+		  FROM operation_stations os
+		  JOIN ops ON ops.id = os.train_operation_id
+		  WHERE NOT os.is_cancelled
+		),
+		win AS (
+		  SELECT train_operation_id
+		  FROM stops
+		  GROUP BY train_operation_id
+		  HAVING MIN(COALESCE(eff_dep, eff_arr)) - $3::interval <= $4::timestamptz
+		     AND MAX(COALESCE(eff_arr, eff_dep)) >= $4::timestamptz
+		)
+		SELECT snap.max_updated_at, d.*
+		FROM snap
+		LEFT JOIN (
+		  SELECT ops.id, ops.schedule_id, ops.order_id, ops.operating_date, ops.train_status, ops.updated_at,
+		         r.name AS route_name, r.carrier_code,
+		         st.station_external_id, s.name AS station_name, st.actual_sequence_number,
+		         st.planned_arrival, st.planned_departure, st.actual_arrival, st.actual_departure,
+		         st.arrival_delay_minutes, st.departure_delay_minutes, st.is_confirmed,
+		         s.latitude, s.longitude
+		  FROM ops
+		  JOIN win        ON win.train_operation_id = ops.id
+		  JOIN stops st   ON st.train_operation_id = ops.id
+		  LEFT JOIN routes r   ON r.schedule_id = ops.schedule_id AND r.order_id = ops.order_id
+		  LEFT JOIN stations s ON s.external_id = st.station_external_id
+		  %s
+		) d ON TRUE
+		ORDER BY d.id, d.actual_sequence_number`, carrierFilter)
+
+	rows, err := r.db.WithContext(ctx).Raw(query, params...).Rows()
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("list active operations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	results := []service.ActiveOperationCandidate{}
+	var dataAsOf time.Time
+	for rows.Next() {
+		var (
+			maxUpdatedAt     pgtype.Timestamptz
+			operationID      pgtype.Int8
+			scheduleID       pgtype.Int4
+			orderID          pgtype.Int4
+			operatingDate    pgtype.Date
+			trainStatus      pgtype.Text
+			updatedAt        pgtype.Timestamptz
+			routeName        pgtype.Text
+			carrierCode      pgtype.Text
+			stationExtID     pgtype.Int4
+			stationName      pgtype.Text
+			actualSeq        pgtype.Int4
+			plannedArrival   pgtype.Timestamptz
+			plannedDeparture pgtype.Timestamptz
+			actualArrival    pgtype.Timestamptz
+			actualDeparture  pgtype.Timestamptz
+			arrivalDelay     pgtype.Int4
+			departureDelay   pgtype.Int4
+			isConfirmed      pgtype.Bool
+			latitude         pgtype.Float8
+			longitude        pgtype.Float8
+		)
+		if err := rows.Scan(
+			&maxUpdatedAt,
+			&operationID, &scheduleID, &orderID, &operatingDate, &trainStatus, &updatedAt,
+			&routeName, &carrierCode,
+			&stationExtID, &stationName, &actualSeq,
+			&plannedArrival, &plannedDeparture, &actualArrival, &actualDeparture,
+			&arrivalDelay, &departureDelay, &isConfirmed,
+			&latitude, &longitude,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan active operation row: %w", err)
+		}
+		if maxUpdatedAt.Valid {
+			dataAsOf = maxUpdatedAt.Time
+		}
+		if !operationID.Valid {
+			continue // no candidates: the single row only carries max_updated_at
+		}
+
+		if n := len(results); n == 0 || results[n-1].OperationID != operationID.Int64 {
+			results = append(results, service.ActiveOperationCandidate{
+				OperationID:   operationID.Int64,
+				ScheduleID:    int(scheduleID.Int32),
+				OrderID:       int(orderID.Int32),
+				OperatingDate: operatingDate.Time,
+				TrainStatus:   trainStatus.String,
+				UpdatedAt:     updatedAt.Time,
+				RouteName:     optionalText(routeName),
+				CarrierCode:   optionalText(carrierCode),
+			})
+		}
+		c := &results[len(results)-1]
+		c.Stops = append(c.Stops, position.Stop{
+			StationExternalID:     int(stationExtID.Int32),
+			StationName:           optionalText(stationName),
+			SequenceNumber:        int(actualSeq.Int32),
+			PlannedArrival:        optionalTime(plannedArrival),
+			PlannedDeparture:      optionalTime(plannedDeparture),
+			ActualArrival:         optionalTime(actualArrival),
+			ActualDeparture:       optionalTime(actualDeparture),
+			ArrivalDelayMinutes:   optionalInt(arrivalDelay),
+			DepartureDelayMinutes: optionalInt(departureDelay),
+			IsConfirmed:           isConfirmed.Bool,
+			Latitude:              optionalFloat(latitude),
+			Longitude:             optionalFloat(longitude),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate active operation rows: %w", err)
+	}
+	return results, dataAsOf, nil
+}
+
 func optionalInt(v pgtype.Int4) *int {
 	if !v.Valid {
 		return nil
@@ -574,4 +734,11 @@ func optionalText(v pgtype.Text) *string {
 		return nil
 	}
 	return &v.String
+}
+
+func optionalFloat(v pgtype.Float8) *float64 {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Float64
 }

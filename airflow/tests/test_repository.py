@@ -112,14 +112,17 @@ def test_upsert_station_cities_skips_records_without_nonempty_name(
     mock_cursor.execute.assert_not_called()
 
 
+@patch("pociag_processing.repository.execute_values")
 @patch("pociag_processing.repository.PostgresHook")
-def test_upsert_operations_executes_correct_queries(mock_hook_cls: MagicMock) -> None:
+def test_upsert_operations_executes_correct_queries(
+    mock_hook_cls: MagicMock, mock_execute_values: MagicMock
+) -> None:
     mock_conn = MagicMock()
     mock_cursor = MagicMock()
     mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
     mock_hook_cls.return_value.get_conn.return_value = mock_conn
-    mock_cursor.fetchone.return_value = (42,)
+    mock_execute_values.side_effect = [[(42, 10, 1, date(2025, 6, 1))], None]
 
     repo = SyncRepository()
     operations = [
@@ -151,8 +154,15 @@ def test_upsert_operations_executes_correct_queries(mock_hook_cls: MagicMock) ->
 
     assert result.records_written == 1
     assert result.records_read == 1
-    assert mock_cursor.execute.call_count == 2  # 1 op + 1 station
-    station_params = mock_cursor.execute.call_args_list[1].args[1]
+    assert mock_execute_values.call_count == 2  # 1 batch of ops + 1 batch of stations
+    op_call, station_call = mock_execute_values.call_args_list
+    assert "ON CONFLICT (schedule_id, order_id, operating_date)" in op_call.args[1]
+    assert op_call.args[2] == [(10, 1, 100, date(2025, 6, 1), "ON_TIME")]
+    assert op_call.kwargs["fetch"] is True
+    assert "ON CONFLICT (train_operation_id, actual_sequence_number)" in station_call.args[1]
+    assert len(station_call.args[2]) == 1
+    station_params = station_call.args[2][0]
+    assert station_params[0] == 42  # train_operation_id from RETURNING
     expected_departure = datetime(2025, 6, 1, 6, 0, tzinfo=UTC)
     assert station_params[4] is None  # planned_arrival
     assert station_params[5] == expected_departure  # naive PLK value read as Europe/Warsaw
@@ -248,14 +258,50 @@ def test_upsert_disruptions_executes_correct_queries(mock_hook_cls: MagicMock) -
     mock_conn.commit.assert_called_once()
 
 
+@patch("pociag_processing.repository.execute_values")
 @patch("pociag_processing.repository.PostgresHook")
-def test_upsert_operations_rollback_on_error(mock_hook_cls: MagicMock) -> None:
+def test_upsert_operations_dedups_rows_within_a_batch(
+    mock_hook_cls: MagicMock, mock_execute_values: MagicMock
+) -> None:
     mock_conn = MagicMock()
     mock_cursor = MagicMock()
     mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
     mock_hook_cls.return_value.get_conn.return_value = mock_conn
-    mock_cursor.fetchone.return_value = None  # simulate failure
+    mock_execute_values.side_effect = [[(7, 1, 1, date(2025, 6, 1))], None]
+
+    def op(status: str, station_id: int) -> dict[str, object]:
+        return {
+            "scheduleId": 1,
+            "orderId": 1,
+            "trainOrderId": None,
+            "operatingDate": "2025-06-01",
+            "trainStatus": status,
+            "stations": [{"stationId": station_id, "actualSequenceNumber": 1}],
+        }
+
+    result = SyncRepository().upsert_operations([op("DELAYED", 5), op("ON_TIME", 6)])
+
+    assert result.records_read == 2
+    assert result.records_written == 2
+    op_rows = mock_execute_values.call_args_list[0].args[2]
+    station_rows = mock_execute_values.call_args_list[1].args[2]
+    assert op_rows == [(1, 1, None, date(2025, 6, 1), "ON_TIME")]  # last occurrence wins
+    assert [(r[0], r[1]) for r in station_rows] == [(7, 6)]
+    mock_conn.commit.assert_called_once()
+
+
+@patch("pociag_processing.repository.execute_values")
+@patch("pociag_processing.repository.PostgresHook")
+def test_upsert_operations_rollback_on_error(
+    mock_hook_cls: MagicMock, mock_execute_values: MagicMock
+) -> None:
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    mock_hook_cls.return_value.get_conn.return_value = mock_conn
+    mock_execute_values.return_value = []  # simulate failure: no ids returned
 
     repo = SyncRepository()
     operations = [
@@ -279,6 +325,9 @@ def test_is_pipeline_running_true(mock_hook_cls: MagicMock) -> None:
 
     repo = SyncRepository()
     assert repo.is_pipeline_running("operations", date(2025, 6, 1)) is True
+    query = mock_cursor.execute.call_args.args[0]
+    assert "status = 'running'" in query
+    assert "started_at > NOW() - interval '30 minutes'" in query
 
 
 @patch("pociag_processing.repository.PostgresHook")

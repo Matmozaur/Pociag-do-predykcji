@@ -66,6 +66,7 @@ type Repository interface {
 	GetOperationById(ctx context.Context, id int64) (*model.OperationDetail, error)
 	GetOperationStatistics(ctx context.Context, date time.Time) (*model.OperationStatistics, error)
 	QueryStationBoardCandidates(ctx context.Context, stationExtID int, now time.Time, horizon, lookback time.Duration) ([]StationBoardCandidate, error)
+	ListActiveOperationCandidates(ctx context.Context, at time.Time, dates []time.Time, carrierCodes []string) ([]ActiveOperationCandidate, time.Time, error)
 
 	QueryDisruptions(ctx context.Context, p QueryDisruptionsParams) ([]model.DisruptionSummary, int64, error)
 	GetDisruptionById(ctx context.Context, id int64) (*model.DisruptionDetail, error)

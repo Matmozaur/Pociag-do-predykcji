@@ -35,6 +35,7 @@ type mockPLKClient struct {
 	operationPages     map[int][]byte
 	scheduleRoutes     map[string][]byte
 	fetchedScheduleIDs [][2]int
+	operationPageSizes []int
 	schedulesErr       error
 }
 
@@ -136,6 +137,7 @@ func (m *mockPLKClient) FetchScheduleRoute(ctx context.Context, scheduleID int, 
 }
 
 func (m *mockPLKClient) FetchOperations(ctx context.Context, page int, pageSize int) ([]byte, error) {
+	m.operationPageSizes = append(m.operationPageSizes, pageSize)
 	if payload, ok := m.operationPages[page]; ok {
 		return payload, nil
 	}
@@ -187,6 +189,7 @@ func TestService_FetchOperations_PaginatesUsingDocumentedPagination(t *testing.T
 	assert.Equal(t, int64(42), result.RunID)
 	assert.Equal(t, 2, result.RecordsFetched)
 	assert.Equal(t, 2, result.PagesLanded)
+	assert.Equal(t, []int{5000, 5000}, plkClient.operationPageSizes)
 }
 
 func TestService_FetchDictionaries_PaginatesStationsAndReturnsRunID(t *testing.T) {

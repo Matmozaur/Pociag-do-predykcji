@@ -36,6 +36,38 @@ type StationMapResponse struct {
 	Stations []StationMapPoint `json:"stations"`
 }
 
+type TrainMapStop struct {
+	StationName *string   `json:"station_name,omitempty"`
+	Time        time.Time `json:"time"`
+	Latitude    *float64  `json:"latitude,omitempty"`
+	Longitude   *float64  `json:"longitude,omitempty"`
+}
+
+type TrainMapPoint struct {
+	OperationID  int64         `json:"operation_id"`
+	TrainName    string        `json:"train_name"`
+	CarrierCode  *string       `json:"carrier_code,omitempty"`
+	Status       string        `json:"status"`
+	Phase        string        `json:"phase"`
+	DelayMinutes *int          `json:"delay_minutes,omitempty"`
+	Latitude     float64       `json:"latitude"`
+	Longitude    float64       `json:"longitude"`
+	Progress     float64       `json:"progress"`
+	Method       string        `json:"method"`
+	Confidence   string        `json:"confidence"`
+	PreviousStop *TrainMapStop `json:"previous_stop,omitempty"`
+	NextStop     *TrainMapStop `json:"next_stop,omitempty"`
+	Origin       *string       `json:"origin,omitempty"`
+	Destination  *string       `json:"destination,omitempty"`
+}
+
+type TrainMapResponse struct {
+	Trains            []TrainMapPoint `json:"trains"`
+	UnpositionedCount int             `json:"unpositioned_count"`
+	GeneratedAt       time.Time       `json:"generated_at"`
+	DataAsOf          time.Time       `json:"data_as_of"`
+}
+
 type StationBoardStation struct {
 	ExternalID int      `json:"external_id"`
 	Name       string   `json:"name"`

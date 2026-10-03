@@ -84,7 +84,7 @@ make help            # all targets
 
 `infra/.env` keys: `PLK_BASE_URL`, `PLK_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`,
 `MINIO_ROOT_PASSWORD`, `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY`,
-`AIRFLOW__WEBSERVER__SECRET_KEY`.
+`AIRFLOW__WEBSERVER__SECRET_KEY`, optional `RAW_OPERATIONS_RETENTION_DAYS` (MinIO expiry for `raw/operations/`, default 3).
 
 ### Runtime ports (host) — from `infra/docker-compose.yml`, which overrides README / architecture.md
 

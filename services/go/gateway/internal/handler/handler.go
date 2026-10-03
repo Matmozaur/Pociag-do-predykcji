@@ -40,6 +40,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/search/stations", h.HandleSearchStations)
 		r.Get("/map/stations", h.HandleGetMapStations)
+		r.Get("/map/trains", h.HandleGetMapTrains)
 		r.Get("/stations/{externalId}/board", h.HandleGetStationBoard)
 		r.Get("/schedules/search", h.HandleSearchSchedules)
 		r.Get("/schedules/{routeId}", h.HandleGetScheduleDetail)
@@ -140,6 +141,38 @@ func (h *Handler) HandleGetMapStations(w http.ResponseWriter, r *http.Request) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		h.writeError(w, http.StatusInternalServerError, "internal_error", "failed to load map stations")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, response)
+}
+
+// HandleGetMapTrains returns the estimated positions of active trains for the network map.
+// @Summary		List train positions for the map
+// @Description	Returns the estimated current position of every active train that has one. Trains without a position are counted in unpositioned_count.
+// @Tags		map
+// @Produce		json
+// @Param		carriers query string false "Filter by carrier codes (comma-separated)"
+// @Success		200 {object} model.TrainMapResponse
+// @Failure		400 {object} model.ErrorResponse "Bad request"
+// @Failure		500 {object} model.ErrorResponse "Internal server error"
+// @Router		/api/v1/map/trains [get]
+func (h *Handler) HandleGetMapTrains(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "trains.map")
+	defer span.End()
+
+	raw := r.URL.Query().Get("carriers")
+	carriers := trainutil.ParseCSV(raw)
+	if raw != "" && len(carriers) == 0 {
+		h.writeError(w, http.StatusBadRequest, "invalid_request", "carriers must be a comma-separated list of carrier codes")
+		return
+	}
+
+	response, err := h.svc.GetMapTrains(ctx, carriers)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		h.writeError(w, http.StatusInternalServerError, "internal_error", "failed to load map trains")
 		return
 	}
 

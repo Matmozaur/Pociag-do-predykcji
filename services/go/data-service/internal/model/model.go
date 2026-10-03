@@ -33,6 +33,11 @@ type DelayDistribution = dsmodel.DelayDistribution
 type OperationStatistics = dsmodel.OperationStatistics
 type StationBoardEntry = dsmodel.StationBoardEntry
 type StationBoardResponse = dsmodel.StationBoardResponse
+type StopRef = dsmodel.StopRef
+type StopTiming = dsmodel.StopTiming
+type TrainPosition = dsmodel.TrainPosition
+type ActiveTrain = dsmodel.ActiveTrain
+type ActiveTrainListResponse = dsmodel.ActiveTrainListResponse
 
 // Disruptions
 type DisruptionSummary = dsmodel.DisruptionSummary

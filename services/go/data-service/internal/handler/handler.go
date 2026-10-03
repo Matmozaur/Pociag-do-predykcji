@@ -21,14 +21,16 @@ import (
 // Handler handles all HTTP endpoints for the data-service.
 // RegisterRoutes registers all chi routes. See specs/openapi/data-service.yml for full API contract.
 type Handler struct {
-	svc    *service.Service
-	tracer trace.Tracer
+	svc         *service.Service
+	tracer      trace.Tracer
+	activeCache *responseCache
 }
 
 func New(svc *service.Service) *Handler {
 	return &Handler{
-		svc:    svc,
-		tracer: otel.Tracer("pociag.data-service"),
+		svc:         svc,
+		tracer:      otel.Tracer("pociag.data-service"),
+		activeCache: newResponseCache(activeOperationsCacheTTL),
 	}
 }
 
@@ -49,6 +51,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			r.Get("/", h.HandleQueryOperations)
 			// Static path before parametric.
 			r.Get("/statistics", h.HandleGetOperationStatistics)
+			r.Get("/active", h.HandleListActiveOperations)
 			r.Get("/{id}", h.HandleGetOperationById)
 		})
 		r.Route("/disruptions", func(r chi.Router) {

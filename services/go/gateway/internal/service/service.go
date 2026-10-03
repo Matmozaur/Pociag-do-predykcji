@@ -36,6 +36,7 @@ type DataServiceClient interface {
 	QueryOperations(ctx context.Context, p dataservice.QueryOperationsParams) (*dataservice.OperationListResponse, error)
 	GetOperationByID(ctx context.Context, operationID int64) (*dataservice.OperationDetail, error)
 	GetOperationStatistics(ctx context.Context, date string) (*dataservice.OperationStatistics, error)
+	ListActiveOperations(ctx context.Context, p dataservice.ListActiveOperationsParams) (*dataservice.ActiveTrainListResponse, error)
 
 	QueryDisruptions(ctx context.Context, p dataservice.QueryDisruptionsParams) (*dataservice.DisruptionListResponse, error)
 	GetDisruptionByID(ctx context.Context, disruptionID int64) (*dataservice.DisruptionDetail, error)
@@ -124,6 +125,90 @@ func (s *Service) GetMapStations(ctx context.Context) (*model.StationMapResponse
 	}
 
 	return &model.StationMapResponse{Stations: points}, nil
+}
+
+// mapTrainsLimit is data-service's maximum for listActiveOperations, so the map is not silently
+// truncated at the default of 2000.
+const mapTrainsLimit = 5000
+
+// GetMapTrains returns the active trains that have an estimated position, for the network map.
+// Trains without a position are left out and counted in UnpositionedCount.
+func (s *Service) GetMapTrains(ctx context.Context, carrierCodes []string) (*model.TrainMapResponse, error) {
+	ctx, span := s.tracer.Start(ctx, "trains.map")
+	defer span.End()
+
+	active, err := s.client.ListActiveOperations(ctx, dataservice.ListActiveOperationsParams{
+		CarrierCodes: carrierCodes,
+		Limit:        mapTrainsLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list map trains: %w", err)
+	}
+
+	trains := make([]model.TrainMapPoint, 0, len(active.Data))
+	unpositioned := 0
+	for _, t := range active.Data {
+		if t.Position == nil {
+			unpositioned++
+			continue
+		}
+		trains = append(trains, model.TrainMapPoint{
+			OperationID:  t.OperationID,
+			TrainName:    mapTrainName(t),
+			CarrierCode:  t.CarrierCode,
+			Status:       trainutil.StatusLabel(t.TrainStatus),
+			Phase:        t.Phase,
+			DelayMinutes: t.DelayMinutes,
+			Latitude:     t.Position.Latitude,
+			Longitude:    t.Position.Longitude,
+			Progress:     t.Position.Progress,
+			Method:       t.Position.Method,
+			Confidence:   t.Confidence,
+			PreviousStop: mapTrainStop(t.PreviousStop),
+			NextStop:     mapTrainStop(t.NextStop),
+			Origin:       stopRefName(t.Origin),
+			Destination:  stopRefName(t.Destination),
+		})
+	}
+
+	return &model.TrainMapResponse{
+		Trains:            trains,
+		UnpositionedCount: unpositioned,
+		GeneratedAt:       active.GeneratedAt,
+		DataAsOf:          active.DataAsOf,
+	}, nil
+}
+
+// mapTrainName is the route name, else "<carrier_code> <schedule_id>/<order_id>", else (no carrier
+// code, see issue #25) "Pociąg <schedule_id>/<order_id>", matching trainutil.DisplayName's last step.
+func mapTrainName(t dataservice.ActiveTrain) string {
+	if t.RouteName != nil && strings.TrimSpace(*t.RouteName) != "" {
+		return strings.TrimSpace(*t.RouteName)
+	}
+	key := strconv.Itoa(t.ScheduleID) + "/" + strconv.Itoa(t.OrderID)
+	if t.CarrierCode != nil && strings.TrimSpace(*t.CarrierCode) != "" {
+		return strings.TrimSpace(*t.CarrierCode) + " " + key
+	}
+	return "Pociąg " + key
+}
+
+func mapTrainStop(st *dataservice.StopTiming) *model.TrainMapStop {
+	if st == nil {
+		return nil
+	}
+	return &model.TrainMapStop{
+		StationName: st.StationName,
+		Time:        st.Time,
+		Latitude:    st.Latitude,
+		Longitude:   st.Longitude,
+	}
+}
+
+func stopRefName(ref *dataservice.StopRef) *string {
+	if ref == nil {
+		return nil
+	}
+	return ref.StationName
 }
 
 // Station board buckets (StationBoardEntry.bucket in specs/openapi/data-service.yml).

@@ -26,6 +26,11 @@ type DisruptionSummary = dsmodel.DisruptionSummary
 type DisruptionListResponse = dsmodel.DisruptionListResponse
 type DisruptionAffectedRoute = dsmodel.DisruptionAffectedRoute
 type DisruptionDetail = dsmodel.DisruptionDetail
+type StopRef = dsmodel.StopRef
+type StopTiming = dsmodel.StopTiming
+type TrainPosition = dsmodel.TrainPosition
+type ActiveTrain = dsmodel.ActiveTrain
+type ActiveTrainListResponse = dsmodel.ActiveTrainListResponse
 
 // gateway-client-specific types
 type errorResponse struct {

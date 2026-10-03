@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timedelta
 from typing import Any, TypedDict
 
@@ -11,6 +12,8 @@ from airflow.decorators import dag, task
 from airflow.hooks.base import BaseHook
 
 logger = logging.getLogger(__name__)
+
+_LAKE_PREFIX_DATE = re.compile(r"^raw/operations/(\d{4})/(\d{2})/(\d{2})/")
 
 
 class FetchResult(TypedDict):
@@ -41,8 +44,16 @@ def capture_date_today() -> date:
     return date.today()
 
 
+def capture_date_from_lake_prefix(fetch_result: object) -> date:
+    """Read the collector's capture date from its `lake_prefix` (raw/operations/YYYY/MM/DD/)."""
+    prefix = fetch_result.get("lake_prefix") if isinstance(fetch_result, dict) else None
+    match = _LAKE_PREFIX_DATE.match(prefix) if isinstance(prefix, str) else None
+    if match is None:
+        raise ValueError(f"collector response has no operations lake_prefix: {prefix!r}")
+    return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
 def fetch_operations_snapshot() -> FetchResult:
-    capture_date = capture_date_today()
     conn = BaseHook.get_connection("pociag_collector")
     base_url = f"{conn.schema}://{conn.host}:{conn.port}"
     response = httpx.post(
@@ -53,14 +64,15 @@ def fetch_operations_snapshot() -> FetchResult:
     if response.status_code == httpx.codes.CONFLICT:
         logger.info("Operations fetch already running; skipping this live run")
         return {
-            "target_date": capture_date.isoformat(),
+            "target_date": capture_date_today().isoformat(),
             "ingestion_run_id": None,
             "skipped": True,
         }
     response.raise_for_status()
+    body = response.json()
     return {
-        "target_date": capture_date.isoformat(),
-        "ingestion_run_id": _fetch_run_id(response.json()),
+        "target_date": capture_date_from_lake_prefix(body).isoformat(),
+        "ingestion_run_id": _fetch_run_id(body),
         "skipped": False,
     }
 
@@ -96,7 +108,7 @@ def process_operations_snapshot(fetch_result: FetchResult) -> ProcessingResult:
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=timedelta(minutes=9),
-    default_args={"retries": 1, "retry_delay": timedelta(minutes=1)},
+    default_args={"retries": 0},
     tags=["pociag", "ingestion"],
 )
 def ingest_operations_live() -> None:
