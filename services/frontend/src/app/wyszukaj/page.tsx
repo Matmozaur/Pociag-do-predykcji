@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { ArrowRight, Clock, MapPin, Search, Train } from 'lucide-react'
-import { gateway, type ScheduleSearchResult, type StationSuggestion } from '@/lib/api'
+import { api, type ScheduleSearchResult, type StationSuggestion } from '@/lib/api'
 import { Button, Card, EmptyState, Input, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
 
@@ -47,7 +47,7 @@ function StationAutocomplete({ label, placeholder, value, onSelect }: StationAut
 
     const stationsQuery = useQuery({
         queryKey: ['stations', debouncedQ],
-        queryFn: () => gateway.searchStations(debouncedQ),
+        queryFn: () => api.searchStations(debouncedQ),
         enabled: debouncedQ.length >= 2,
         staleTime: 60_000,
     })
@@ -181,7 +181,7 @@ export default function WyszukajPage() {
 
     const scheduleQuery = useQuery({
         queryKey: ['schedules', submitted],
-        queryFn: () => gateway.searchSchedules(submitted!),
+        queryFn: () => api.searchSchedules(submitted!),
         enabled:
             submitted !== null &&
             submitted.from.length > 0 &&

@@ -1,7 +1,7 @@
 const BASE =
     typeof window !== 'undefined'
-        ? (process.env.NEXT_PUBLIC_GATEWAY_BASE ?? '/bff')
-        : `${process.env.GATEWAY_URL ?? 'http://localhost:8084'}`
+        ? (process.env.NEXT_PUBLIC_API_BASE ?? '/bff')
+        : `${process.env.API_URL ?? 'http://localhost:8080'}`
 
 /** Error thrown by `apiFetch` for non-2xx responses; `status` is the HTTP status code. */
 export class ApiError extends Error {
@@ -94,7 +94,7 @@ export interface TrainMapResponse {
     trains: TrainMapPoint[]
     unpositioned_count: number
     generated_at: string
-    data_as_of: string
+    data_as_of?: string
 }
 
 export interface StationBoardRow {
@@ -136,7 +136,7 @@ export interface StationBoardView {
 
 export interface CarrierInfo {
     code: string
-    name: string
+    name?: string
 }
 
 export interface ScheduleSearchResult {
@@ -170,7 +170,6 @@ export interface ScheduleStopView {
     arrival_time?: string
     departure_time?: string
     platform?: string
-    stop_type?: string
 }
 
 export interface ScheduleDetailView {
@@ -232,7 +231,6 @@ export interface TrainDetailView {
 
 export interface DisruptionSummaryView {
     id: number
-    type_name?: string
     start_station?: string
     end_station?: string
     message: string
@@ -264,7 +262,7 @@ export interface DashboardOverview {
     }
 }
 
-export const gateway = {
+export const api = {
     searchStations: (q: string, limit = 10) =>
         apiFetch<StationSuggestionsResponse>('/api/v1/search/stations', {
             q,
@@ -295,10 +293,9 @@ export const gateway = {
     getScheduleDetail: (routeId: number) =>
         apiFetch<ScheduleDetailView>(`/api/v1/schedules/${routeId}`),
 
-    getLiveTrains: (params?: { carriers?: string; stations?: string; limit?: number; offset?: number }) =>
+    getLiveTrains: (params?: { carriers?: string; limit?: number; offset?: number }) =>
         apiFetch<LiveTrainsResponse>('/api/v1/trains/live', {
             carriers: params?.carriers,
-            stations: params?.stations,
             limit: params?.limit ? String(params.limit) : undefined,
             offset: params?.offset ? String(params.offset) : undefined,
         }),
@@ -306,9 +303,8 @@ export const gateway = {
     getTrainDetail: (operationId: number) =>
         apiFetch<TrainDetailView>(`/api/v1/trains/${operationId}`),
 
-    listDisruptions: (active = true, limit = 20, offset?: number) =>
+    listDisruptions: (limit = 20, offset?: number) =>
         apiFetch<DisruptionListView>('/api/v1/disruptions', {
-            active: String(active),
             limit: String(limit),
             offset: offset !== undefined ? String(offset) : undefined,
         }),

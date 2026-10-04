@@ -20,7 +20,7 @@ import { TrafficMapClient } from '@/components/TrafficMapClient'
 import {
     delayVariant,
     formatDelay,
-    gateway,
+    api,
     statusLabel,
     type DisruptionSummaryView,
     type LiveTrainSummary,
@@ -73,7 +73,7 @@ function DisruptionRow({ disruption }: { disruption: DisruptionSummaryView }) {
         <Link href="/utrudnienia" className="group flex gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
             <AlertTriangle size={16} className={`mt-0.5 flex-none ${critical ? 'text-red-400' : 'text-amber-400'}`} aria-hidden="true" />
             <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-slate-200">{disruption.type_name ?? 'Utrudnienie w ruchu'}</span>
+                <span className="block truncate text-sm text-slate-200">Utrudnienie w ruchu</span>
                 <span className="block truncate text-xs text-slate-500">{disruption.start_station && disruption.end_station ? `${disruption.start_station} — ${disruption.end_station}` : disruption.message}</span>
             </span>
             <ArrowRight size={15} className="mt-1 text-slate-600 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
@@ -118,9 +118,9 @@ function MapHome() {
         return () => window.removeEventListener('keydown', onKeyDown)
     }, [selectedStationId, selectStation])
 
-    const overviewQuery = useQuery({ queryKey: ['dashboardOverview'], queryFn: gateway.getDashboardOverview, staleTime: 30_000 })
-    const trainsQuery = useQuery({ queryKey: ['mapLiveTrains'], queryFn: () => gateway.getLiveTrains({ limit: 4 }), staleTime: 30_000, refetchInterval: 60_000 })
-    const disruptionsQuery = useQuery({ queryKey: ['mapDisruptions'], queryFn: () => gateway.listDisruptions(true, 3), staleTime: 60_000 })
+    const overviewQuery = useQuery({ queryKey: ['dashboardOverview'], queryFn: api.getDashboardOverview, staleTime: 30_000 })
+    const trainsQuery = useQuery({ queryKey: ['mapLiveTrains'], queryFn: () => api.getLiveTrains({ limit: 4 }), staleTime: 30_000, refetchInterval: 60_000 })
+    const disruptionsQuery = useQuery({ queryKey: ['mapDisruptions'], queryFn: () => api.listDisruptions(3), staleTime: 60_000 })
     const isRefreshing = overviewQuery.isFetching || trainsQuery.isFetching || disruptionsQuery.isFetching
     const refreshAll = () => { void Promise.all([overviewQuery.refetch(), trainsQuery.refetch(), disruptionsQuery.refetch()]) }
 

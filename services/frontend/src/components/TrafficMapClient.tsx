@@ -7,7 +7,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, MapPin, TrainFront } from 'lucide-react'
 import { CircleMarker, GeoJSON, MapContainer, Pane, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
-import { formatDelay, gateway, type MapStation, type TrainMapPoint, type TrainMapStop } from '@/lib/api'
+import { formatDelay, api, type MapStation, type TrainMapPoint, type TrainMapStop } from '@/lib/api'
 import { Spinner, cn } from '@/lib/ui'
 
 // Padded bounding box around Poland — used both to fit the initial view and to
@@ -282,7 +282,7 @@ function StopLine({ label, stop }: { label: string; stop?: TrainMapStop }) {
     )
 }
 
-function TrainPopupContent({ train, dataAsOf }: { train: TrainMapPoint; dataAsOf: string }) {
+function TrainPopupContent({ train, dataAsOf }: { train: TrainMapPoint; dataAsOf?: string }) {
     const tone = delayTone(train.delay_minutes)
     const route = train.origin && train.destination ? `${train.origin} → ${train.destination}` : undefined
     return (
@@ -337,7 +337,7 @@ interface TrainMarkerProps {
     train: TrainMapPoint
     latitude: number
     longitude: number
-    dataAsOf: string
+    dataAsOf?: string
     renderer: L.Renderer
 }
 
@@ -369,7 +369,7 @@ const TrainMarker = memo(function TrainMarker({ train, latitude, longitude, data
     )
 })
 
-function TrainsLayer({ trains, dataAsOf, now, renderer }: { trains: TrainMapPoint[]; dataAsOf: string; now: number | null; renderer: L.Renderer }) {
+function TrainsLayer({ trains, dataAsOf, now, renderer }: { trains: TrainMapPoint[]; dataAsOf?: string; now: number | null; renderer: L.Renderer }) {
     return (
         <>
             {trains.map((train) => {
@@ -433,13 +433,13 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
 
     const { data: stationsData } = useQuery({
         queryKey: ['mapStations'],
-        queryFn: gateway.getMapStations,
+        queryFn: api.getMapStations,
         staleTime: 60 * 60 * 1000,
     })
 
     const trainsQuery = useQuery({
         queryKey: ['mapTrains'],
-        queryFn: () => gateway.getMapTrains(),
+        queryFn: () => api.getMapTrains(),
         refetchInterval: TRAINS_REFETCH_MS,
         staleTime: TRAINS_STALE_MS,
         enabled: showTrains,

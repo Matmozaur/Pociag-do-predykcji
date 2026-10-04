@@ -1,7 +1,7 @@
 # services/frontend
 
 Next.js 15 (App Router) + React 19 + TypeScript strict + Tailwind v4. See repo root `CLAUDE.md`
-for architecture. The frontend talks **only to the gateway** — never collector or data-service.
+for architecture. The frontend talks **only to the api** (`services/go/api`).
 
 ## Commands (from `services/frontend/`)
 
@@ -17,20 +17,20 @@ npm start         # next start (prod)
   (`noEmit`, `strict`). "Run build before finishing" is the check.
 - No test runner is set up — don't assume `npm test` exists.
 
-## Talking to the gateway
+## Talking to the api
 
-- `src/lib/api.ts` `apiFetch<T>()` is the single entry point. `BASE` resolves to:
-  - browser: `process.env.NEXT_PUBLIC_GATEWAY_BASE ?? '/bff'` — the `/bff/*` path is rewritten to
-    the gateway in `next.config.ts` (`GATEWAY_URL ?? 'http://localhost:8084'`).
-  - server (RSC): `process.env.GATEWAY_URL ?? 'http://localhost:8084'` directly.
+- `src/lib/api.ts` `apiFetch<T>()` (used by the `api` object) is the single entry point. `BASE` resolves to:
+  - browser: `process.env.NEXT_PUBLIC_API_BASE ?? '/bff'` — the `/bff/*` path is rewritten to
+    the api in `next.config.ts` (`API_URL ?? 'http://localhost:8080'`).
+  - server (RSC): `process.env.API_URL ?? 'http://localhost:8080'` directly.
 - Responses are cached with `next: { revalidate: 30 }`. Match shapes to
-  `specs/openapi/gateway.yml`; declare response `interface`s in `api.ts` (see `StationSuggestion`
+  `specs/openapi/api.yml`; declare response `interface`s in `api.ts` (see `StationSuggestion`
   etc.) — no implicit `any`.
 
 ## Env vars
 
-`GATEWAY_URL` (server + rewrite target, default `http://localhost:8084`),
-`NEXT_PUBLIC_GATEWAY_BASE` (optional browser override of the `/bff` prefix).
+`API_URL` (server + rewrite target, default `http://localhost:8080`),
+`NEXT_PUBLIC_API_BASE` (optional browser override of the `/bff` prefix).
 
 ## Conventions
 

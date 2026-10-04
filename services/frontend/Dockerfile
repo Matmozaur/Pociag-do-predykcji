@@ -8,7 +8,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN GATEWAY_URL=http://gateway:8084 npm run build
+RUN API_URL=http://api:8080 npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
