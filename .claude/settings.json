@@ -1,4 +1,15 @@
 {
+  "enabledMcpjsonServers": [
+    "postgres",
+    "airflow",
+    "playwright",
+    "context7"
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {
