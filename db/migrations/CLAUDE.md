@@ -1,32 +1,18 @@
 # db/migrations
 
-PostgreSQL schema, managed with **golang-migrate**. This is the single schema shared by
-`data-service` (reads) and `airflow/plugins/pociag_processing` (writes).
+PostgreSQL schema (golang-migrate), written by `airflow/plugins/pociag_processing/repository.py`
+and read by `services/go/api/internal/repository`. Overview: `docs/architecture.md`.
 
 ## Rules
 
-- Every migration is a pair: `NNN_description.up.sql` + `NNN_description.down.sql`, `NNN`
-  zero-padded and monotonically increasing (next is `011_`). `.down.sql` must fully and safely
-  reverse `.up.sql`.
-- Use `IF [NOT] EXISTS` guards and explicit column lists. Add indexes for new FKs and for
-  predicates the queries actually filter on (check `data-service/internal/repository/*.go` and
-  `pociag_processing/repository.py`).
-- Keep DDL transactional where the operation allows.
-- Don't drop/rename a column or table without a reversible `down` step.
-- Table/column shapes must stay aligned with `specs/schemas/*.json`.
+- Pairs `NNN_description.up.sql` / `.down.sql`, zero-padded and increasing (next: `002_`).
+  `.down.sql` fully reverses `.up.sql`; keep DDL in a transaction.
+- Index new foreign keys and the predicates the two repositories filter on.
+- After a change, run both SQL test suites (`POCIAG_TEST_DATABASE_URL=… make api-test
+  airflow-test`); they apply `001_init.up.sql` and later migrations must keep them passing.
 
-## Running (from repo root; Postgres must be up: `make infra-up`)
+## Running (from repo root)
 
-```bash
-make db-migrate-up        # apply all pending
-make db-migrate-down      # roll back exactly ONE
-make db-migrate-status    # current version
-make db-psql              # psql shell
-```
-
-These run the `migrate/migrate:v4.18.1` Docker image with `--network host` against `DB_URL`,
-default `postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable`
-(host port **5434**). Override with `make db-migrate-up DB_URL=...`.
-
-There is no separate migrations runner in CI — apply locally and verify both consumers still
-build/test before opening a PR.
+`docker compose` applies migrations on start (`migrate` service). Manually:
+`make db-migrate-up | db-migrate-down | db-migrate-status | db-psql` against `DB_URL`
+(default `postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable`).
