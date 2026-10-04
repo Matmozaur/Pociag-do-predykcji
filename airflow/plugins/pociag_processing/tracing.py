@@ -21,7 +21,7 @@ def _configure_once() -> None:
     if not endpoint:
         return
 
-    resource = Resource.create({"service.name": "pociag.processor"})
+    resource = Resource.create({"service.name": "pociag.airflow"})
     provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
     provider.add_span_processor(BatchSpanProcessor(exporter))
@@ -30,4 +30,4 @@ def _configure_once() -> None:
 
 def get_tracer() -> trace.Tracer:
     _configure_once()
-    return trace.get_tracer("pociag.processor")
+    return trace.get_tracer("pociag.airflow")

@@ -7,7 +7,7 @@ Usage (from ``airflow/``)::
 
     # export the PLK station list from the curated DB (host port 5434)
     psql -h localhost -p 5434 -U pociag -d pociag \\
-        -c "\\copy (SELECT external_id, name, city FROM stations) TO 'stations.csv' CSV HEADER"
+        -c "\\copy (SELECT id AS external_id, name, city FROM stations) TO 'stations.csv' CSV HEADER"
     python scripts/build_station_coordinates.py stations.csv [--active-ids ids.txt]
 
 The script:

@@ -1,0 +1,100 @@
+{
+ "generatedAt": "2026-10-04T15:30:00Z",
+ "pagination": {
+  "page": 1,
+  "pageSize": 1,
+  "totalCount": 2,
+  "totalPages": 2,
+  "hasNextPage": true,
+  "hasPreviousPage": false
+ },
+ "trains": [
+  {
+   "scheduleId": 2026,
+   "orderId": 140621539,
+   "trainOrderId": 453698077,
+   "operatingDate": "2026-10-04",
+   "trainStatus": "P",
+   "stations": [
+    {
+     "stationId": 13904,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "plannedDeparture": "2026-10-04T16:07:00",
+     "plannedDepartureTime": "16:07:00",
+     "actualDeparture": "2026-10-04T16:07:00",
+     "isConfirmed": true
+    },
+    {
+     "stationId": 260653,
+     "plannedSequenceNumber": 2,
+     "actualSequenceNumber": 2,
+     "plannedArrival": "2026-10-04T16:09:30",
+     "plannedDeparture": "2026-10-04T16:10:30",
+     "plannedArrivalTime": "16:09:30",
+     "plannedDepartureTime": "16:10:30",
+     "actualArrival": "2026-10-04T16:09:30",
+     "actualDeparture": "2026-10-04T16:10:30",
+     "isConfirmed": true
+    },
+    {
+     "stationId": 14308,
+     "plannedSequenceNumber": 7,
+     "actualSequenceNumber": 7,
+     "plannedArrival": "2026-10-04T16:30:00",
+     "plannedDeparture": "2026-10-04T16:31:00",
+     "plannedArrivalTime": "16:30:00",
+     "plannedDepartureTime": "16:31:00",
+     "actualArrival": "2026-10-04T16:30:00",
+     "actualDeparture": "2026-10-04T16:31:00",
+     "isConfirmed": true
+    },
+    {
+     "stationId": 29215,
+     "plannedSequenceNumber": 9,
+     "actualSequenceNumber": 9,
+     "plannedArrival": "2026-10-04T16:43:00",
+     "plannedDeparture": "2026-10-04T16:44:00",
+     "plannedArrivalTime": "16:43:00",
+     "plannedDepartureTime": "16:44:00",
+     "arrivalDelayMinutes": 2,
+     "departureDelayMinutes": 2,
+     "actualArrival": "2026-10-04T16:45:00",
+     "actualDeparture": "2026-10-04T16:46:00",
+     "isConfirmed": true
+    },
+    {
+     "stationId": 29108,
+     "plannedSequenceNumber": 10,
+     "actualSequenceNumber": 10,
+     "plannedArrival": "2026-10-04T16:54:00",
+     "plannedDeparture": "2026-10-04T16:56:00",
+     "plannedArrivalTime": "16:54:00",
+     "plannedDepartureTime": "16:56:00",
+     "arrivalDelayMinutes": 4,
+     "departureDelayMinutes": 4,
+     "actualArrival": "2026-10-04T16:58:00",
+     "actualDeparture": "2026-10-04T17:00:00",
+     "isConfirmed": true
+    },
+    {
+     "stationId": 30601,
+     "plannedSequenceNumber": 22,
+     "actualSequenceNumber": 22,
+     "plannedArrival": "2026-10-04T17:40:00",
+     "plannedArrivalTime": "17:40:00",
+     "arrivalDelayMinutes": 9,
+     "actualArrival": "2026-10-04T17:49:00"
+    }
+   ]
+  }
+ ],
+ "stations": {
+  "30601": "Poznań Główny",
+  "29108": "Krzyż",
+  "29215": "Nowe Drezdenko",
+  "14308": "Zwierzyn",
+  "260653": "Gorzów Wielkopolski Wschodni",
+  "13904": "Gorzów Wielkopolski"
+ }
+}

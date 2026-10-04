@@ -1,0 +1,22 @@
+{
+ "generatedAt": "2026-10-04T15:10:10.9563609Z",
+ "stations": [
+  {
+   "id": 280416,
+   "name": "Adamowo"
+  },
+  {
+   "id": 280388,
+   "name": "Aleksandrów"
+  },
+  {
+   "id": 21501,
+   "name": "Aleksandrów Kujawski"
+  }
+ ],
+ "totalCount": 3275,
+ "returnedCount": 3275,
+ "page": 1,
+ "pageSize": 10000,
+ "totalPages": 1
+}
