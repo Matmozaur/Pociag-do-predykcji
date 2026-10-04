@@ -3,28 +3,23 @@ description: "Database migration conventions (golang-migrate)."
 applyTo: "db/migrations/**/*.sql"
 ---
 
-# SQL Migration Instructions
+<!-- Mirror of db/migrations/CLAUDE.md -->
 
-These rules apply automatically to all files in `db/migrations/`.
+# db/migrations
 
-## Naming & pairing
+PostgreSQL schema (golang-migrate), written by `airflow/plugins/pociag_processing/repository.py`
+and read by `services/go/api/internal/repository`. Overview: `docs/architecture.md`.
 
-- Every migration is a pair: `NNN_description.up.sql` and `NNN_description.down.sql`.
-- `NNN` is a zero-padded, monotonically increasing sequence (e.g. `008_...`).
-- The `.down.sql` must fully and safely reverse the `.up.sql`.
+## Rules
 
-## Authoring rules
+- Pairs `NNN_description.up.sql` / `.down.sql`, zero-padded and increasing (next: `002_`).
+  `.down.sql` fully reverses `.up.sql`; keep DDL in a transaction.
+- Index new foreign keys and the predicates the two repositories filter on.
+- After a change, run both SQL test suites (`POCIAG_TEST_DATABASE_URL=… make api-test
+  airflow-test`); they apply `001_init.up.sql` and later migrations must keep them passing.
 
-- Use parameterized application queries at runtime; migrations themselves must never
-  embed untrusted or environment-specific literals.
-- Prefer explicit column lists and `IF NOT EXISTS` / `IF EXISTS` guards where correct.
-- Add indexes for new foreign keys and common query predicates.
-- Keep DDL transactional where the operation allows it.
-- Do not drop or rename columns/tables without a corresponding reversible `down` step.
+## Running (from repo root)
 
-## Workflow
-
-- Apply with `make db-migrate-up`; roll back with `make db-migrate-down`;
-  check state with `make db-migrate-status`.
-- Table/column shapes must stay aligned with `specs/schemas/` and the queries in
-  `services/go/data-service` and `airflow/plugins/pociag_processing`.
+`docker compose` applies migrations on start (`migrate` service). Manually:
+`make db-migrate-up | db-migrate-down | db-migrate-status | db-psql` against `DB_URL`
+(default `postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable`).

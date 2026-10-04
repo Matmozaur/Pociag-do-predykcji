@@ -36,17 +36,17 @@ alias gce='gh copilot explain'
 ### Suggest a command
 
 ```bash
-gh copilot suggest "run the collector tests with the race detector and verbose output"
+gh copilot suggest "run the api tests with the race detector and verbose output"
 gh copilot suggest "apply only the first migration to the local database"
-gh copilot suggest "build the collector Docker image and tag it as latest"
-gh copilot suggest "stream logs from the predictor container only"
-gh copilot suggest "force-recreate the predictor container without rebuilding the image"
+gh copilot suggest "build the api Docker image and tag it as latest"
+gh copilot suggest "stream logs from the airflow-scheduler container only"
+gh copilot suggest "force-recreate the api container without rebuilding the image"
 ```
 
 ### Explain an unfamiliar command
 
 ```bash
-gh copilot explain "docker compose --profile tracing up -d --no-deps collector"
+gh copilot explain "docker compose --profile tracing up -d --no-deps api"
 gh copilot explain "go test -race -count=1 -run TestIngest ./internal/service/..."
 gh copilot explain "migrate -path db/migrations -database $DB_URL force 1"
 ```
@@ -66,6 +66,6 @@ dedicated terminal panel — press `Ctrl+Shift+P → Run Task` to invoke it.
 
 ## Tips for this project
 
-- Always name the service you're targeting: *"for the Go collector service"*, *"in the predictor container"*.
+- Always name the service you're targeting: *"for the Go api service"*, *"in the airflow-scheduler container"*.
 - Reference Makefile targets: *"equivalent to `make go-test` but only for the handler package"*.
 - For Docker Compose questions, mention the profile: *"using the tracing profile"*.

@@ -1,0 +1,454 @@
+openapi: 3.1.0
+info:
+  title: Pociąg do Predykcji API
+  version: 1.0.0
+  description: |
+    Read API over the curated PostgreSQL tables, consumed only by the frontend
+    (services/frontend/src/lib/api.ts mirrors these schemas). Implemented by services/go/api.
+
+    Conventions: times shown to people (`*_time`, `planned_*`/`actual_*` in train stops) are
+    Europe/Warsaw `HH:MM`; instants (`*_at`, `time` in map stops) are RFC 3339 UTC; dates are
+    `YYYY-MM-DD` PLK operating dates. Optional fields are omitted when unknown.
+    Out-of-range parameters return 400.
+servers:
+  - url: http://localhost:8080
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness
+      responses:
+        '200': {description: Alive}
+  /readyz:
+    get:
+      summary: Readiness (database reachable)
+      responses:
+        '200': {description: Ready}
+        '503': {$ref: '#/components/responses/Error'}
+
+  /api/v1/search/stations:
+    get:
+      summary: Station autocomplete (name substring or city prefix; name prefix matches first)
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 20, default: 10}}
+      responses:
+        '200':
+          description: Suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions]
+                properties:
+                  suggestions: {type: array, items: {$ref: '#/components/schemas/StationSuggestion'}}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/map/stations:
+    get:
+      summary: Stations that have coordinates
+      responses:
+        '200':
+          description: Stations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stations]
+                properties:
+                  stations: {type: array, items: {$ref: '#/components/schemas/StationMapPoint'}}
+
+  /api/v1/map/trains:
+    get:
+      summary: Active trains with estimated positions
+      description: |
+        A train is active when its status is P (or S once past its first departure), its
+        operating date is today or yesterday, it was in a PLK snapshot at most 15 minutes older
+        than the latest one, and now lies between its first departure (minus 5 minutes) and its
+        last arrival. Trains without any stop coordinates are only counted.
+      parameters:
+        - $ref: '#/components/parameters/Carriers'
+      responses:
+        '200':
+          description: Trains
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TrainMapResponse'}
+
+  /api/v1/stations/{stationId}/board:
+    get:
+      summary: Station board — trains at the station, next arrivals, next departures
+      description: Each section is ordered by expected time and truncated to `limit`; arrivals and departures cover the next 12 hours.
+      parameters:
+        - {name: stationId, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 10}}
+      responses:
+        '200':
+          description: Board
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StationBoardView'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/schedules/search:
+    get:
+      summary: Trains running on a date from one place to another
+      description: '`from`/`to` are a station id, or a city / station-name prefix.'
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string}}
+        - {name: to, in: query, required: true, schema: {type: string}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+        - $ref: '#/components/parameters/Carriers'
+        - {name: categories, in: query, description: Comma-separated commercial categories, schema: {type: string}}
+        - {name: sort, in: query, schema: {type: string, enum: [departure, arrival, duration], default: departure}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Connections
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScheduleSearchResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/schedules/{routeId}:
+    get:
+      summary: A train's timetable and upcoming operating dates
+      parameters:
+        - {name: routeId, in: path, required: true, description: trains.id, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Timetable
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScheduleDetailView'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/trains/live:
+    get:
+      summary: Active trains (same definition as /map/trains), ordered by operation id
+      parameters:
+        - $ref: '#/components/parameters/Carriers'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Trains
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LiveTrainsResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/trains/{operationId}:
+    get:
+      summary: One run of a train with all its stops
+      parameters:
+        - {name: operationId, in: path, required: true, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Train
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TrainDetailView'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/disruptions:
+    get:
+      summary: Current disruptions (today and tomorrow), most affected trains first
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Disruptions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/DisruptionView'}}
+                  pagination: {$ref: '#/components/schemas/Pagination'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/dashboard/overview:
+    get:
+      summary: Today's (Europe/Warsaw) statistics and data freshness
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardOverview'}
+
+components:
+  parameters:
+    Carriers: {name: carriers, in: query, description: Comma-separated carrier codes, schema: {type: string}}
+    Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+    Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+
+  responses:
+    Error:
+      description: Error (`invalid_request`, `not_found`, `internal_error`, `not_ready`)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error: {type: string}
+              message: {type: string}
+
+  schemas:
+    Pagination:
+      type: object
+      required: [total, limit, offset, has_more]
+      properties:
+        total: {type: integer}
+        limit: {type: integer}
+        offset: {type: integer}
+        has_more: {type: boolean}
+    Status:
+      type: string
+      enum: [not_started, in_progress, completed, cancelled, partial_cancelled]
+    Carrier:
+      type: object
+      required: [code]
+      properties:
+        code: {type: string}
+        name: {type: string}
+
+    StationSuggestion:
+      type: object
+      required: [external_id, name]
+      properties:
+        external_id: {type: integer, description: PLK station id}
+        name: {type: string}
+        city: {type: string}
+    StationMapPoint:
+      type: object
+      required: [external_id, name, latitude, longitude]
+      properties:
+        external_id: {type: integer}
+        name: {type: string}
+        city: {type: string}
+        latitude: {type: number}
+        longitude: {type: number}
+
+    StationBoardRow:
+      type: object
+      required: [operation_id, train_name, status, is_cancelled, is_confirmed]
+      properties:
+        operation_id: {type: integer}
+        train_name: {type: string}
+        train_number: {type: string}
+        commercial_category: {type: string}
+        carrier: {$ref: '#/components/schemas/Carrier'}
+        origin: {type: string}
+        destination: {type: string}
+        planned_time: {type: string, description: HH:MM}
+        expected_time: {type: string, description: HH:MM}
+        expected_at: {type: string, format: date-time}
+        delay_minutes: {type: integer}
+        platform: {type: string}
+        track: {type: string}
+        status: {$ref: '#/components/schemas/Status'}
+        is_cancelled: {type: boolean}
+        is_confirmed: {type: boolean}
+    StationBoardView:
+      type: object
+      required: [station, generated_at, at_station, arrivals, departures]
+      properties:
+        station:
+          type: object
+          required: [external_id, name]
+          properties:
+            external_id: {type: integer}
+            name: {type: string}
+            city: {type: string}
+            latitude: {type: number}
+            longitude: {type: number}
+        generated_at: {type: string, format: date-time}
+        data_as_of: {type: string, format: date-time}
+        at_station: {type: array, items: {$ref: '#/components/schemas/StationBoardRow'}}
+        arrivals: {type: array, items: {$ref: '#/components/schemas/StationBoardRow'}}
+        departures: {type: array, items: {$ref: '#/components/schemas/StationBoardRow'}}
+
+    ScheduleEndpoint:
+      type: object
+      required: [station_name, station_external_id, time]
+      properties:
+        station_name: {type: string}
+        station_external_id: {type: integer}
+        time: {type: string, description: HH:MM}
+    ScheduleSearchResponse:
+      type: object
+      required: [data, pagination, query]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [route_id, train_name, carrier, departure, arrival, duration_minutes, stops_count]
+            properties:
+              route_id: {type: integer}
+              train_name: {type: string}
+              carrier: {$ref: '#/components/schemas/Carrier'}
+              commercial_category: {type: string}
+              departure: {$ref: '#/components/schemas/ScheduleEndpoint'}
+              arrival: {$ref: '#/components/schemas/ScheduleEndpoint'}
+              duration_minutes: {type: integer}
+              stops_count: {type: integer, description: Stops between departure and arrival}
+        pagination: {$ref: '#/components/schemas/Pagination'}
+        query:
+          type: object
+          properties:
+            from: {type: string}
+            to: {type: string}
+            date: {type: string, format: date}
+    ScheduleDetailView:
+      type: object
+      required: [route_id, train_name, carrier, stops, operating_dates]
+      properties:
+        route_id: {type: integer}
+        train_name: {type: string}
+        carrier: {$ref: '#/components/schemas/Carrier'}
+        commercial_category: {type: string}
+        national_number: {type: string}
+        operating_dates: {type: array, items: {type: string, format: date}}
+        total_duration_minutes: {type: integer}
+        stops:
+          type: array
+          items:
+            type: object
+            required: [station_name, station_external_id, order]
+            properties:
+              station_name: {type: string}
+              station_external_id: {type: integer}
+              order: {type: integer}
+              arrival_time: {type: string}
+              departure_time: {type: string}
+              platform: {type: string}
+
+    LiveTrainsResponse:
+      type: object
+      required: [data, pagination, generated_at]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [operation_id, train_name, status, status_code]
+            properties:
+              operation_id: {type: integer}
+              train_name: {type: string}
+              carrier_code: {type: string}
+              status: {$ref: '#/components/schemas/Status'}
+              status_code: {type: string, enum: [S, P, C, X, Q]}
+              current_station: {type: string, description: Station the train is at or last left}
+              next_station: {type: string}
+              delay_minutes: {type: integer, description: At the last confirmed stop}
+              origin: {type: string}
+              destination: {type: string}
+        pagination: {$ref: '#/components/schemas/Pagination'}
+        generated_at: {type: string, format: date-time}
+    TrainMapStop:
+      type: object
+      required: [time]
+      properties:
+        station_name: {type: string}
+        time: {type: string, format: date-time, description: Effective departure (previous) or arrival (next)}
+        latitude: {type: number}
+        longitude: {type: number}
+    TrainMapResponse:
+      type: object
+      required: [trains, unpositioned_count, generated_at]
+      properties:
+        trains:
+          type: array
+          items:
+            type: object
+            required: [operation_id, train_name, status, phase, latitude, longitude, progress, method, confidence]
+            properties:
+              operation_id: {type: integer}
+              train_name: {type: string}
+              carrier_code: {type: string}
+              status: {$ref: '#/components/schemas/Status'}
+              phase: {type: string, enum: [not_departed, at_station, en_route, arrived]}
+              delay_minutes: {type: integer}
+              latitude: {type: number}
+              longitude: {type: number}
+              progress: {type: number, minimum: 0, maximum: 1}
+              method: {type: string, enum: [station, interpolated, interpolated_sparse]}
+              confidence: {type: string, enum: [high, medium, low]}
+              previous_stop: {$ref: '#/components/schemas/TrainMapStop'}
+              next_stop: {$ref: '#/components/schemas/TrainMapStop'}
+              origin: {type: string}
+              destination: {type: string}
+        unpositioned_count: {type: integer}
+        generated_at: {type: string, format: date-time}
+        data_as_of: {type: string, format: date-time, description: Latest PLK operations snapshot}
+    TrainDetailView:
+      type: object
+      required: [operation_id, train_name, operating_date, status, status_code, stops]
+      properties:
+        operation_id: {type: integer}
+        train_name: {type: string}
+        carrier: {$ref: '#/components/schemas/Carrier'}
+        operating_date: {type: string, format: date}
+        status: {$ref: '#/components/schemas/Status'}
+        status_code: {type: string}
+        stops:
+          type: array
+          items:
+            type: object
+            required: [station_name, station_external_id, sequence, is_confirmed, is_cancelled]
+            properties:
+              station_name: {type: string}
+              station_external_id: {type: integer}
+              sequence: {type: integer}
+              planned_arrival: {type: string}
+              planned_departure: {type: string}
+              actual_arrival: {type: string, description: PLK forecast until is_confirmed}
+              actual_departure: {type: string}
+              arrival_delay_minutes: {type: integer}
+              departure_delay_minutes: {type: integer}
+              is_confirmed: {type: boolean}
+              is_cancelled: {type: boolean}
+
+    DisruptionView:
+      type: object
+      required: [id, message, affected_routes_count, severity]
+      properties:
+        id: {type: integer, description: Only stable within one snapshot}
+        start_station: {type: string}
+        end_station: {type: string}
+        message: {type: string}
+        date_from: {type: string, format: date}
+        date_to: {type: string, format: date}
+        affected_routes_count: {type: integer}
+        severity: {type: string, enum: [low, medium, high], description: 'high >= 10 affected trains, medium >= 3'}
+    DashboardOverview:
+      type: object
+      required: [statistics, disruptions_active, data_freshness]
+      properties:
+        statistics:
+          type: object
+          required: [date, total_trains, in_progress, completed, cancelled]
+          properties:
+            date: {type: string, format: date}
+            total_trains: {type: integer}
+            in_progress: {type: integer, description: Status P and in the latest snapshot}
+            completed: {type: integer}
+            cancelled: {type: integer, description: Fully or partially}
+            avg_delay_minutes: {type: number, description: Over started trains with a delay}
+            on_time_percentage: {type: number, description: Started trains with max confirmed delay <= 5 min}
+        disruptions_active: {type: integer}
+        data_freshness:
+          type: object
+          properties:
+            schedules_last_updated: {type: string, format: date-time}
+            operations_last_updated: {type: string, format: date-time}

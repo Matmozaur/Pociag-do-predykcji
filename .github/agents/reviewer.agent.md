@@ -31,7 +31,7 @@ For every review, work through these dimensions in order:
 - Sensitive data (PII, credentials) written to logs.
 
 ### 3. Spec Alignment
-- Do all endpoints, fields, and events match `specs/openapi/`, `specs/asyncapi/`, `specs/schemas/`?
+- Do all endpoints, fields, and events match `specs/openapi/api.yml` and `specs/pipelines.md`?
 - Are there any extra endpoints or fields not defined in the spec?
 
 ### 4. Conventions

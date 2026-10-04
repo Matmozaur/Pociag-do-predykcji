@@ -62,7 +62,7 @@ async def get_resource(
 
 ## Workflow
 
-1. **Read the spec** — check `specs/openapi/`, `specs/schemas/` for the contract before writing any code.
+1. **Read the spec** — check `specs/openapi/api.yml` / `specs/pipelines.md` for the contract before writing any code.
 2. **Read existing code** — understand the surrounding file and package before editing.
 3. **Write the implementation** — follow the conventions above exactly.
 4. **Write or update tests** — aim for ≥ 80 % coverage on business logic; add at least one happy-path and one error-path test.

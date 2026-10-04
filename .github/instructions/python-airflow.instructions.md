@@ -3,38 +3,40 @@ description: "Python conventions for Airflow DAGs and the pociag_processing plug
 applyTo: "airflow/**/*.py"
 ---
 
-# Python (Airflow + Plugin) Instructions
+<!-- Mirror of airflow/CLAUDE.md -->
 
-These rules apply automatically to all Python files under `airflow/`.
-Python processing runs as an **Airflow plugin**, not a standalone service
-(see `docs/decisions/003-processor-to-airflow-plugin.md`).
+# airflow — DAGs + pociag_processing plugin
 
-## Environment & typing
+The only ingestion path: PLK Open Data API → PostgreSQL. Spec: `specs/pipelines.md`.
 
-- Use `uv`-managed environments; dependencies declared in `pyproject.toml`.
-- Full type annotations on every function signature. Keep `mypy --strict` clean.
-- Prefer `structlog` for logging; never log secrets or raw sensitive payloads.
+## Layout
 
-## DAG rules
+- `dags/` — `sync_schedules.py`, `sync_operations.py`, `sync_disruptions.py`. Thin TaskFlow
+  DAGs; each task imports and calls one `pociag_processing.pipelines.sync_*` function.
+- `plugins/pociag_processing/` (installable package `pociag-processing`):
+  - `plk.py` — `PlkClient` (httpx, `pociag_plk` connection).
+  - `transform.py` — pure PLK payload → row dataclasses (`models.py`). All PLK quirks live here.
+  - `repository.py` — `Repository`, all SQL, one transaction per batch (`pociag_postgres`).
+  - `pipelines.py` — `sync_stations/schedules/operations/disruptions`; client and repository
+    are injectable for tests.
+  - `data/station_coordinates.json` — curated coordinates (regenerate with
+    `scripts/build_station_coordinates.py`).
+- `tests/` — `test_transform.py` (real trimmed PLK payloads in `fixtures/`), `test_pipelines.py`
+  (fakes), `test_dags.py` (DagBag), `test_repository_integration.py` (needs
+  `POCIAG_TEST_DATABASE_URL`; recreates that DB's `public` schema).
 
-- DAGs live in `airflow/dags/`; reusable pipeline logic lives in
-  `airflow/plugins/pociag_processing/`.
-- DAGs must be **idempotent** and safe to re-run for any execution date.
-- Access external systems (Postgres, MinIO, PLK) via Airflow connections/hooks — never
-  instantiate raw clients with inline credentials.
-- Never hardcode credentials: use env vars or Airflow connections.
+## Commands (from `airflow/`)
 
-## Database access
+```bash
+uv sync --all-extras && uv pip install -e plugins
+uv run pytest tests -q
+uv run ruff check . && uv run mypy plugins/pociag_processing dags   # strict
+```
 
-- Parameterized SQL only; never concatenate untrusted values into a query.
-- Keep repository/query code in `pociag_processing/repository.py`.
+## Conventions
 
-## Testing
-
-- Tests live in `airflow/tests/`; run with `uv run pytest airflow/tests -v`.
-- Lint/type-check with `uv run ruff check` and `uv run mypy` before finishing.
-
-## Contract-first
-
-Event and record shapes must match `specs/asyncapi/` and `specs/schemas/`.
-Update the spec before changing a payload structure.
+- `from __future__ import annotations`, full annotations, `mypy --strict` clean.
+- External systems only via Airflow connections; SQL only in `repository.py`, parameterised.
+- Syncs are idempotent upserts (disruptions: snapshot replace). Keep table shapes aligned with
+  `db/migrations/`.
+- The scheduler imports `plugins/` at start: **restart `airflow-scheduler` after plugin changes**.

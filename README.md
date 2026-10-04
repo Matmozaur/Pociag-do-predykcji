@@ -1,87 +1,46 @@
-# Pociag-do-predykcji
+# Pociąg do Predykcji
 
-Small local usage guide.
+Live view of Polish railway traffic built on the [PLK Open Data API](specs/openapi/plk-open-data.json):
+a network map with estimated train positions, station boards, timetable search and disruptions.
+Historical operations are kept for future delay prediction.
+
+```
+PLK Open Data API → Airflow (pociag_processing) → PostgreSQL → api (Go) → frontend (Next.js)
+```
+
+See [docs/architecture.md](docs/architecture.md) for how it fits together.
 
 ## Quick start
 
-1. Set required local environment values in `infra/.env` (PLK base URL and API key).
-2. Start local stack:
-
 ```bash
-make infra-up
+cp infra/.env.example infra/.env   # set PLK_API_KEY (and passwords)
+make up                            # build and start everything
+make urls                          # frontend :3100, api :8080, Airflow :8090 (admin/admin)
 ```
 
-3. Run database migrations:
+Migrations run on start and the DAGs are unpaused, so data appears within minutes:
+operations every 10 min, disruptions every 15 min, stations and timetables daily at 02:30
+(trigger `sync_schedules` in Airflow for an immediate first load).
+
+## Commands
 
 ```bash
-make db-migrate-up
+make help        # everything below and more
+make test        # all checks CI runs + frontend build
+make reset       # stop and DELETE all data volumes
+make db-psql     # psql on the curated database
 ```
 
-4. Show useful local URLs:
+SQL tests run when `POCIAG_TEST_DATABASE_URL` points at a disposable database (its `public`
+schema is recreated), e.g. `postgres://pociag:pass@localhost:55432/pociag_test`.
 
-```bash
-make urls
-```
+## Layout
 
-## Common commands
-
-```bash
-# Infra
-make infra-up
-make infra-up-tracing
-make infra-up-monitoring
-make infra-up-airflow
-make infra-up-all
-make infra-down
-
-# Database
-make db-migrate-up
-make db-migrate-down
-make db-migrate-status
-
-# Go collector
-cd services/go/collector && go test -race -v ./...
-cd services/go/collector && golangci-lint run ./...
-
-# Python predictor
-cd services/python/predictor && uv run pytest tests/ -v
-cd services/python/predictor && uv run ruff check src/ tests/ && uv run mypy src/
-```
-
-## OpenCode
-
-Project configuration, specialist agents, workflow commands, and language skills are
-versioned in `opencode.json` and `.opencode/`. See [docs/opencode.md](docs/opencode.md)
-for installation, authentication, and usage.
-
-## Port mapping
-
-Use this to verify what is reachable from your host.
-
-| Service | Host port | Container port | URL / check | Profile |
-| --- | --- | --- | --- | --- |
-| Postgres (main) | 5432 | 5432 | localhost:5432 | default |
-| Collector (Go) | 8081 | 8081 | http://localhost:8081/metrics | default |
-| OTel Collector gRPC | 4317 | 4317 | localhost:4317 | default |
-| OTel Collector HTTP | 4318 | 4318 | localhost:4318 | default |
-| OTel Collector metrics | 8889 | 8889 | http://localhost:8889/metrics | default |
-| Jaeger UI | 16686 | 16686 | http://localhost:16686 | tracing/all |
-| Jaeger gRPC | 14250 | 14250 | localhost:14250 | tracing/all |
-| Prometheus | 9090 | 9090 | http://localhost:9090 | monitoring/all |
-| Grafana | 3000 | 3000 | http://localhost:3000 | monitoring/all |
-| Airflow UI | 8090 | 8080 | http://localhost:8090 | airflow/all |
-| Postgres (Airflow DB) | 5433 | 5432 | localhost:5433 | airflow/all |
-
-## Airflow login troubleshooting
-
-If you see "Bad Request: The CSRF session token is missing":
-
-1. Ensure AIRFLOW__WEBSERVER__SECRET_KEY is set in infra/.env.
-2. Restart Airflow services:
-
-```bash
-docker compose -f infra/docker-compose.yml --profile airflow down
-docker compose -f infra/docker-compose.yml --profile airflow up -d
-```
-
-3. Open Airflow in a private/incognito window or clear cookies for localhost:8090.
+| Path | What |
+|---|---|
+| `airflow/` | DAGs + `pociag_processing` plugin (PLK → PostgreSQL) |
+| `db/migrations/` | PostgreSQL schema (golang-migrate) |
+| `services/go/api/` | Read API for the frontend |
+| `services/frontend/` | Next.js UI |
+| `specs/` | API contract and pipeline spec |
+| `infra/` | docker compose stack, OTel / Prometheus / Grafana config |

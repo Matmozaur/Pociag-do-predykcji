@@ -4,7 +4,7 @@
         {
             "label": "Stack: Start full local stack",
             "type": "shell",
-            "command": "docker compose -f infra/docker-compose.yml up -d",
+            "command": "make up",
             "group": "build",
             "presentation": {
                 "reveal": "always",
@@ -41,41 +41,41 @@
             "problemMatcher": []
         },
         {
-            "label": "Go: Test collector (with race)",
+            "label": "Go: Test api (with race)",
             "type": "shell",
             "command": "go test -race -v ./...",
             "options": {
-                "cwd": "${workspaceFolder}/services/go/collector"
+                "cwd": "${workspaceFolder}/services/go/api"
             },
             "group": "test",
             "problemMatcher": "$go"
         },
         {
-            "label": "Go: Lint collector",
+            "label": "Go: Lint api",
             "type": "shell",
             "command": "golangci-lint run ./...",
             "options": {
-                "cwd": "${workspaceFolder}/services/go/collector"
+                "cwd": "${workspaceFolder}/services/go/api"
             },
             "group": "test",
             "problemMatcher": []
         },
         {
-            "label": "Python: Test predictor",
+            "label": "Python: Test airflow",
             "type": "shell",
-            "command": "uv run pytest tests/ -v",
+            "command": "uv run pytest tests -q",
             "options": {
-                "cwd": "${workspaceFolder}/services/python/predictor"
+                "cwd": "${workspaceFolder}/airflow"
             },
             "group": "test",
             "problemMatcher": []
         },
         {
-            "label": "Python: Lint predictor",
+            "label": "Python: Lint airflow",
             "type": "shell",
-            "command": "uv run ruff check src/ tests/ && uv run mypy src/",
+            "command": "uv run ruff check . && uv run mypy plugins/pociag_processing dags",
             "options": {
-                "cwd": "${workspaceFolder}/services/python/predictor"
+                "cwd": "${workspaceFolder}/airflow"
             },
             "group": "test",
             "problemMatcher": []

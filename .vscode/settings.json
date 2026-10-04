@@ -93,7 +93,7 @@
     ],
     "github.copilot.chat.pullRequestDescriptionGeneration.instructions": [
         {
-            "text": "Summarize contract changes (specs/) and DB migrations separately. List affected services (collector, data-service, gateway, airflow, frontend)."
+            "text": "Summarize contract changes (specs/) and DB migrations separately. List affected components (api, airflow, frontend)."
         }
     ],
     "chat.promptFiles": true,

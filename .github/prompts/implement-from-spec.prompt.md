@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: Implement a service from an OpenAPI or AsyncAPI spec
+description: Implement a service from an OpenAPI spec
 ---
 
 Implement code from the spec at **`${input:specFile}`** (e.g. `specs/openapi/my-service.yml`).
@@ -39,12 +39,6 @@ Follow Go conventions from `.github/copilot-instructions.md`:
 
 Follow Python conventions from `.github/copilot-instructions.md`:
 - `async def` everywhere, type annotations, OTel span per endpoint and DB call, structlog.
-
-### AsyncAPI → DAG or consumer
-
-- One channel → one Airflow task or consumer function.
-- `send` operation → Airflow task that publishes the message.
-- `receive` operation → Airflow task or service endpoint that processes the message.
 
 ## Output
 
