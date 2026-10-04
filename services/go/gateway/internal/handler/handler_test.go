@@ -115,3 +115,70 @@ func TestHandleGetStationBoard_DefaultLimit_ReturnsEmptySections(t *testing.T) {
 		t.Error("expected data_as_of to be omitted for an empty board")
 	}
 }
+
+func TestHandleGetMapTrains_InvalidCarriers_Returns400(t *testing.T) {
+	router := newBoardRouter(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("data-service should not be called, got %s", r.URL.Path)
+	})
+
+	for _, target := range []string{
+		"/api/v1/map/trains?carriers=,",
+		"/api/v1/map/trains?carriers=%20,%20",
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d", target, rec.Code)
+		}
+	}
+}
+
+func TestHandleGetMapTrains_ForwardsCarriers_Returns200(t *testing.T) {
+	var gotCarriers string
+	router := newBoardRouter(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/operations/active" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		gotCarriers = r.URL.Query().Get("carrierCodes")
+		_, _ = w.Write([]byte(`{"data":[
+			{"operation_id":1,"schedule_id":2026,"order_id":11,"operating_date":"2026-10-02","train_status":"P",
+			 "phase":"en_route","confidence":"high","last_seen_at":"2026-10-02T09:58:00Z",
+			 "position":{"latitude":50.1,"longitude":19.9,"progress":0.4,"method":"interpolated"}},
+			{"operation_id":2,"schedule_id":2026,"order_id":12,"operating_date":"2026-10-02","train_status":"S",
+			 "phase":"not_departed","confidence":"low","last_seen_at":"2026-10-02T09:58:00Z"}
+		],"total":2,"generated_at":"2026-10-02T10:00:00Z","data_as_of":"2026-10-02T09:58:00Z"}`))
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/map/trains?carriers=IC,%20KM", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if gotCarriers != "IC,KM" {
+		t.Fatalf("expected carrierCodes=IC,KM, got %q", gotCarriers)
+	}
+	var body struct {
+		Trains            []map[string]json.RawMessage `json:"trains"`
+		UnpositionedCount int                          `json:"unpositioned_count"`
+		GeneratedAt       string                       `json:"generated_at"`
+		DataAsOf          string                       `json:"data_as_of"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Trains) != 1 || body.UnpositionedCount != 1 {
+		t.Fatalf("unexpected trains/unpositioned: %d/%d", len(body.Trains), body.UnpositionedCount)
+	}
+	if body.GeneratedAt != "2026-10-02T10:00:00Z" || body.DataAsOf != "2026-10-02T09:58:00Z" {
+		t.Fatalf("unexpected timestamps: %s %s", body.GeneratedAt, body.DataAsOf)
+	}
+	if got := string(body.Trains[0]["train_name"]); got != `"Pociąg 2026/11"` {
+		t.Fatalf("unexpected train_name: %s", got)
+	}
+	for _, key := range []string{"carrier_code", "delay_minutes", "previous_stop", "next_stop", "origin", "destination"} {
+		if _, ok := body.Trains[0][key]; ok {
+			t.Errorf("expected %s to be omitted, got %s", key, body.Trains[0][key])
+		}
+	}
+}

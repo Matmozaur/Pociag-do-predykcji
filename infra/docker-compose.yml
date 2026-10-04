@@ -32,12 +32,26 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      RAW_OPERATIONS_RETENTION_DAYS: ${RAW_OPERATIONS_RETENTION_DAYS:-3}
     entrypoint: /bin/sh
-    command: '-c " mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin}
-      ${MINIO_ROOT_PASSWORD} && mc mb --ignore-existing local/pociag-lake && mc anonymous
-      set download local/pociag-lake "
-
-      '
+    # ILM for raw/operations/ is idempotent: edit the existing rule for that prefix
+    # (found by ID) or add it once. Rules for other prefixes are left untouched.
+    command:
+    - -c
+    - |
+      set -e
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD}
+      mc mb --ignore-existing local/pociag-lake
+      mc anonymous set download local/pociag-lake
+      rules=$$(mc ilm rule ls --json local/pociag-lake 2>/dev/null || true)
+      re='"ID":"([[:alnum:]_-]+)","Filter":\{"Prefix":"raw/operations/"'
+      if [[ $$rules =~ $$re ]]; then
+        mc ilm rule edit --id "$${BASH_REMATCH[1]}" --expire-days "$$RAW_OPERATIONS_RETENTION_DAYS" local/pociag-lake
+      else
+        mc ilm rule add --prefix raw/operations/ --expire-days "$$RAW_OPERATIONS_RETENTION_DAYS" local/pociag-lake
+      fi
+      mc ilm rule ls local/pociag-lake
     restart: on-failure
   postgres:
     image: postgres:16-alpine

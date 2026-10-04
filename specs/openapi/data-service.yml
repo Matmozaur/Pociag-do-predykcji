@@ -2,7 +2,7 @@ openapi: "3.1.0"
 
 info:
   title: "Pociag Data Service API"
-  version: "0.2.0"
+  version: "0.3.0"
   description: |
     Internal domain read service.
     Exposes curated schedules, operations, disruptions, and dictionaries.
@@ -319,6 +319,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OperationStatistics"
+
+  /api/v1/operations/active:
+    get:
+      summary: List active trains with estimated positions
+      description: |
+        Returns the trains running at the reference instant `at`, each with its phase,
+        surrounding stops and an estimated position.
+
+        Effective times: for each non-cancelled stop, ordered by actual sequence number, the
+        effective arrival is the actual arrival, else the planned arrival + the last known
+        delay; the effective departure follows the same rule. On a confirmed stop the actual
+        time is observed; on an unconfirmed stop it is PLK's forecast. The first stop uses its
+        departure and the last stop its arrival. A stop with neither time is skipped.
+
+        Active predicate (all must hold): (1) train_status = 'P', or train_status = 'S' once
+        `at` >= effective departure of the first stop; status 'Q' and every other status are
+        excluded, so `train_status` is always S or P; (2) operating_date is the Europe/Warsaw
+        date of `at` or the day before; (3) the operation was seen in a recent snapshot:
+        updated_at >= MAX(train_operations.updated_at) - 15 minutes; (4) effective departure
+        of the first stop - 5 minutes <= `at` <= effective arrival of the last stop (no
+        post-arrival grace period).
+
+        Because of (4) the list never contains phase `arrived`. That value stays in the enum
+        for consumers that share the ActiveTrain model (station board, train detail). Entries
+        are ordered by operation_id and truncated to `limit`; `total` counts all active trains
+        that match the filters.
+      operationId: listActiveOperations
+      tags: [operations]
+      parameters:
+        - name: at
+          in: query
+          description: Reference instant (RFC 3339); defaults to the current time
+          schema:
+            type: string
+            format: date-time
+        - name: carrierCodes
+          in: query
+          description: Comma-separated carrier codes
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of trains to return
+          schema:
+            type: integer
+            default: 2000
+            minimum: 1
+            maximum: 5000
+      responses:
+        "200":
+          description: Active trains
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveTrainListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 
   # ── Disruptions ────────────────────────────────────────────────────────────
 
@@ -1174,6 +1231,179 @@ components:
           description: Bucketed entries, truncated per bucket, ordered by board time
           items:
             $ref: "#/components/schemas/StationBoardEntry"
+
+    StopRef:
+      type: object
+      required: [station_external_id]
+      additionalProperties: false
+      properties:
+        station_external_id:
+          type: integer
+        station_name:
+          type: string
+          description: Omitted when the station is missing from the stations table
+
+    StopTiming:
+      type: object
+      required: [station_external_id, sequence_number, time, is_confirmed]
+      additionalProperties: false
+      properties:
+        station_external_id:
+          type: integer
+        station_name:
+          type: string
+          description: Omitted when the station is missing from the stations table
+        sequence_number:
+          type: integer
+          description: Actual sequence number of this stop within the operation
+        time:
+          type: string
+          format: date-time
+          description: >-
+            Effective time (UTC instant) at this stop; which one (arrival or departure) is
+            stated by the referencing property
+        is_confirmed:
+          type: boolean
+          description: Whether PLK confirmed the stop (time observed rather than forecast)
+        latitude:
+          type: number
+          format: double
+          description: Omitted when the station has no coordinates
+        longitude:
+          type: number
+          format: double
+          description: Omitted when the station has no coordinates
+
+    TrainPosition:
+      type: object
+      required: [latitude, longitude, progress, method]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        progress:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: >-
+            (at - departure(A)) / (arrival(B) - departure(A)) between anchors A and B, clamped
+            to [0, 1]; 0 when the position is a station
+        method:
+          type: string
+          enum: [station, interpolated, interpolated_sparse]
+          description: >-
+            station: at a stop with coordinates; interpolated: between adjacent stops;
+            interpolated_sparse: between the nearest stops with coordinates, which are not
+            adjacent. When no anchor has coordinates the parent omits `position`.
+
+    ActiveTrain:
+      type: object
+      required:
+        [
+          operation_id,
+          schedule_id,
+          order_id,
+          operating_date,
+          train_status,
+          phase,
+          confidence,
+        ]
+      additionalProperties: false
+      properties:
+        operation_id:
+          type: integer
+          format: int64
+        schedule_id:
+          type: integer
+        order_id:
+          type: integer
+        operating_date:
+          type: string
+          format: date
+        train_status:
+          type: string
+          enum: [S, P]
+          description: Only S and P pass the active predicate (see listActiveOperations)
+        route_name:
+          type: string
+          description: Omitted when the route is missing from the routes table
+        carrier_code:
+          type: string
+          description: Omitted when the route is missing from the routes table
+        origin:
+          $ref: "#/components/schemas/StopRef"
+        destination:
+          $ref: "#/components/schemas/StopRef"
+        phase:
+          type: string
+          enum: [not_departed, at_station, en_route, arrived]
+          description: >-
+            Phase at `at`. `arrived` (after the effective arrival at the last stop) is never
+            returned by listActiveOperations, which has no post-arrival grace period; it is
+            kept for other consumers of this model.
+        previous_stop:
+          $ref: "#/components/schemas/StopTiming"
+          description: >-
+            Segment start: the stop the train is at or last departed from (anchor A when the
+            position is interpolated); `time` is its effective departure. The first stop in
+            phase not_departed. Omitted when unknown.
+        next_stop:
+          $ref: "#/components/schemas/StopTiming"
+          description: >-
+            Segment end: the next stop ahead (anchor B when the position is interpolated);
+            `time` is its effective arrival. Omitted at the last stop.
+        last_confirmed_stop:
+          $ref: "#/components/schemas/StopTiming"
+          description: >-
+            Last stop PLK confirmed; `time` is its effective departure, else effective
+            arrival. Omitted when no stop is confirmed.
+        delay_minutes:
+          type: integer
+          description: >-
+            Delay at the last confirmed stop (departure, else arrival); negative when early.
+            Omitted when no stop is confirmed.
+        position:
+          $ref: "#/components/schemas/TrainPosition"
+          description: Estimated position at `at`; omitted when no anchor stop has coordinates
+        confidence:
+          type: string
+          enum: [high, medium, low]
+          description: >-
+            high: snapshot under 15 min old and last confirmation under 20 min old; medium:
+            snapshot under 30 min old; low: otherwise
+        last_seen_at:
+          type: string
+          format: date-time
+          description: train_operations.updated_at of this operation
+
+    ActiveTrainListResponse:
+      type: object
+      required: [data, generated_at, data_as_of]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActiveTrain"
+        total:
+          type: integer
+          description: Number of active trains matching the filters, before `limit`
+        generated_at:
+          type: string
+          format: date-time
+          description: >-
+            Time the response was generated (server clock); positions are evaluated at `at`,
+            which defaults to this time
+        data_as_of:
+          type: string
+          format: date-time
+          description: >-
+            MAX(train_operations.updated_at): when operations were last refreshed from PLK
 
     # ── Disruptions ────────────────────────────────────────────────────────────
     DisruptionSummary:

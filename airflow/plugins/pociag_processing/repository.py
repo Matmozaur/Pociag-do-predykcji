@@ -7,6 +7,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from psycopg2.extras import execute_values
 
 from pociag_processing.models import PipelineName, UpsertResult
 from pociag_processing.tracing import get_tracer
@@ -81,6 +82,7 @@ class SyncRepository:
             WHERE pipeline = %s
               AND run_date = %s
               AND status = 'running'
+              AND started_at > NOW() - interval '30 minutes'
         )
         """
         with self._tracer.start_as_current_span("db.ingestion_runs.exists"):
@@ -578,12 +580,12 @@ class SyncRepository:
         op_query = """
         INSERT INTO train_operations
             (schedule_id, order_id, train_order_id, operating_date, train_status)
-        VALUES (%s, %s, %s, %s, %s)
+        VALUES %s
         ON CONFLICT (schedule_id, order_id, operating_date) DO UPDATE
         SET train_order_id = EXCLUDED.train_order_id,
             train_status = EXCLUDED.train_status,
             updated_at = NOW()
-        RETURNING id
+        RETURNING id, schedule_id, order_id, operating_date
         """
         station_query = """
         INSERT INTO operation_stations (
@@ -594,7 +596,7 @@ class SyncRepository:
             actual_arrival, actual_departure,
             is_confirmed, is_cancelled
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES %s
         ON CONFLICT (train_operation_id, actual_sequence_number) DO UPDATE
         SET station_external_id = EXCLUDED.station_external_id,
             planned_sequence_number = EXCLUDED.planned_sequence_number,
@@ -608,50 +610,67 @@ class SyncRepository:
             is_cancelled = EXCLUDED.is_cancelled,
             updated_at = NOW()
         """
-        records_written = 0
+        # A single INSERT ... ON CONFLICT may not touch the same row twice, so duplicates within
+        # one call are collapsed here; the last occurrence wins, as with row-by-row upserts.
+        op_rows: dict[tuple[Any, Any, date], tuple[Any, ...]] = {}
+        for op in operations:
+            operating_date_value = op.get("operatingDate")
+            if not isinstance(operating_date_value, str):
+                raise ValueError("operation is missing operatingDate")
+            operating_date = _parse_date(operating_date_value)
+            key = (op.get("scheduleId"), op.get("orderId"), operating_date)
+            op_rows.pop(key, None)
+            op_rows[key] = (
+                op.get("scheduleId"),
+                op.get("orderId"),
+                op.get("trainOrderId"),
+                operating_date,
+                op.get("trainStatus"),
+            )
+        records_written = len(operations)
         with self._tracer.start_as_current_span("db.train_operations.upsert"):
             conn = self._get_conn()
             try:
                 with conn.cursor() as cur:
-                    for op in operations:
-                        operating_date_value = op.get("operatingDate")
-                        if not isinstance(operating_date_value, str):
-                            raise ValueError("operation is missing operatingDate")
-                        cur.execute(
-                            op_query,
-                            (
-                                op.get("scheduleId"),
-                                op.get("orderId"),
-                                op.get("trainOrderId"),
-                                _parse_date(operating_date_value),
-                                op.get("trainStatus"),
-                            ),
+                    op_ids: dict[tuple[Any, Any, date], int] = {}
+                    if op_rows:
+                        returned = execute_values(
+                            cur, op_query, list(op_rows.values()), page_size=1000, fetch=True
                         )
-                        row = cur.fetchone()
-                        if row is None:
-                            raise RuntimeError("failed to upsert train operation")
-                        op_id = int(row[0])
-                        records_written += 1
+                        op_ids = {(r[1], r[2], r[3]): int(r[0]) for r in returned}
 
+                    station_rows: dict[tuple[int, Any], tuple[Any, ...]] = {}
+                    for op in operations:
+                        key = (
+                            op.get("scheduleId"),
+                            op.get("orderId"),
+                            _parse_date(op["operatingDate"]),
+                        )
+                        op_id = op_ids.get(key)
+                        if op_id is None:
+                            raise RuntimeError("failed to upsert train operation")
                         stations: list[dict[str, Any]] = op.get("stations") or []
                         for stn in stations:
-                            cur.execute(
-                                station_query,
-                                (
-                                    op_id,
-                                    stn.get("stationId"),
-                                    stn.get("plannedSequenceNumber"),
-                                    stn.get("actualSequenceNumber"),
-                                    _parse_plk_local_timestamp(stn.get("plannedArrival")),
-                                    _parse_plk_local_timestamp(stn.get("plannedDeparture")),
-                                    stn.get("arrivalDelayMinutes"),
-                                    stn.get("departureDelayMinutes"),
-                                    _parse_plk_local_timestamp(stn.get("actualArrival")),
-                                    _parse_plk_local_timestamp(stn.get("actualDeparture")),
-                                    stn.get("isConfirmed", False),
-                                    stn.get("isCancelled", False),
-                                ),
+                            stn_key = (op_id, stn.get("actualSequenceNumber"))
+                            station_rows.pop(stn_key, None)
+                            station_rows[stn_key] = (
+                                op_id,
+                                stn.get("stationId"),
+                                stn.get("plannedSequenceNumber"),
+                                stn.get("actualSequenceNumber"),
+                                _parse_plk_local_timestamp(stn.get("plannedArrival")),
+                                _parse_plk_local_timestamp(stn.get("plannedDeparture")),
+                                stn.get("arrivalDelayMinutes"),
+                                stn.get("departureDelayMinutes"),
+                                _parse_plk_local_timestamp(stn.get("actualArrival")),
+                                _parse_plk_local_timestamp(stn.get("actualDeparture")),
+                                stn.get("isConfirmed", False),
+                                stn.get("isCancelled", False),
                             )
+                    if station_rows:
+                        execute_values(
+                            cur, station_query, list(station_rows.values()), page_size=1000
+                        )
                     conn.commit()
             except Exception:
                 conn.rollback()

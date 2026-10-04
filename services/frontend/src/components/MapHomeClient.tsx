@@ -181,11 +181,10 @@ function MapHome() {
                     <div className="mb-1 flex items-center justify-between"><h2 id="disruptions-heading" className="text-sm font-semibold text-white">Aktywne utrudnienia</h2><Link href="/utrudnienia" className="text-xs font-medium text-blue-300 hover:text-blue-200">Pełna lista</Link></div>
                     {disruptionsQuery.isLoading ? <div className="flex justify-center py-5"><Spinner /></div> : disruptionsQuery.isError ? <QueryMessage onRetry={() => disruptionsQuery.refetch()}>Nie udało się pobrać utrudnień.</QueryMessage> : disruptionsQuery.data?.data.length ? <div>{disruptionsQuery.data.data.map((disruption) => <DisruptionRow key={disruption.id} disruption={disruption} />)}</div> : <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><CheckCircle2 size={17} className="text-emerald-400" /> Brak aktywnych utrudnień.</div>}
                 </section>
-                <p className="mt-4 border-t border-white/8 pt-3 text-[11px] leading-relaxed text-slate-500">Mapa pokazuje infrastrukturę kolejową. Dane operacyjne są prezentowane na liście, bez przybliżania pozycji pociągów.</p>
+                <p className="mt-4 border-t border-white/8 pt-3 text-[11px] leading-relaxed text-slate-500">Pozycje pociągów na mapie są szacowane na podstawie rozkładu i ostatnich potwierdzeń PLK, więc mogą odbiegać od rzeczywistych.</p>
                 </>
                 )}
             </section>
-            <div className="pointer-events-none absolute right-4 top-4 z-[400] hidden rounded-full border border-white/10 bg-[#121622]/85 px-3 py-1.5 text-xs text-slate-300 shadow-lg backdrop-blur md:block">Warstwa infrastruktury kolejowej</div>
         </div>
     )
 }

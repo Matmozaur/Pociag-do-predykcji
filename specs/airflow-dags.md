@@ -101,7 +101,7 @@ run in the past 7 days, the DAG proceeds immediately regardless of schedule.
 | Schedule | `0 2 * * *` (Daily 02:00 UTC) |
 | Catchup | `False` |
 | Retries | 2, delay 5min |
-| Purpose | Pull yesterday's completed operations for historical analysis |
+| Purpose | Daily capture of PLK operations; the endpoint returns a real-time snapshot of current operations, not a closed "yesterday" set |
 
 ### Tasks
 
@@ -164,7 +164,7 @@ raw_disruptions -> Processor /process/disruptions -> curated disruptions
 | Schedule | `*/10 * * * *` (every 10 minutes) |
 | Catchup | `False` |
 | Max active runs | 1 |
-| Retries | 1, delay 1min |
+| Retries | 0 (the next tick is the retry) |
 | Run timeout | 9min (`dagrun_timeout`) |
 | Tags | `["pociag", "ingestion"]` |
 | Purpose | Keep `train_operations` close to the current PLK real-time snapshot for "live" views |
@@ -179,6 +179,8 @@ raw_disruptions -> Processor /process/disruptions -> curated disruptions
    ```
    - If the collector answers `409` (fetch already running), log and succeed; the run is skipped
      and `process_operations` does nothing.
+   - `capture_date` is parsed from the response's `lake_prefix` (`raw/operations/YYYY/MM/DD/`),
+     not the worker's date, so it always matches the collector's UTC landing date.
 
 2. **process_operations** — plugin `process_operations(capture_date, ingestion_run_id)`
    - Always passes the `ingestion_run_id` of this run's fetch so only the latest snapshot's
