@@ -1,0 +1,288 @@
+{
+ "generatedAt": "2026-10-04T15:30:00Z",
+ "pagination": {
+  "page": 2,
+  "pageSize": 1,
+  "totalCount": 2,
+  "totalPages": 2,
+  "hasNextPage": false,
+  "hasPreviousPage": true
+ },
+ "trains": [
+  {
+   "scheduleId": 2026,
+   "orderId": 546554298,
+   "trainOrderId": 546554298,
+   "operatingDate": "2026-10-05",
+   "trainStatus": "S",
+   "stations": [
+    {
+     "stationId": 35311,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "plannedArrival": "2026-10-05T23:41:00",
+     "plannedDeparture": "2026-10-05T23:41:00",
+     "plannedArrivalTime": "23:41:00",
+     "plannedDepartureTime": "23:41:00",
+     "actualArrival": "2026-10-05T23:41:00",
+     "actualDeparture": "2026-10-05T23:41:00"
+    },
+    {
+     "stationId": 35279,
+     "plannedSequenceNumber": 2,
+     "actualSequenceNumber": 2,
+     "plannedArrival": "2026-10-05T23:44:00",
+     "plannedDeparture": "2026-10-05T23:44:00",
+     "plannedArrivalTime": "23:44:00",
+     "plannedDepartureTime": "23:44:00",
+     "actualArrival": "2026-10-05T23:44:00",
+     "actualDeparture": "2026-10-05T23:44:00"
+    },
+    {
+     "stationId": 35261,
+     "plannedSequenceNumber": 3,
+     "actualSequenceNumber": 3,
+     "plannedArrival": "2026-10-05T23:46:00",
+     "plannedDeparture": "2026-10-05T23:46:00",
+     "plannedArrivalTime": "23:46:00",
+     "plannedDepartureTime": "23:46:00",
+     "actualArrival": "2026-10-05T23:46:00",
+     "actualDeparture": "2026-10-05T23:46:00"
+    },
+    {
+     "stationId": 35253,
+     "plannedSequenceNumber": 4,
+     "actualSequenceNumber": 4,
+     "plannedArrival": "2026-10-05T23:48:00",
+     "plannedDeparture": "2026-10-05T23:48:00",
+     "plannedArrivalTime": "23:48:00",
+     "plannedDepartureTime": "23:48:00",
+     "actualArrival": "2026-10-05T23:48:00",
+     "actualDeparture": "2026-10-05T23:48:00"
+    },
+    {
+     "stationId": 35246,
+     "plannedSequenceNumber": 5,
+     "actualSequenceNumber": 5,
+     "plannedArrival": "2026-10-05T23:50:00",
+     "plannedDeparture": "2026-10-05T23:50:00",
+     "plannedArrivalTime": "23:50:00",
+     "plannedDepartureTime": "23:50:00",
+     "actualArrival": "2026-10-05T23:50:00",
+     "actualDeparture": "2026-10-05T23:50:00"
+    },
+    {
+     "stationId": 35212,
+     "plannedSequenceNumber": 6,
+     "actualSequenceNumber": 6,
+     "plannedArrival": "2026-10-05T23:52:00",
+     "plannedDeparture": "2026-10-05T23:52:00",
+     "plannedArrivalTime": "23:52:00",
+     "plannedDepartureTime": "23:52:00",
+     "actualArrival": "2026-10-05T23:52:00",
+     "actualDeparture": "2026-10-05T23:52:00"
+    },
+    {
+     "stationId": 35196,
+     "plannedSequenceNumber": 7,
+     "actualSequenceNumber": 7,
+     "plannedArrival": "2026-10-05T23:54:00",
+     "plannedDeparture": "2026-10-05T23:54:00",
+     "plannedArrivalTime": "23:54:00",
+     "plannedDepartureTime": "23:54:00",
+     "actualArrival": "2026-10-05T23:54:00",
+     "actualDeparture": "2026-10-05T23:54:00"
+    },
+    {
+     "stationId": 35188,
+     "plannedSequenceNumber": 8,
+     "actualSequenceNumber": 8,
+     "plannedArrival": "2026-10-05T23:56:00",
+     "plannedDeparture": "2026-10-05T23:56:00",
+     "plannedArrivalTime": "23:56:00",
+     "plannedDepartureTime": "23:56:00",
+     "actualArrival": "2026-10-05T23:56:00",
+     "actualDeparture": "2026-10-05T23:56:00"
+    },
+    {
+     "stationId": 35162,
+     "plannedSequenceNumber": 9,
+     "actualSequenceNumber": 9,
+     "plannedArrival": "2026-10-05T23:58:00",
+     "plannedDeparture": "2026-10-05T23:59:00",
+     "plannedArrivalTime": "23:58:00",
+     "plannedDepartureTime": "23:59:00",
+     "actualArrival": "2026-10-05T23:58:00",
+     "actualDeparture": "2026-10-05T23:59:00"
+    },
+    {
+     "stationId": 35154,
+     "plannedSequenceNumber": 10,
+     "actualSequenceNumber": 10,
+     "plannedArrival": "2026-10-05T00:01:00",
+     "plannedDeparture": "2026-10-05T00:01:00",
+     "plannedArrivalTime": "00:01:00",
+     "plannedDepartureTime": "00:01:00",
+     "actualArrival": "2026-10-06T00:01:00",
+     "actualDeparture": "2026-10-06T00:01:00"
+    },
+    {
+     "stationId": 35147,
+     "plannedSequenceNumber": 11,
+     "actualSequenceNumber": 11,
+     "plannedArrival": "2026-10-05T00:03:00",
+     "plannedDeparture": "2026-10-05T00:03:00",
+     "plannedArrivalTime": "00:03:00",
+     "plannedDepartureTime": "00:03:00",
+     "actualArrival": "2026-10-06T00:03:00",
+     "actualDeparture": "2026-10-06T00:03:00"
+    },
+    {
+     "stationId": 35139,
+     "plannedSequenceNumber": 12,
+     "actualSequenceNumber": 12,
+     "plannedArrival": "2026-10-05T00:05:00",
+     "plannedDeparture": "2026-10-05T00:05:00",
+     "plannedArrivalTime": "00:05:00",
+     "plannedDepartureTime": "00:05:00",
+     "actualArrival": "2026-10-06T00:05:00",
+     "actualDeparture": "2026-10-06T00:05:00"
+    },
+    {
+     "stationId": 35121,
+     "plannedSequenceNumber": 13,
+     "actualSequenceNumber": 13,
+     "plannedArrival": "2026-10-05T00:07:00",
+     "plannedDeparture": "2026-10-05T00:07:00",
+     "plannedArrivalTime": "00:07:00",
+     "plannedDepartureTime": "00:07:00",
+     "actualArrival": "2026-10-06T00:07:00",
+     "actualDeparture": "2026-10-06T00:07:00"
+    },
+    {
+     "stationId": 35097,
+     "plannedSequenceNumber": 14,
+     "actualSequenceNumber": 14,
+     "plannedArrival": "2026-10-05T00:09:00",
+     "plannedDeparture": "2026-10-05T00:09:00",
+     "plannedArrivalTime": "00:09:00",
+     "plannedDepartureTime": "00:09:00",
+     "actualArrival": "2026-10-06T00:09:00",
+     "actualDeparture": "2026-10-06T00:09:00"
+    },
+    {
+     "stationId": 35071,
+     "plannedSequenceNumber": 15,
+     "actualSequenceNumber": 15,
+     "plannedArrival": "2026-10-05T00:12:00",
+     "plannedDeparture": "2026-10-05T00:12:00",
+     "plannedArrivalTime": "00:12:00",
+     "plannedDepartureTime": "00:12:00",
+     "actualArrival": "2026-10-06T00:12:00",
+     "actualDeparture": "2026-10-06T00:12:00"
+    },
+    {
+     "stationId": 35063,
+     "plannedSequenceNumber": 16,
+     "actualSequenceNumber": 16,
+     "plannedArrival": "2026-10-05T00:14:00",
+     "plannedDeparture": "2026-10-05T00:14:00",
+     "plannedArrivalTime": "00:14:00",
+     "plannedDepartureTime": "00:14:00",
+     "actualArrival": "2026-10-06T00:14:00",
+     "actualDeparture": "2026-10-06T00:14:00"
+    },
+    {
+     "stationId": 35055,
+     "plannedSequenceNumber": 17,
+     "actualSequenceNumber": 17,
+     "plannedArrival": "2026-10-05T00:16:00",
+     "plannedDeparture": "2026-10-05T00:16:00",
+     "plannedArrivalTime": "00:16:00",
+     "plannedDepartureTime": "00:16:00",
+     "actualArrival": "2026-10-06T00:16:00",
+     "actualDeparture": "2026-10-06T00:16:00"
+    },
+    {
+     "stationId": 35030,
+     "plannedSequenceNumber": 18,
+     "actualSequenceNumber": 18,
+     "plannedArrival": "2026-10-05T00:18:00",
+     "plannedDeparture": "2026-10-05T00:18:00",
+     "plannedArrivalTime": "00:18:00",
+     "plannedDepartureTime": "00:18:00",
+     "actualArrival": "2026-10-06T00:18:00",
+     "actualDeparture": "2026-10-06T00:18:00"
+    },
+    {
+     "stationId": 35048,
+     "plannedSequenceNumber": 19,
+     "actualSequenceNumber": 19,
+     "plannedArrival": "2026-10-05T00:20:00",
+     "plannedDeparture": "2026-10-05T00:20:00",
+     "plannedArrivalTime": "00:20:00",
+     "plannedDepartureTime": "00:20:00",
+     "actualArrival": "2026-10-06T00:20:00",
+     "actualDeparture": "2026-10-06T00:20:00"
+    },
+    {
+     "stationId": 33506,
+     "plannedSequenceNumber": 20,
+     "actualSequenceNumber": 20,
+     "plannedArrival": "2026-10-05T00:23:00",
+     "plannedDeparture": "2026-10-05T00:23:00",
+     "plannedArrivalTime": "00:23:00",
+     "plannedDepartureTime": "00:23:00",
+     "actualArrival": "2026-10-06T00:23:00",
+     "actualDeparture": "2026-10-06T00:23:00"
+    },
+    {
+     "stationId": 35014,
+     "plannedSequenceNumber": 21,
+     "actualSequenceNumber": 21,
+     "plannedArrival": "2026-10-05T00:25:00",
+     "plannedDeparture": "2026-10-05T00:25:00",
+     "plannedArrivalTime": "00:25:00",
+     "plannedDepartureTime": "00:25:00",
+     "actualArrival": "2026-10-06T00:25:00",
+     "actualDeparture": "2026-10-06T00:25:00"
+    },
+    {
+     "stationId": 35006,
+     "plannedSequenceNumber": 22,
+     "actualSequenceNumber": 22,
+     "plannedArrival": "2026-10-05T00:28:00",
+     "plannedDeparture": "2026-10-05T00:28:00",
+     "plannedArrivalTime": "00:28:00",
+     "plannedDepartureTime": "00:28:00",
+     "actualArrival": "2026-10-06T00:28:00",
+     "actualDeparture": "2026-10-06T00:28:00"
+    }
+   ]
+  }
+ ],
+ "stations": {
+  "35006": "Warszawa Śródmieście WKD",
+  "35014": "Warszawa Ochota WKD",
+  "33506": "Warszawa Zachodnia",
+  "35048": "Warszawa Reduta Ordona WKD",
+  "35030": "Warszawa Aleje Jerozolimskie WKD",
+  "35055": "Warszawa Raków WKD",
+  "35063": "Warszawa Salomea WKD",
+  "35071": "Opacz",
+  "35097": "Michałowice",
+  "35121": "Reguły",
+  "35139": "Malichy",
+  "35147": "Tworki",
+  "35154": "Pruszków WKD",
+  "35162": "Komorów",
+  "35188": "Nowa Wieś Warszawska",
+  "35196": "Kanie Helenowskie",
+  "35212": "Otrębusy",
+  "35246": "Podkowa Leśna Wschodnia",
+  "35253": "Podkowa Leśna Główna",
+  "35261": "Podkowa Leśna Zachodnia",
+  "35311": "Milanówek Grudów",
+  "35279": "Polesie"
+ }
+}

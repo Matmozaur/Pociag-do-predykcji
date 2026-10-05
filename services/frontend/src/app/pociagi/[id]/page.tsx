@@ -6,7 +6,7 @@ import { ArrowLeft, CheckCircle2, Circle, XCircle } from 'lucide-react'
 import {
     delayVariant,
     formatDelay,
-    gateway,
+    api,
     statusLabel,
     statusVariant,
     type TrainStopView,
@@ -87,7 +87,7 @@ export default function TrainDetailPage() {
     const operationId = id && /^\d+$/.test(id) ? parseInt(id, 10) : null
     const trainQuery = useQuery({
         queryKey: ['trainDetail', operationId],
-        queryFn: () => gateway.getTrainDetail(operationId!),
+        queryFn: () => api.getTrainDetail(operationId!),
         enabled: operationId !== null,
         refetchInterval: 60_000,
         staleTime: 30_000,

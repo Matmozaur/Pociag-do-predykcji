@@ -6,11 +6,11 @@ These instructions are for AI coding agents working in this repository.
 
 - Read [README.md](../README.md) for local setup and entry commands.
 - Read [docs/architecture.md](../docs/architecture.md) for system boundaries.
-- Treat contracts in [specs/openapi](../specs/openapi), [specs/asyncapi](../specs/asyncapi), and [specs/schemas](../specs/schemas) as source of truth.
+- Treat [specs/openapi/api.yml](../specs/openapi/api.yml) and [specs/pipelines.md](../specs/pipelines.md) as source of truth.
 
 ## Contract-First Rules
 
-1. Specs first: do not add endpoints, fields, events, or schema attributes not defined in specs.
+1. Specs first: do not add endpoints, fields, or schema attributes not defined in specs.
 2. If implementation requires a contract change, update specs first, then code.
 3. If docs disagree, trust these files in order:
    - [infra/docker-compose.yml](../infra/docker-compose.yml) for runtime ports/services
@@ -19,14 +19,9 @@ These instructions are for AI coding agents working in this repository.
 
 ## Current Architecture Snapshot
 
-- Go services:
-  - collector: PLK ingest to MinIO raw Parquet
-  - data-service: read API over curated Postgres tables
-  - gateway: frontend-facing BFF
-- Python processing runs as an Airflow plugin, not a standalone processor API service.
-- Frontend exists in [services/frontend](../services/frontend).
-- Airflow DAGs and plugin code live in [airflow/dags](../airflow/dags) and [airflow/plugins](../airflow/plugins).
-- Historical context for the processor move: [docs/decisions/003-processor-to-airflow-plugin.md](../docs/decisions/003-processor-to-airflow-plugin.md).
+- Ingestion: Airflow DAGs and the `pociag_processing` plugin ([airflow/](../airflow)) fetch the PLK API and write PostgreSQL.
+- Serving: one Go read API, [services/go/api](../services/go/api).
+- Frontend: [services/frontend](../services/frontend), talks only to the api.
 
 ## Coding Conventions
 
@@ -55,10 +50,9 @@ These instructions are for AI coding agents working in this repository.
 
 - Preferred local entrypoint: [Makefile](../Makefile).
 - Useful targets:
-  - infra-up, infra-up-tracing, infra-up-monitoring, infra-up-airflow, infra-up-all, infra-down
+  - up, up-core, down, reset
   - db-migrate-up, db-migrate-down, db-migrate-status
-  - collector-test, data-service-test, gateway-test
-  - collector-lint, data-service-lint, gateway-lint
+  - test, api-test, api-lint, airflow-test, airflow-lint, frontend-build
 - CI reference for exact checks: [.github/workflows/ci-cd.yaml](workflows/ci-cd.yaml).
 
 ## Shell Environment
@@ -68,12 +62,6 @@ These instructions are for AI coding agents working in this repository.
 - Do not use wrapper forms such as wsl bash -c or wsl -e for normal execution.
 - Avoid PowerShell for repo tasks unless the task is explicitly Windows-specific.
 
-## Known Drift to Watch
-
-- Some task/docs references still mention services/python/predictor; current Python execution path is Airflow plugin-based.
-- Some historical docs list older host ports; use [infra/docker-compose.yml](../infra/docker-compose.yml) as the runtime source of truth.
-
 ## Additional References
 
-- Architecture decision records: [docs/decisions](../docs/decisions)
 - Copilot CLI usage patterns: [docs/copilot-cli.md](../docs/copilot-cli.md)

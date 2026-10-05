@@ -1,58 +1,27 @@
 name: pociag
-x-logging: &id001
+
+x-logging: &logging
   driver: json-file
   options:
     max-size: 10m
     max-file: '3'
+
+# Shared by every Airflow container. Connections are defined here, not in the Airflow DB:
+# pociag_postgres (curated database) and pociag_plk (PLK Open Data API base URL + key).
+x-airflow-env: &airflow-env
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/airflow
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+  AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+  AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
+  AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth
+  AIRFLOW_CONN_POCIAG_POSTGRES: '{"conn_type": "postgres", "host": "postgres", "port": 5432, "login": "pociag", "password": "${POSTGRES_PASSWORD}", "schema": "pociag"}'
+  AIRFLOW_CONN_POCIAG_PLK: '{"conn_type": "http", "host": "${PLK_BASE_URL:?Set PLK_BASE_URL in infra/.env}", "password": "${PLK_API_KEY:?Set PLK_API_KEY in infra/.env}"}'
+  OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+
 services:
-  minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
-    restart: unless-stopped
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: server /data --console-address ":9001"
-    ports:
-    - 9000:9000
-    - 9001:9001
-    volumes:
-    - minio_data:/data
-    healthcheck:
-      test:
-      - CMD
-      - mc
-      - ready
-      - local
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    logging: *id001
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      RAW_OPERATIONS_RETENTION_DAYS: ${RAW_OPERATIONS_RETENTION_DAYS:-3}
-    entrypoint: /bin/sh
-    # ILM for raw/operations/ is idempotent: edit the existing rule for that prefix
-    # (found by ID) or add it once. Rules for other prefixes are left untouched.
-    command:
-    - -c
-    - |
-      set -e
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD}
-      mc mb --ignore-existing local/pociag-lake
-      mc anonymous set download local/pociag-lake
-      rules=$$(mc ilm rule ls --json local/pociag-lake 2>/dev/null || true)
-      re='"ID":"([[:alnum:]_-]+)","Filter":\{"Prefix":"raw/operations/"'
-      if [[ $$rules =~ $$re ]]; then
-        mc ilm rule edit --id "$${BASH_REMATCH[1]}" --expire-days "$$RAW_OPERATIONS_RETENTION_DAYS" local/pociag-lake
-      else
-        mc ilm rule add --prefix raw/operations/ --expire-days "$$RAW_OPERATIONS_RETENTION_DAYS" local/pociag-lake
-      fi
-      mc ilm rule ls local/pociag-lake
-    restart: on-failure
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -61,285 +30,190 @@ services:
       POSTGRES_USER: pociag
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-    - 5434:5432
+      - 5434:5432
     volumes:
-    - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test:
-      - CMD-SHELL
-      - pg_isready -U pociag -d pociag
+      test: [CMD-SHELL, pg_isready -U pociag -d pociag]
       interval: 5s
       timeout: 3s
       retries: 10
-    logging: *id001
+    logging: *logging
+
   migrate:
     image: migrate/migrate:v4.18.1
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-    - ../db/migrations:/migrations:ro
-    command: '-path /migrations -database postgres://pociag:${POSTGRES_PASSWORD}@postgres:5432/pociag?sslmode=disable
-      up
-
-      '
+      - ../db/migrations:/migrations:ro
+    command: -path /migrations -database postgres://pociag:${POSTGRES_PASSWORD}@postgres:5432/pociag?sslmode=disable up
     restart: on-failure
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.117.0
     restart: unless-stopped
     volumes:
-    - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
+      - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
     ports:
-    - 4327:4317
-    - 4328:4318
-    - 8889:8889
-    logging: *id001
-  collector:
+      - 4327:4317
+      - 4328:4318
+      - 8889:8889
+    logging: *logging
+
+  api:
     build:
-      context: ../services/go/collector
-      dockerfile: Dockerfile
+      context: ../services/go/api
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       otel-collector:
         condition: service_started
     environment:
-      HTTP_ADDR: :8081
-      DATABASE_DSN: postgres://pociag:${POSTGRES_PASSWORD}@postgres:5432/pociag?sslmode=disable
-      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
-      S3_ENDPOINT: http://minio:9000
-      S3_BUCKET: pociag-lake
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      S3_USE_PATH_STYLE: 'true'
-      PLK_BASE_URL: ${PLK_BASE_URL:?Set PLK_BASE_URL in infra/.env}
-      PLK_API_KEY: ${PLK_API_KEY:?Set PLK_API_KEY in infra/.env}
-    ports:
-    - 8082:8081
-    logging: *id001
-    volumes:
-    - ../specs:/app/specs:ro
-  data-service:
-    build:
-      context: ../services/go
-      dockerfile: data-service/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-    environment:
-      HTTP_ADDR: :8083
+      HTTP_ADDR: :8080
       DATABASE_DSN: postgres://pociag:${POSTGRES_PASSWORD}@postgres:5432/pociag?sslmode=disable
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
     ports:
-    - 8083:8083
-    logging: *id001
-    volumes:
-    - ../specs:/app/specs:ro
-  gateway:
-    build:
-      context: ../services/go
-      dockerfile: gateway/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      data-service:
-        condition: service_started
-      otel-collector:
-        condition: service_started
-    environment:
-      HTTP_ADDR: :8084
-      DATA_SERVICE_BASE_URL: http://data-service:8083
-      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
-    ports:
-    - 8084:8084
+      - 8080:8080
     networks:
-    - default
-    - web
-    logging: *id001
-    volumes:
-    - ../specs:/app/specs:ro
+      - default
+      - web
+    logging: *logging
+
   frontend:
-    profiles:
-    - frontend
-    - all
+    profiles: [frontend, all]
     build:
       context: ../services/frontend
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      gateway:
+      api:
         condition: service_started
     environment:
-      GATEWAY_URL: http://gateway:8084
-      NEXT_PUBLIC_GATEWAY_BASE: /bff
+      API_URL: http://api:8080
       NODE_ENV: production
     ports:
-    - ${FRONTEND_PORT:-3100}:3000
+      - ${FRONTEND_PORT:-3100}:3000
     networks:
-    - web
-    logging: *id001
-  jaeger:
-    image: jaegertracing/all-in-one:1.63.0
-    profiles:
-    - tracing
-    - all
-    restart: unless-stopped
-    environment:
-      COLLECTOR_OTLP_ENABLED: 'true'
-    ports:
-    - 16686:16686
-    - 14250:14250
-    logging: *id001
-  prometheus:
-    image: prom/prometheus:v3.1.0
-    profiles:
-    - monitoring
-    - all
-    restart: unless-stopped
-    volumes:
-    - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    - prometheus_data:/prometheus
-    ports:
-    - 9090:9090
-    command:
-    - --config.file=/etc/prometheus/prometheus.yml
-    - --storage.tsdb.retention.time=15d
-    logging: *id001
-  grafana:
-    image: grafana/grafana:11.4.0
-    profiles:
-    - monitoring
-    - all
-    restart: unless-stopped
-    environment:
-      GF_AUTH_ANONYMOUS_ENABLED: 'true'
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
-    volumes:
-    - grafana_data:/var/lib/grafana
-    - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    ports:
-    - 3001:3000
-    depends_on:
-    - prometheus
-    logging: *id001
+      - web
+    logging: *logging
+
   airflow-db:
     image: postgres:16-alpine
-    profiles:
-    - airflow
-    - all
+    profiles: [airflow, all]
     restart: unless-stopped
     environment:
       POSTGRES_DB: airflow
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
     ports:
-    - 5433:5432
+      - 5433:5432
     volumes:
-    - airflow_db_data:/var/lib/postgresql/data
+      - airflow_db_data:/var/lib/postgresql/data
     healthcheck:
-      test:
-      - CMD-SHELL
-      - pg_isready -U airflow -d airflow
+      test: [CMD-SHELL, pg_isready -U airflow -d airflow]
       interval: 5s
       timeout: 3s
       retries: 10
-    logging: *id001
+    logging: *logging
+
   airflow-init:
     image: apache/airflow:2.10.4
-    profiles:
-    - airflow
-    - all
+    profiles: [airflow, all]
     depends_on:
       airflow-db:
         condition: service_healthy
-    environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/airflow
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
-      _AIRFLOW_DB_MIGRATE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
+    environment: *airflow-env
     entrypoint: /bin/bash
-    command: '-c " pip install --quiet httpx psycopg2-binary boto3 opentelemetry-sdk
-      opentelemetry-api opentelemetry-exporter-otlp-proto-grpc && airflow db migrate
-      && airflow users create --username admin --firstname Admin --lastname User --role
-      Admin --email admin@example.com --password admin || true && airflow connections
-      delete pociag_collector 2>/dev/null; airflow connections add pociag_collector
-      --conn-type http --conn-host collector --conn-port 8081 --conn-schema http &&
-      airflow connections delete pociag_postgres 2>/dev/null; airflow connections
-      add pociag_postgres --conn-type postgres --conn-host postgres --conn-port 5432
-      --conn-login pociag --conn-password ${POSTGRES_PASSWORD} --conn-schema pociag
-      && airflow connections delete pociag_s3 2>/dev/null; airflow connections add
-      pociag_s3 --conn-type aws --conn-login ${MINIO_ROOT_USER:-minioadmin} --conn-password
-      ${MINIO_ROOT_PASSWORD} --conn-extra ''{\"endpoint_url\": \"http://minio:9000\",
-      \"bucket\": \"pociag-lake\"}'' "
-
-      '
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create --username admin --password admin --role Admin \
+          --firstname Admin --lastname User --email admin@example.com || true
     restart: on-failure
+
   airflow-webserver:
     image: apache/airflow:2.10.4
-    profiles:
-    - airflow
-    - all
+    profiles: [airflow, all]
     restart: unless-stopped
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-    environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/airflow
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth
-      _PIP_ADDITIONAL_REQUIREMENTS: httpx psycopg2-binary boto3 opentelemetry-sdk
-        opentelemetry-api opentelemetry-exporter-otlp-proto-grpc
+    environment: *airflow-env
     volumes:
-    - ../airflow/dags:/opt/airflow/dags:ro
-    - ../airflow/plugins:/opt/airflow/plugins:ro
-    - airflow_logs:/opt/airflow/logs
+      - ../airflow/dags:/opt/airflow/dags:ro
+      - ../airflow/plugins:/opt/airflow/plugins:ro
+      - airflow_logs:/opt/airflow/logs
     ports:
-    - 8090:8080
+      - 8090:8080
     command: webserver
-    logging: *id001
+    logging: *logging
+
   airflow-scheduler:
     image: apache/airflow:2.10.4
-    profiles:
-    - airflow
-    - all
+    profiles: [airflow, all]
     restart: unless-stopped
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-    environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/airflow
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
-      _PIP_ADDITIONAL_REQUIREMENTS: httpx psycopg2-binary boto3 opentelemetry-sdk
-        opentelemetry-api opentelemetry-exporter-otlp-proto-grpc
+      migrate:
+        condition: service_completed_successfully
+    environment: *airflow-env
     volumes:
-    - ../airflow/dags:/opt/airflow/dags:ro
-    - ../airflow/plugins:/opt/airflow/plugins:ro
-    - airflow_logs:/opt/airflow/logs
+      - ../airflow/dags:/opt/airflow/dags:ro
+      - ../airflow/plugins:/opt/airflow/plugins:ro
+      - airflow_logs:/opt/airflow/logs
     command: scheduler
-    logging: *id001
+    logging: *logging
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.63.0
+    profiles: [tracing, all]
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    ports:
+      - 16686:16686
+    logging: *logging
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: [monitoring, all]
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - 9090:9090
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles: [monitoring, all]
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - 3001:3000
+    depends_on:
+      - prometheus
+    logging: *logging
+
 volumes:
-  minio_data: null
-  postgres_data: null
-  airflow_db_data: null
-  airflow_logs: null
-  prometheus_data: null
-  grafana_data: null
+  postgres_data:
+  airflow_db_data:
+  airflow_logs:
+  prometheus_data:
+  grafana_data:
+
 networks:
   web:
     driver: bridge

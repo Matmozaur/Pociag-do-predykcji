@@ -51,7 +51,7 @@ does not force a provider or model.
 
 OpenCode automatically loads `AGENTS.md`, `opencode.json`, agents, commands, and skills
 when started at the repository root. Start a normal task directly, or delegate a focused
-task with an agent mention such as `@reviewer review services/go/collector`.
+task with an agent mention such as `@reviewer review services/go/api`.
 
 Available project commands:
 

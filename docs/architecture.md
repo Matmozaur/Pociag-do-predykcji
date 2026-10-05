@@ -1,201 +1,62 @@
-# Architectural Overview
-
-**Pociag do Predykcji** ("Train to Prediction") is a data monitoring and prediction platform
-that ingests Polish railway data from the PLK Open Data API, processes it through an ELT
-pipeline, and serves curated domain data to a web frontend via a BFF gateway.
-
-## High-Level Architecture
-
-```mermaid
-graph TB
-    subgraph External
-        PLK[PLK Open Data API]
-    end
-
-    subgraph Ingestion
-        Collector[Collector<br/>Go · :8081]
-    end
-
-    subgraph Storage
-        MinIO[MinIO<br/>S3-compatible<br/>pociag-lake/]
-        PG[(PostgreSQL 16<br/>Domain Tables)]
-    end
-
-    subgraph Orchestration
-        Airflow[Apache Airflow<br/>:8090]
-        Plugin[pociag_processing<br/>Airflow Plugin]
-    end
-
-    subgraph Serving
-        DataService[Data Service<br/>Go · :8083]
-        Gateway[Gateway BFF<br/>Go · :8080]
-    end
-
-    subgraph Observability
-        OTel[OTel Collector<br/>:4317/:4318]
-        Jaeger[Jaeger<br/>:16686]
-        Prom[Prometheus<br/>:9090]
-        Grafana[Grafana<br/>:3000]
-    end
-
-    subgraph Clients
-        Frontend[Web Frontend]
-    end
-
-    PLK -->|fetch| Collector
-    Collector -->|Parquet| MinIO
-    Collector -->|run metadata| PG
-    Airflow -->|triggers| Collector
-    Airflow -->|executes| Plugin
-    Plugin -->|reads Parquet| MinIO
-    Plugin -->|upserts curated| PG
-    PG -->|SQL reads| DataService
-    DataService -->|HTTP| Gateway
-    Gateway -->|HTTP| Frontend
-
-    Collector -.->|traces/metrics| OTel
-    DataService -.->|traces/metrics| OTel
-    Gateway -.->|traces/metrics| OTel
-    Plugin -.->|traces| OTel
-    OTel -.-> Jaeger
-    OTel -.-> Prom
-    Prom -.-> Grafana
-```
-
-## Data Flow (ELT Pipeline)
-
-The platform implements a two-stage **Extract → Land → Transform** pattern:
-
-```mermaid
-sequenceDiagram
-    participant AF as Airflow
-    participant C as Collector (Go)
-    participant PLK as PLK API
-    participant S3 as MinIO (Lake)
-    participant PG as PostgreSQL
-    participant P as Processing Plugin
-
-    AF->>C: POST /api/v1/fetch/{pipeline}
-    C->>PLK: GET /api/... (paginated)
-    PLK-->>C: JSON responses
-    C->>S3: Write Parquet files<br/>raw/{pipeline}/YYYY/MM/DD/
-    C->>PG: INSERT ingestion_run (status, metadata)
-    C-->>AF: 200 OK (run_id)
-
-    AF->>P: Call pipeline function
-    P->>S3: Read Parquet (polars)
-    P->>P: Deduplicate, normalize, enrich
-    P->>PG: Upsert curated domain tables
-    P->>PG: UPDATE ingestion_run (completed)
-```
-
-### Data Zones
-
-| Zone | Storage | Format | Purpose |
-|------|---------|--------|---------|
-| **Raw (Bronze)** | MinIO `s3://pociag-lake/raw/` | Parquet | Immutable landing; exact PLK payloads |
-| **Curated (Silver)** | PostgreSQL domain tables | Relational | Deduplicated, normalized, query-optimized |
-
-### Lake Layout
+# Architecture
 
 ```
-s3://pociag-lake/
-  raw/
-    dictionaries/YYYY/MM/DD/run_<id>_<type>.parquet
-    schedules/YYYY/MM/DD/run_<id>_page_<N>.parquet
-    operations/YYYY/MM/DD/run_<id>_page_<N>.parquet
-    disruptions/YYYY/MM/DD/run_<id>.parquet
+PLK Open Data API
+   │  Airflow DAGs → pociag_processing (plk → transform → repository)
+   ▼
+PostgreSQL (db/migrations)
+   │  api (Go): handler → service → repository
+   ▼
+frontend (Next.js), which proxies /bff/* to the api
 ```
 
-## Service Boundaries
+Airflow is the only writer; the api only reads.
 
-| Service | Language | Responsibility | Port |
-|---------|----------|----------------|------|
-| **Collector** | Go | Extracts raw data from PLK API → Parquet in MinIO | 8081 |
-| **Processing Plugin** | Python | Transforms raw Parquet → curated PostgreSQL tables (runs inside Airflow) | — |
-| **Data Service** | Go | Domain read API over curated PostgreSQL tables | 8083 |
-| **Gateway (BFF)** | Go | Frontend-facing facade; aggregates Data Service; CORS, caching, rate limiting | 8080 |
-| **Airflow** | Python | Orchestrates ingestion + processing DAGs | 8090 |
+## Components
 
-## Domain Model
+| Component | Responsibility | Contract |
+|---|---|---|
+| `airflow/plugins/pociag_processing` | Fetch PLK, normalise, upsert. `plk.py` (HTTP), `transform.py` (pure payload → rows), `repository.py` (all SQL), `pipelines.py` (entrypoints) | [specs/pipelines.md](../specs/pipelines.md) |
+| `db/migrations` | The schema below | `001_init.up.sql` |
+| `services/go/api` | Builds frontend views: `handler` (HTTP) → `service` (views, pure) → `repository` (pgx SQL); `position` is the train-position model | [specs/openapi/api.yml](../specs/openapi/api.yml) |
+| `services/frontend` | UI; talks only to the api | `src/lib/api.ts` mirrors `api.yml` |
 
-Four primary data pipelines, each with its own DAG:
+## Data model
 
-| Pipeline | Schedule | Source | Target Tables |
-|----------|----------|--------|---------------|
-| **Dictionaries** | Weekly (Mon 03:00) | PLK dictionary endpoints | `stations`, `carriers`, `commercial_categories`, `stop_types` |
-| **Schedules** | Weekly (Mon 04:00) | PLK timetable (2-week horizon) | `routes`, `route_stops` |
-| **Operations** | Daily (02:00) | PLK train operations (yesterday) | `train_operations` |
-| **Disruptions** | Daily (02:30) | PLK disruptions (yesterday) | `disruptions` |
-
-## Technology Stack
-
-| Layer | Technology |
-|-------|------------|
-| Go services | Go 1.23+, chi router, pgx/v5, net/http |
-| Python processing | Python 3.12+, polars, psycopg2 (via Airflow hooks) |
-| Orchestration | Apache Airflow 2.9+ (TaskFlow API) |
-| Database | PostgreSQL 16 |
-| Object Storage | MinIO (S3-compatible) |
-| Migrations | golang-migrate (numbered SQL files) |
-| Tracing | OpenTelemetry SDK → OTel Collector → Jaeger |
-| Metrics | OpenTelemetry SDK → OTel Collector → Prometheus → Grafana |
-| Logging | Structured JSON (zap in Go, structlog in Python) |
-| Container runtime | Docker Compose (local), Kubernetes (prod) |
-
-## Observability
-
-All services emit traces, metrics, and structured logs via OpenTelemetry:
-
-```mermaid
-graph LR
-    Services[Go/Python Services] -->|OTLP gRPC :4317| OTel[OTel Collector]
-    OTel -->|export| Jaeger[Jaeger :16686]
-    OTel -->|export| Prom[Prometheus :9090]
-    Prom --> Grafana[Grafana :3000]
+```
+trains ◄── schedule_stops ──► stations
+trains ◄── operations ◄── operation_stops ──► stations
+disruptions ──► stations (start, end)
 ```
 
-- **Service naming**: `pociag.<service>` (e.g., `pociag.collector`, `pociag.gateway`)
-- **Span naming**: `<noun>.<verb>` (e.g., `record.fetch`, `job.run`)
-- **Trace propagation**: W3C TraceContext headers across all inter-service HTTP calls
-- **Logging**: JSON with `level`, `ts`, `service`, `trace_id`, `span_id`, `msg`
+| Table | Row | Key |
+|---|---|---|
+| `stations` | PLK station, city, coordinates | PLK id |
+| `trains` | PLK route (`schedule_id`, `order_id`): name, number, category, carrier, operating dates | surrogate id |
+| `schedule_stops` | Planned stop: offsets from local midnight, platform, track | (train, seq) |
+| `operations` | A train's run on an operating date and its status (S/P/C/X/Q) | surrogate id; unique (train, date) |
+| `operation_stops` | Planned vs actual arrival/departure, delays, confirmed/cancelled | (operation, seq) |
+| `disruptions` | Current disruption snapshot | PLK id within the snapshot |
 
-## Event System
+`operations.updated_at` is the last PLK snapshot containing the run; the api uses it to tell
+live trains from stale ones.
 
-Internal events use PostgreSQL `LISTEN/NOTIFY` (upgradeable to Kafka/NATS):
+## Design decisions
 
-| Channel | Emitter | Trigger |
-|---------|---------|---------|
-| `pociag.raw.schedules_fetched` | Collector | After raw Parquet landing |
-| `pociag.raw.operations_fetched` | Collector | After raw Parquet landing |
-| `pociag.raw.disruptions_fetched` | Collector | After raw Parquet landing |
-| `pociag.raw.dictionaries_fetched` | Collector | After raw Parquet landing |
-| `pociag.data.schedules_ingested` | Processing Plugin | After curated upsert |
-| `pociag.data.operations_ingested` | Processing Plugin | After curated upsert |
-| `pociag.data.disruptions_ingested` | Processing Plugin | After curated upsert |
+- **Airflow is the only ingestion path.** It calls PLK directly; there is no separate collector
+  service or raw data lake. Airflow keeps run history; re-running a DAG re-fetches from PLK.
+- **One bulk request per timetable day** (`/schedules?dateFrom=D&dateTo=D`) instead of one per
+  train.
+- **One read service.** The api serves frontend-shaped responses straight from SQL; there is no
+  intermediate domain API.
+- **Raw PLK quirks are fixed once, at ingestion** (see the rules in `specs/pipelines.md`), so
+  readers never compensate for them.
+- **Position estimation is pure Go** (`internal/position`): effective times, the active
+  predicate, phase and linear interpolation between stops with coordinates.
 
-## Key Architectural Decisions
+## Cross-cutting
 
-| ADR | Decision | Rationale |
-|-----|----------|-----------|
-| [ADR-001](decisions/001-base-platform-architecture.md) | Microservice architecture with ELT + CQRS + BFF | Separates ingestion from serving; supports future ML without rewrites |
-| [ADR-002](decisions/002-data-lake-raw-landing.md) | Raw landing in MinIO (Parquet) instead of PostgreSQL | 5–10x storage efficiency; native Parquet reads for polars; immutable append-only |
-| [ADR-003](decisions/003-processor-to-airflow-plugin.md) | Processing logic as Airflow plugin (not standalone service) | Eliminates extra container; native retry/alerting; single credential store |
-
-## Security Principles
-
-- No hardcoded secrets — all credentials via environment variables or Airflow Connections
-- Parameterized SQL queries everywhere (pgx in Go, psycopg2 in Python)
-- Input validation at service boundaries
-- Dependency scanning: `govulncheck` (Go), `pip audit` (Python) in CI
-- Gateway handles CORS, rate limiting; internal services not exposed externally
-
-## Future Extensions
-
-The architecture is designed to accommodate:
-
-- **Predictor Service** (Python/FastAPI) — ML inference for delay prediction
-- **Live Tracking** — Real-time train position updates
-- **Notification Service** — Alerts on disruptions or delays
-- **Frontend** — Web UI for schedule search, maps, dashboards
-- **Feature Store** — Materialized features from curated data for ML training
+- Secrets only via env vars / Airflow connections (`infra/.env`, never committed).
+- Parameterised SQL only.
+- Tracing: OTLP gRPC to the OTel Collector; service names `pociag.api`, `pociag.airflow`.
+- Logs: JSON (zap in Go, `logging` in Airflow).

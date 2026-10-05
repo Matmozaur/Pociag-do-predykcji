@@ -1,0 +1,29 @@
+{
+ "generatedAt": "2026-10-04T15:10:10.8700547Z",
+ "cities": [
+  {
+   "name": "BERLIN",
+   "stationCount": 6,
+   "stationIds": [
+    140163,
+    140168,
+    140533,
+    247482,
+    248058,
+    1000014
+   ]
+  },
+  {
+   "name": "CZĘSTOCHOWA",
+   "stationCount": 6,
+   "stationIds": [
+    62687,
+    62802,
+    62836,
+    63099,
+    265740,
+    1000005
+   ]
+  }
+ ]
+}

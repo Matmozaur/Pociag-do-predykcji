@@ -14,24 +14,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  go-test:
-    name: Go Test (${{ matrix.module.name }})
+  api:
+    name: Go (api)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module:
-          - name: collector
-            path: services/go/collector
-          - name: data-service
-            path: services/go/data-service
-          - name: gateway
-            path: services/go/gateway
-          - name: shared
-            path: services/go/shared
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pociag
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: pociag_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U pociag" --health-interval 5s --health-retries 10
+    env:
+      POCIAG_TEST_DATABASE_URL: postgres://pociag:test@localhost:5432/pociag_test
     defaults:
       run:
-        working-directory: ${{ matrix.module.path }}
+        working-directory: services/go/api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,52 +38,32 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module.path }}/go.mod
-          cache: true
-          cache-dependency-path: services/go/**/go.sum
+          go-version-file: services/go/api/go.mod
+          cache-dependency-path: services/go/api/go.sum
 
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run tests
+      - name: Test
         run: go test -race -v ./...
-
-  go-lint:
-    name: Go Lint (${{ matrix.module.name }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module:
-          - name: collector
-            path: services/go/collector
-          - name: data-service
-            path: services/go/data-service
-          - name: gateway
-            path: services/go/gateway
-    defaults:
-      run:
-        working-directory: ${{ matrix.module.path }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: ${{ matrix.module.path }}/go.mod
-          cache: true
-          cache-dependency-path: services/go/**/go.sum
 
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 
-      - name: Run golangci-lint
+      - name: Lint
         run: $(go env GOPATH)/bin/golangci-lint run --timeout=5m ./...
 
-  airflow-ci:
-    name: Python CI (airflow)
+  airflow:
+    name: Python (airflow)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pociag
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: pociag_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U pociag" --health-interval 5s --health-retries 10
+    env:
+      POCIAG_TEST_DATABASE_URL: postgresql://pociag:test@localhost:5432/pociag_test
     defaults:
       run:
         working-directory: airflow
@@ -109,7 +88,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check (mypy)
-        run: uv run mypy plugins/pociag_processing
+        run: uv run mypy plugins/pociag_processing dags
 
       - name: Test (pytest)
         run: uv run pytest tests/ -v
@@ -118,9 +97,8 @@ jobs:
     name: Build Placeholder
     runs-on: ubuntu-latest
     needs:
-      - go-test
-      - go-lint
-      - airflow-ci
+      - api
+      - airflow
     steps:
       - name: Checkout
         uses: actions/checkout@v4

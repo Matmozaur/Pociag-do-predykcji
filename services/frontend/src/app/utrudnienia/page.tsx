@@ -1,7 +1,7 @@
 'use client'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ArrowRight, Calendar, CheckCircle2 } from 'lucide-react'
-import { gateway, type DisruptionSummaryView } from '@/lib/api'
+import { api, type DisruptionSummaryView } from '@/lib/api'
 import { Badge, Button, Card, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
 
@@ -32,7 +32,6 @@ function DisruptionCard({ disruption }: { disruption: DisruptionSummaryView }) {
                                     : 'text-slate-400'
                         }
                     />
-                    {disruption.type_name && <span className="text-xs font-medium text-slate-400">{disruption.type_name}</span>}
                 </div>
                 {disruption.severity && (
                     <Badge variant={severityVariant[disruption.severity] ?? 'default'}>
@@ -70,7 +69,7 @@ function DisruptionCard({ disruption }: { disruption: DisruptionSummaryView }) {
 export default function UtrudnieniaPage() {
     const disruptionsQuery = useQuery({
         queryKey: ['disruptions'],
-        queryFn: () => gateway.listDisruptions(true),
+        queryFn: () => api.listDisruptions(),
         staleTime: 120_000,
     })
 

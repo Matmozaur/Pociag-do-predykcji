@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
         return [
             {
                 source: '/bff/:path*',
-                destination: `${process.env.GATEWAY_URL ?? 'http://localhost:8084'}/:path*`,
+                destination: `${process.env.API_URL ?? 'http://localhost:8080'}/:path*`,
             },
         ]
     },

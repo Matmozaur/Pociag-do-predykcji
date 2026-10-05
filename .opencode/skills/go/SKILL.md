@@ -1,6 +1,6 @@
 ---
 name: go
-description: Go, collector, data-service, or gateway work in services/go. Use when editing Go code or tests.
+description: Go api work in services/go/api. Use when editing Go code or tests.
 ---
 
 # Go Services

@@ -1,0 +1,373 @@
+{
+ "generatedAt": "2026-10-04T15:10:03.6855982Z",
+ "period": {
+  "from": "2026-10-04T00:00:00+02:00",
+  "to": "2026-10-04T00:00:00+02:00"
+ },
+ "routes": [
+  {
+   "scheduleId": 2026,
+   "orderId": 841919828,
+   "trainOrderId": 498847207,
+   "name": "STADTTORE-LINIE",
+   "carrierCode": "PR",
+   "nationalNumber": "80860",
+   "internationalArrivalNumber": "5351",
+   "commercialCategorySymbol": "R",
+   "operatingDates": [
+    "2026-10-04"
+   ],
+   "stations": [
+    {
+     "stationId": 150748,
+     "orderNumber": -3,
+     "arrivalCommercialCategory": "R",
+     "arrivalTrainNumber": "[brak]",
+     "arrivalTime": "06:16:00",
+     "departureCommercialCategory": "R",
+     "departureTrainNumber": "5351",
+     "departureTime": "06:16:00"
+    },
+    {
+     "stationId": 150750,
+     "orderNumber": -2,
+     "arrivalCommercialCategory": "R",
+     "arrivalTrainNumber": "5351",
+     "arrivalTime": "06:18:00",
+     "departureCommercialCategory": "R",
+     "departureTrainNumber": "5351",
+     "departureTime": "06:18:30"
+    },
+    {
+     "stationId": 150751,
+     "orderNumber": -1,
+     "arrivalCommercialCategory": "R",
+     "arrivalTrainNumber": "5351",
+     "arrivalTime": "06:23:00",
+     "departureCommercialCategory": "R",
+     "departureTrainNumber": "5351",
+     "departureTime": "06:23:50"
+    },
+    {
+     "stationId": 236483,
+     "orderNumber": 1,
+     "arrivalCommercialCategory": "R",
+     "arrivalTrainNumber": "5351",
+     "arrivalTime": "06:30:18",
+     "departureCommercialCategory": "R",
+     "departureTrainNumber": "5351",
+     "departureTime": "06:30:18"
+    },
+    {
+     "stationId": 179218,
+     "orderNumber": 4,
+     "arrivalCommercialCategory": "R",
+     "arrivalTrainNumber": "5351",
+     "arrivalTime": "06:37:42",
+     "departureCommercialCategory": "R",
+     "departureTrainNumber": "5351",
+     "departureTime": "06:38:12"
+    },
+    {
+     "stationId": 208,
+     "orderNumber": 8,
+     "arrivalCommercialCategory": "R",
+     "arrivalTrainNumber": "80860",
+     "arrivalTime": "06:48:00",
+     "departureCommercialCategory": "R",
+     "departureTrainNumber": "80860",
+     "departurePlatform": "1",
+     "departureTrack": "5",
+     "departureTime": "06:48:30"
+    },
+    {
+     "stationId": 273,
+     "orderNumber": 9,
+     "arrivalCommercialCategory": "R",
+     "arrivalTrainNumber": "80860",
+     "arrivalTime": "06:55:00",
+     "departureCommercialCategory": "R",
+     "departureTrainNumber": "80860",
+     "departurePlatform": "1",
+     "departureTrack": "5"
+    }
+   ]
+  },
+  {
+   "scheduleId": 2026,
+   "orderId": 379184374,
+   "trainOrderId": 761796642,
+   "carrierCode": "KD",
+   "nationalNumber": "69967",
+   "commercialCategorySymbol": "Os",
+   "operatingDates": [
+    "2026-10-04"
+   ],
+   "stations": [
+    {
+     "stationId": 60103,
+     "orderNumber": 1,
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:15:00"
+    },
+    {
+     "stationId": 58651,
+     "orderNumber": 4,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69966",
+     "arrivalTime": "23:19:36",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69966",
+     "departurePlatform": "1",
+     "departureTrack": "3",
+     "departureTime": "23:20:36"
+    },
+    {
+     "stationId": 264901,
+     "orderNumber": 6,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69966",
+     "arrivalTime": "23:23:00",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69966",
+     "departurePlatform": "2",
+     "departureTrack": "2",
+     "departureTime": "23:23:30"
+    },
+    {
+     "stationId": 59105,
+     "orderNumber": 7,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69966",
+     "arrivalTime": "23:25:30",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69966",
+     "departurePlatform": "2",
+     "departureTrack": "2",
+     "departureTime": "23:26:30"
+    },
+    {
+     "stationId": 59204,
+     "orderNumber": 8,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69966",
+     "arrivalTime": "23:30:42",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69966",
+     "departurePlatform": "2",
+     "departureTrack": "2",
+     "departureTime": "23:31:12"
+    },
+    {
+     "stationId": 59246,
+     "orderNumber": 10,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69966",
+     "arrivalTime": "23:35:00",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "2",
+     "departureTrack": "1",
+     "departureTime": "23:35:30"
+    },
+    {
+     "stationId": 59261,
+     "orderNumber": 11,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalTime": "23:37:42",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:38:12"
+    },
+    {
+     "stationId": 59253,
+     "orderNumber": 12,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalTime": "23:40:12",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:40:42"
+    },
+    {
+     "stationId": 251562,
+     "orderNumber": 13,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalTime": "23:44:00",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:44:30"
+    },
+    {
+     "stationId": 59378,
+     "orderNumber": 14,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalTime": "23:46:54",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:47:24"
+    },
+    {
+     "stationId": 59352,
+     "orderNumber": 15,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalTime": "23:50:30",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:51:00"
+    },
+    {
+     "stationId": 242927,
+     "orderNumber": 16,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalTime": "23:54:00",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:54:30"
+    },
+    {
+     "stationId": 59386,
+     "orderNumber": 17,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalTime": "23:57:18",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1",
+     "departureTime": "23:57:48"
+    },
+    {
+     "stationId": 59394,
+     "orderNumber": 18,
+     "arrivalCommercialCategory": "Os",
+     "arrivalTrainNumber": "69967",
+     "arrivalDay": 1,
+     "arrivalTime": "00:02:00",
+     "departureCommercialCategory": "Os",
+     "departureTrainNumber": "69967",
+     "departurePlatform": "1",
+     "departureTrack": "1"
+    }
+   ]
+  }
+ ],
+ "dictionaries": {
+  "stations": {
+   "208": {
+    "id": 208,
+    "name": "Szczecin Gumieńce"
+   },
+   "273": {
+    "id": 273,
+    "name": "Szczecin Główny"
+   },
+   "58651": {
+    "id": 58651,
+    "name": "Wrocław Mikołajów"
+   },
+   "59105": {
+    "id": 59105,
+    "name": "Wrocław Nadodrze"
+   },
+   "59204": {
+    "id": 59204,
+    "name": "Wrocław Sołtysowice"
+   },
+   "59246": {
+    "id": 59246,
+    "name": "Wrocław Psie Pole"
+   },
+   "59253": {
+    "id": 59253,
+    "name": "Wrocław Pawłowice"
+   },
+   "59261": {
+    "id": 59261,
+    "name": "Wrocław Zakrzów"
+   },
+   "59352": {
+    "id": 59352,
+    "name": "Siedlec Trzebnicki"
+   },
+   "59378": {
+    "id": 59378,
+    "name": "Pasikurowice"
+   },
+   "59386": {
+    "id": 59386,
+    "name": "Brochocin Trzebnicki"
+   },
+   "59394": {
+    "id": 59394,
+    "name": "Trzebnica"
+   },
+   "60103": {
+    "id": 60103,
+    "name": "Wrocław Główny"
+   },
+   "150748": {
+    "id": 150748,
+    "name": "Pasewalk"
+   },
+   "150750": {
+    "id": 150750,
+    "name": "Pasewalk Ost"
+   },
+   "150751": {
+    "id": 150751,
+    "name": "Zerrenthin"
+   },
+   "179218": {
+    "id": 179218,
+    "name": "Grambow"
+   },
+   "236483": {
+    "id": 236483,
+    "name": "Loecknitz"
+   },
+   "242927": {
+    "id": 242927,
+    "name": "Pierwoszów Miłocin"
+   },
+   "251562": {
+    "id": 251562,
+    "name": "Ramiszów"
+   },
+   "264901": {
+    "id": 264901,
+    "name": "Wrocław Szczepin"
+   }
+  },
+  "carriers": {
+   "KD": "Koleje Dolnośląskie S.A.",
+   "PR": "POLREGIO S.A."
+  },
+  "commercialCategories": {},
+  "stopTypes": {
+   "1": "tylko dla wsiadających",
+   "2": "tylko dla wysiadających"
+  },
+  "connectionTypes": {}
+ }
+}

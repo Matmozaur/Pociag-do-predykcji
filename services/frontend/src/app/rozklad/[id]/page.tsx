@@ -3,7 +3,7 @@ import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Clock, Calendar, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import { gateway } from '@/lib/api'
+import { api } from '@/lib/api'
 import { Button, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
 
@@ -19,7 +19,7 @@ export default function RozkladDetailPage() {
     const routeId = id && /^\d+$/.test(id) ? parseInt(id, 10) : null
     const scheduleQuery = useQuery({
         queryKey: ['scheduleDetail', routeId],
-        queryFn: () => gateway.getScheduleDetail(routeId!),
+        queryFn: () => api.getScheduleDetail(routeId!),
         enabled: routeId !== null,
         staleTime: 300_000,
     })

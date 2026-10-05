@@ -21,25 +21,21 @@ compose, compose wins — `README.md` and `docs/architecture.md` list stale port
 
 ## The stack
 
-- `make infra-up` (postgres + otel-collector); profiles `tracing`, `monitoring`,
-  `airflow`, `all`. `make infra-up-all` / `infra-up-all-build`. `make infra-down`
-  keeps volumes; `infra-down-volumes` is destructive.
-- Config files: `infra/otel-collector-config.yml`, `infra/prometheus.yml`,
-  `infra/grafana/`. Service naming `pociag.<service>`, OTLP gRPC :4317.
-- `infra/.env` (copy from `infra/.env.example`) keys: `PLK_BASE_URL`, `PLK_API_KEY`,
-  `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`,
-  `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY`,
+- `make up` (everything, profile `all`), `make up-core` (Postgres + migrate + api),
+  `make down` keeps volumes, `make reset` deletes them (destructive).
+- Services: postgres, migrate, otel-collector, api, frontend, airflow-db/init/webserver/
+  scheduler, jaeger, prometheus, grafana. Config: `infra/otel-collector-config.yml`,
+  `infra/prometheus.yml`, `infra/grafana/`.
+- `infra/.env` (from `infra/.env.example`): `PLK_BASE_URL`, `PLK_API_KEY`,
+  `POSTGRES_PASSWORD`, `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY`,
   `AIRFLOW__WEBSERVER__SECRET_KEY`.
+- Airflow connections `pociag_postgres` / `pociag_plk` are `AIRFLOW_CONN_*` env vars in
+  compose. The api needs `HTTP_ADDR`, `DATABASE_DSN` (+ optional OTLP endpoint).
 
-### Host ports (from compose)
+### Host ports
 
-| Postgres (main) **5434** | Postgres (Airflow) 5433 | collector **8082** | data-service 8083 |
-| gateway (BFF) **8084** | Airflow UI 8090 | MinIO 9000/9001 | Jaeger 16686 · Prom 9090 · Grafana 3000 |
-
-Go services outside compose need env via `os.LookupEnv` (no defaults): collector
-`HTTP_ADDR`,`DATABASE_DSN`,`PLK_*`,`S3_*`; data-service `HTTP_ADDR`,`DATABASE_DSN`;
-gateway `HTTP_ADDR`,`DATA_SERVICE_BASE_URL`. Airflow connections seeded in compose:
-`pociag_postgres`, `pociag_s3`, `pociag_collector`.
+Postgres 5434 · Airflow Postgres 5433 · api 8080 · frontend 3100 · Airflow UI 8090 ·
+Jaeger 16686 · Prometheus 9090 · Grafana 3001.
 
 ## Migrations
 
@@ -50,9 +46,10 @@ Run in a Docker container (`migrate/migrate:v4.18.1`, `--network host`) against
 
 ## CI
 
-`.github/workflows/ci-cd.yaml` runs on every branch push: Go test + lint per module,
+`.github/workflows/ci-cd.yaml` runs on every branch push: Go test + lint for the api,
 and for `airflow/` — `uv sync --all-extras`, `uv pip install -e plugins`, then
-ruff / mypy / pytest. Build & deploy stages are placeholders.
+ruff / mypy / pytest; both jobs have a Postgres service for SQL tests. Build & deploy
+stages are placeholders.
 
 ## Workflow
 

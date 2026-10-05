@@ -1,36 +1,44 @@
 ---
-description: "Go service conventions for collector, data-service, and gateway."
+description: "Go conventions for the api service."
 applyTo: "services/go/**/*.go"
 ---
 
-# Go Instructions
+<!-- Mirror of services/go/CLAUDE.md -->
 
-These rules apply automatically to all Go files in `services/go/`.
+# services/go — Go
 
-## Structure
+One module: `api` (`github.com/pociag-do-predykcji/services/go/api`, `go 1.25.0`). See the repo
+root `CLAUDE.md` for architecture and `specs/openapi/api.yml` for the contract.
 
-- Module path: `github.com/pociag-do-predykcji/services/go/<service>`.
-- Entrypoints in `cmd/`; all non-exported code in `internal/`.
-- Shared helpers live in `services/go/shared/`.
+## api layout
 
-## Mandatory patterns
+- `cmd/main.go` — config, tracing, pgx pool, HTTP server.
+- `internal/handler` — chi routes, parameter validation (out of range → 400), JSON, error
+  mapping (`service.ErrNotFound` → 404, else logged 500).
+- `internal/service` — builds the response models (`internal/model`) from repository rows. Pure
+  apart from the `Repository` interface it defines; tests use `service/servicetest` (fake repo)
+  and `export_test.go` (fixed clock).
+- `internal/repository` — all SQL (pgx v5, no ORM), one method per view.
+- `internal/position` — pure train-position model (active predicate, phase, interpolation).
 
-- `context.Context` is **always** the first parameter of any function performing I/O.
-- HTTP routing: `net/http` + `chi`. No other router frameworks.
-- Database: `pgx/v5` with **parameterized queries only** — never string-concatenate SQL.
-- Tracing: wrap every handler and DB call with
-  `otel.Tracer("pociag.<service>").Start(ctx, "<noun>.<verb>")` and `defer span.End()`.
-- Errors: wrap with `fmt.Errorf("operation: %w", err)`. Never swallow or discard errors.
-- Config: read from `os.LookupEnv` only. No hardcoded hosts, ports, or secrets.
+## Commands (from repo root)
 
-## Testing
+```bash
+make api-test     # cd services/go/api && go test -race ./...
+make api-lint     # golangci-lint v2 (.golangci.yml: errcheck govet ineffassign staticcheck unused)
+POCIAG_TEST_DATABASE_URL=postgres://… make api-test   # also runs internal/repository SQL tests
+```
 
-- `_test.go` files live alongside production code.
-- Unit tests must call `t.Parallel()` where safe.
-- DB integration tests use `testcontainers-go` and are gated behind the `integration` build tag.
-- Run `go test -race ./...` and `golangci-lint run ./...` before considering work done.
+## Env vars
 
-## Contract-first
+`HTTP_ADDR`, `DATABASE_DSN` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, tracing off when
+unset).
 
-Do not add endpoints, fields, or response shapes that are not defined in
-`specs/openapi/`. If a contract change is needed, update the spec first, then the code.
+## Patterns
+
+- `context.Context` first on I/O; errors wrapped `fmt.Errorf("op: %w", err)`.
+- `net/http` + `chi/v5` only; `zap` JSON logs; `otelhttp` wraps the router, repository methods
+  open `db.<table>.<verb>` spans.
+- Times shown to people are formatted Europe/Warsaw `HH:MM` in `service`; `time/tzdata` is
+  embedded because the runtime image has no zoneinfo.
+- Response shapes must match `specs/openapi/api.yml` and `services/frontend/src/lib/api.ts`.

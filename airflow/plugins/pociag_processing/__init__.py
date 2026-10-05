@@ -1,3 +1,1 @@
-"""Pociag processing plugin — pipeline logic for Airflow DAGs."""
-
-from __future__ import annotations
+"""pociag_processing: PLK Open Data → curated PostgreSQL, run inside Airflow."""

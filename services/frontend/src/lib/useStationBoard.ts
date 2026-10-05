@@ -1,13 +1,13 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { ApiError, gateway } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 
 /** Live station board (Na stacji / Przyjazdy / Odjazdy), refreshed every minute while visible. */
 export function useStationBoard(id: number | null | undefined, limit: number) {
     return useQuery({
         queryKey: ['stationBoard', id, limit],
-        queryFn: () => gateway.getStationBoard(id!, limit),
+        queryFn: () => api.getStationBoard(id!, limit),
         enabled: id != null,
         staleTime: 30_000,
         refetchInterval: 60_000,

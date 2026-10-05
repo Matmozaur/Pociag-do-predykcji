@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { ArrowRight, MapPin, RefreshCw, Train } from 'lucide-react'
-import { delayVariant, formatDelay, gateway, statusLabel, statusVariant, type LiveTrainSummary } from '@/lib/api'
+import { delayVariant, formatDelay, api, statusLabel, statusVariant, type LiveTrainSummary } from '@/lib/api'
 import { Badge, Button, Card, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
 import { DataFreshness } from '@/components/DataFreshness'
@@ -45,13 +45,13 @@ function LiveTrainCard({ train }: { train: LiveTrainSummary }) {
 export default function PociagiPage() {
     const trainsQuery = useQuery({
         queryKey: ['liveTrains', ''],
-        queryFn: () => gateway.getLiveTrains({ carriers: undefined, limit: 50 }),
+        queryFn: () => api.getLiveTrains({ carriers: undefined, limit: 50 }),
         refetchInterval: 60_000,
         staleTime: 30_000,
     })
     const overviewQuery = useQuery({
         queryKey: ['dashboardOverview'],
-        queryFn: gateway.getDashboardOverview,
+        queryFn: api.getDashboardOverview,
         refetchInterval: 60_000,
         staleTime: 30_000,
     })

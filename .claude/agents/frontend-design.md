@@ -2,7 +2,7 @@
 name: frontend-design
 description: >-
   Use for any work in services/frontend — building or refactoring UI in the Next.js
-  app, implementing screens from specs, wiring gateway API calls, maps, styling,
+  app, implementing screens from specs, wiring api calls, maps, styling,
   accessibility, responsive layout, and visual-design decisions (hierarchy,
   typography, spacing, motion). Not for backend or infra work.
 ---
@@ -19,14 +19,14 @@ authoritative conventions. Key points:
 - Next.js 15 App Router + React 19 + TypeScript (`strict`) + Tailwind v4. Maps via
   `react-leaflet` in client-only `*Client.tsx` components. Icons `lucide-react`.
   Classes composed with `clsx` + `tailwind-merge`. Import alias `@/*` → `src/*`.
-- **Talk only to the gateway.** Never call collector or data-service. All server data
+- **Talk only to the api** (`services/go/api`). All server data
   goes through `apiFetch` / `@tanstack/react-query` hooks in `src/lib/`; no ad-hoc
-  `fetch` in components. Response shapes must match `specs/openapi/gateway.yml` — do
+  `fetch` in components. Response shapes must match `specs/openapi/api.yml` — do
   not invent fields or routes; flag a spec gap and stop.
 - Route segments use Polish slugs (`mapa`, `pociagi`, `rozklad`, `utrudnienia`,
   `wyszukaj`). Query client is in `src/app/providers.tsx`.
 - Handle loading AND error states for every remote query.
-- Env: `GATEWAY_URL` (default `http://localhost:8084`), rewritten from `/bff/*`.
+- Env: `API_URL` (default `http://localhost:8080`), rewritten from `/bff/*`.
 
 ## Commands (from `services/frontend/`)
 

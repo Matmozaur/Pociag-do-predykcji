@@ -1,0 +1,181 @@
+{
+ "generatedAt": "2026-10-04T15:13:27.7307642Z",
+ "disruptions": [
+  {
+   "disruptionId": 4,
+   "disruptionTypeCode": "utr_31",
+   "startStationId": 73700,
+   "endStationId": 73312,
+   "message": "Na odcinku od stacji Tychy do stacji Katowice pociąg został odwołany. Wprowadzono komunikację zastępczą, godziny przyjazdu i odjazdu komunikacji mogą ulec zmianie.",
+   "affectedRoutes": [
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 73700,
+     "sequenceNumber": 8
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 72975,
+     "sequenceNumber": 10
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 72967,
+     "sequenceNumber": 11
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 72900,
+     "sequenceNumber": 12
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 73312,
+     "sequenceNumber": 14
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-03",
+     "stationId": 73700,
+     "sequenceNumber": 8
+    }
+   ]
+  },
+  {
+   "disruptionId": 5,
+   "disruptionTypeCode": "utr_32",
+   "startStationId": 73700,
+   "endStationId": 73312,
+   "message": "Na odcinku od stacji Tychy do stacji Katowice obowiązuje komunikacja zastępcza.",
+   "affectedRoutes": [
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 73700,
+     "sequenceNumber": 8
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 72975,
+     "sequenceNumber": 10
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 72967,
+     "sequenceNumber": 11
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 72900,
+     "sequenceNumber": 12
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-04",
+     "stationId": 73312,
+     "sequenceNumber": 14
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 428836558,
+     "trainOrderId": 186632934,
+     "operatingDate": "2026-10-03",
+     "stationId": 73700,
+     "sequenceNumber": 8
+    }
+   ]
+  },
+  {
+   "disruptionId": 1,
+   "message": "Wrocław Nadodrze - Wrocław Popowice.  Awaria sieci trakcyjnej. Mogą wystąpić opóźnienia pociągów około 20 minut.  Zmiana peronów i torów przyjazdu/odjazdu pociągów. Przepraszamy za utrudnienia.",
+   "affectedRoutes": [
+    {
+     "scheduleId": 2026,
+     "orderId": 102637243,
+     "trainOrderId": 137195991,
+     "operatingDate": "2026-10-03",
+     "stationId": 58651,
+     "sequenceNumber": 13
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 677757778,
+     "trainOrderId": 612708748,
+     "operatingDate": "2026-10-03",
+     "stationId": 58651,
+     "sequenceNumber": 20
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 398702455,
+     "trainOrderId": 141309408,
+     "operatingDate": "2026-10-03",
+     "stationId": 58651,
+     "sequenceNumber": 20
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 622197662,
+     "trainOrderId": 901845483,
+     "operatingDate": "2026-10-03",
+     "stationId": 58651,
+     "sequenceNumber": 4
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 956022925,
+     "trainOrderId": 237447405,
+     "operatingDate": "2026-10-03",
+     "stationId": 58651,
+     "sequenceNumber": 4
+    },
+    {
+     "scheduleId": 2026,
+     "orderId": 335115520,
+     "trainOrderId": 819363664,
+     "operatingDate": "2026-10-03",
+     "stationId": 58651,
+     "sequenceNumber": 4
+    }
+   ]
+  }
+ ],
+ "disruptionTypes": {
+  "utr_31": "Na odcinku od stacji {stacja_poczatkowa} do stacji {stacja_koncowa} pociąg został odwołany. Wprowadzono komunikację zastępczą, godziny przyjazdu i odjazdu komunikacji mogą ulec zmianie.",
+  "utr_32": "Na odcinku od stacji {stacja_poczatkowa} do stacji {stacja_koncowa} obowiązuje komunikacja zastępcza."
+ },
+ "stations": {
+  "73312": "Katowice",
+  "73700": "Tychy"
+ }
+}

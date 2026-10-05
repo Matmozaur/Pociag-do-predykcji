@@ -1,5 +1,5 @@
 ---
-description: Implement only the behavior defined by an OpenAPI or AsyncAPI specification.
+description: Implement only the behavior defined by an OpenAPI specification.
 agent: coder
 ---
 

@@ -1,180 +1,76 @@
-# ──────────────────────────────────────────────────────────────────────────────
-# Pociag do Predykcji — Developer Makefile
-#
-# All developer tasks live here. Add per-service targets as services are built.
-# Run `make help` to see all available targets.
-#
-# Prerequisites:
-#   Docker          — https://docs.docker.com/get-docker/
-#   Go 1.23+        — https://go.dev/dl/
-#   uv              — winget install --id astral-sh.uv -e
-#   gh copilot CLI  — gh extension install github/gh-copilot
-# ──────────────────────────────────────────────────────────────────────────────
+# Pociag do Predykcji — developer tasks. Run `make help` for the list.
+# Prerequisites: Docker, Go 1.25+, uv, Node 22.
+
+COMPOSE := docker compose -f infra/docker-compose.yml
+DB_URL ?= postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable
+MIGRATE := docker run --rm --network host -v $(PWD)/db/migrations:/migrations:ro \
+	migrate/migrate:v4.18.1 -path /migrations -database "$(DB_URL)"
 
 .PHONY: help
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2}' | sort
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-# ── Infrastructure stack ──────────────────────────────────────────────────────
+# ── Stack ─────────────────────────────────────────────────────────────────────
 
-.PHONY: infra-up
-infra-up: ## Start everything
-	docker compose -f infra/docker-compose.yml --profile all up -d
+.PHONY: up up-core down reset logs
+up: ## Start everything (Postgres, api, Airflow, frontend, observability), rebuilding images
+	$(COMPOSE) --profile all up -d --build
 
-.PHONY: infra-up-tracing
-infra-up-tracing: ## Start infra + Jaeger tracing UI
-	docker compose -f infra/docker-compose.yml --profile tracing up -d
+up-core: ## Start Postgres, migrations and the api only
+	$(COMPOSE) up -d --build
 
-.PHONY: infra-up-monitoring
-infra-up-monitoring: ## Start infra + Prometheus + Grafana
-	docker compose -f infra/docker-compose.yml --profile monitoring up -d
+down: ## Stop all containers (keeps data)
+	$(COMPOSE) --profile all down
 
-.PHONY: infra-up-airflow
-infra-up-airflow: ## Start infra + Airflow
-	docker compose -f infra/docker-compose.yml --profile airflow up -d
+reset: ## Stop all containers and DELETE all data volumes
+	$(COMPOSE) --profile all down -v --remove-orphans
 
-.PHONY: infra-up-build
-infra-up-build: ## Start everything, rebuilding images
-	docker compose -f infra/docker-compose.yml --profile all up -d --build
-
-.PHONY: infra-down
-infra-down: ## Stop all infra containers (preserves volumes)
-	docker compose -f infra/docker-compose.yml --profile all down
-
-.PHONY: infra-down-volumes
-infra-down-volumes: ## Stop all containers and remove volumes (DESTRUCTIVE)
-	docker compose -f infra/docker-compose.yml --profile all down -v
-
-.PHONY: infra-logs
-infra-logs: ## Follow logs from all running infra containers
-	docker compose -f infra/docker-compose.yml --profile all logs -f
+logs: ## Follow logs of all containers
+	$(COMPOSE) --profile all logs -f
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
-DB_URL ?= postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable
+.PHONY: db-migrate-up db-migrate-down db-migrate-status db-psql
+db-migrate-up: ## Apply pending migrations (compose also runs them on start)
+	$(MIGRATE) up
 
-.PHONY: db-migrate-up
-db-migrate-up: ## Apply all pending migrations
-	docker run --rm --network host \
-		-v $(PWD)/db/migrations:/migrations:ro \
-		migrate/migrate:v4.18.1 \
-		-path /migrations -database "$(DB_URL)" up
-
-.PHONY: db-migrate-down
 db-migrate-down: ## Roll back the last migration
-	docker run --rm --network host \
-		-v $(PWD)/db/migrations:/migrations:ro \
-		migrate/migrate:v4.18.1 \
-		-path /migrations -database "$(DB_URL)" down 1
+	$(MIGRATE) down 1
 
-.PHONY: db-migrate-status
-db-migrate-status: ## Show current migration version
-	docker run --rm --network host \
-		-v $(PWD)/db/migrations:/migrations:ro \
-		migrate/migrate:v4.18.1 \
-		-path /migrations -database "$(DB_URL)" version
+db-migrate-status: ## Show the current migration version
+	$(MIGRATE) version
 
-.PHONY: db-psql
-db-psql: ## Open a psql shell to the local database
-	docker compose -f infra/docker-compose.yml exec postgres \
-		psql -U pociag -d pociag
+db-psql: ## Open a psql shell on the curated database
+	$(COMPOSE) exec postgres psql -U pociag -d pociag
 
-# ── Per-service targets ───────────────────────────────────────────────────────
-# Add targets here as services are scaffolded, e.g.:
-#
-# .PHONY: <service>-test
-# <service>-test: ## Run tests for <service>
-# 	cd services/go/<service> && go test -race ./...
-#
-# .PHONY: <service>-lint
-# <service>-lint: ## Lint <service>
-# 	cd services/go/<service> && golangci-lint run ./...
+# ── Checks ────────────────────────────────────────────────────────────────────
 
-# ── Collector service (Go) ────────────────────────────────────────────────────
+.PHONY: test api-test api-lint airflow-test airflow-lint frontend-build
+test: api-test api-lint airflow-test airflow-lint frontend-build ## Run every check CI runs, plus the frontend build
 
-.PHONY: collector-build
-collector-build: ## Build collector binary with swagger docs
-	cd services/go/collector && swag init -g cmd/main.go -o internal/docs && go build -o /tmp/collector ./cmd
+api-test: ## Go tests (set POCIAG_TEST_DATABASE_URL to include the SQL tests)
+	cd services/go/api && go test -race ./...
 
-.PHONY: collector-test
-collector-test: ## Run collector tests with race detection
-	cd services/go/collector && go test -race -v ./...
+api-lint: ## golangci-lint (v2) on the api
+	cd services/go/api && golangci-lint run ./...
 
-.PHONY: collector-lint
-collector-lint: ## Lint collector
-	cd services/go/collector && golangci-lint run ./...
+airflow-test: ## pytest (set POCIAG_TEST_DATABASE_URL to include the SQL tests)
+	cd airflow && uv sync --all-extras -q && uv pip install -q -e plugins && uv run pytest tests -q
 
-.PHONY: collector-docs
-collector-docs: ## Generate collector Swagger documentation
-	cd services/go/collector && swag init -g cmd/main.go -o internal/docs
+airflow-lint: ## ruff + mypy --strict on the Airflow code
+	cd airflow && uv run ruff check . && uv run mypy plugins/pociag_processing dags
 
-# ── Data Service (Go) ────────────────────────────────────────────────────────
+frontend-build: ## Next.js build (type check + lint)
+	cd services/frontend && npm run build
 
-.PHONY: data-service-build
-data-service-build: ## Build data-service binary with swagger docs
-	cd services/go/data-service && swag init -g cmd/main.go -o internal/docs && go build -o /tmp/data-service ./cmd
-
-.PHONY: data-service-test
-data-service-test: ## Run data-service tests
-	cd services/go/data-service && go test -race -v ./...
-
-.PHONY: data-service-lint
-data-service-lint: ## Lint data-service
-	cd services/go/data-service && golangci-lint run ./...
-
-.PHONY: data-service-docs
-data-service-docs: ## Generate data-service Swagger documentation
-	cd services/go/data-service && swag init -g cmd/main.go -o internal/docs
-
-# ── Gateway service (Go) ──────────────────────────────────────────────────────
-
-.PHONY: gateway-build
-gateway-build: ## Build gateway binary with swagger docs
-	cd services/go/gateway && swag init -g cmd/main.go -o internal/docs && go build -o /tmp/gateway ./cmd
-
-.PHONY: gateway-test
-gateway-test: ## Run gateway tests
-	cd services/go/gateway && go test -race -v ./...
-
-.PHONY: gateway-lint
-gateway-lint: ## Lint gateway
-	cd services/go/gateway && golangci-lint run ./...
-
-.PHONY: gateway-docs
-gateway-docs: ## Generate gateway Swagger documentation
-	cd services/go/gateway && swag init -g cmd/main.go -o internal/docs
-
-# ── Processor service (Python) ────────────────────────────────────────────────
-processor-format: ## Format processor Python service
-	$(MAKE) -C services/python/processor format
-
-.PHONY: processor-test
-processor-test: ## Run processor tests
-	$(MAKE) -C services/python/processor test
-
-.PHONY: processor-check
-processor-check: ## Lint + typecheck + test processor
-	$(MAKE) -C services/python/processor check
-
-# ── GitHub Copilot CLI ────────────────────────────────────────────────────────
-
-.PHONY: copilot-suggest
-copilot-suggest: ## Interactive: ask Copilot CLI to suggest a shell command
-	gh copilot suggest
-
-.PHONY: copilot-explain
-copilot-explain: ## Interactive: ask Copilot CLI to explain a command
-	gh copilot explain
-
-# ── Observability URLs ────────────────────────────────────────────────────────
+# ── URLs ──────────────────────────────────────────────────────────────────────
 
 .PHONY: urls
-urls: ## Print local UI URLs
-	@echo ""
-	@echo "  Postgres        → localhost:5432  (pociag/pociag_dev_secret)"
-	@echo "  Airflow UI      → http://localhost:8090  (profile: airflow)"
-	@echo "  Jaeger UI       → http://localhost:16686 (profile: tracing)"
-	@echo "  Prometheus      → http://localhost:9090  (profile: monitoring)"
-	@echo "  Grafana         → http://localhost:3000  (profile: monitoring)"
-	@echo ""
+urls: ## Print local URLs
+	@echo "  Frontend    http://localhost:3100"
+	@echo "  API         http://localhost:8080/api/v1/dashboard/overview"
+	@echo "  Airflow     http://localhost:8090 (admin/admin)"
+	@echo "  Postgres    localhost:5434 (pociag)"
+	@echo "  Jaeger      http://localhost:16686"
+	@echo "  Prometheus  http://localhost:9090   Grafana http://localhost:3001"

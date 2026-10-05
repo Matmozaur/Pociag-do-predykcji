@@ -3,8 +3,7 @@ mode: agent
 description: Create a new Airflow DAG using TaskFlow API following project conventions
 ---
 
-> If this DAG consumes or produces events, check `specs/asyncapi/` for the relevant channel
-> definitions and align task inputs/outputs with the message schemas there.
+> Document the DAG's schedule, PLK requests and written tables in `specs/pipelines.md`.
 
 Create a new Airflow DAG named **`${input:dagId}`** in `airflow/dags/${input:dagId}.py`.
 
