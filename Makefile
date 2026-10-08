@@ -5,6 +5,8 @@ COMPOSE := docker compose -f infra/docker-compose.yml
 DB_URL ?= postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable
 MIGRATE := docker run --rm --network host -v $(PWD)/db/migrations:/migrations:ro \
 	migrate/migrate:v4.18.1 -path /migrations -database "$(DB_URL)"
+# golangci-lint from PATH, else from $(go env GOPATH)/bin (where `go install` puts it).
+GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go env GOPATH)/bin/golangci-lint)
 
 .PHONY: help
 help: ## Show this help message
@@ -53,7 +55,7 @@ api-test: ## Go tests (set POCIAG_TEST_DATABASE_URL to include the SQL tests)
 	cd services/go/api && go test -race ./...
 
 api-lint: ## golangci-lint (v2) on the api
-	cd services/go/api && golangci-lint run ./...
+	cd services/go/api && $(GOLANGCI_LINT) run ./...
 
 airflow-test: ## pytest (set POCIAG_TEST_DATABASE_URL to include the SQL tests)
 	cd airflow && uv sync --all-extras -q && uv pip install -q -e plugins && uv run pytest tests -q
