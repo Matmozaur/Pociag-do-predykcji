@@ -228,3 +228,4 @@ __marimo__/
 
 # Prompt playground
 .prompt-playground/*
+.claude/worktrees/*
