@@ -1,5 +1,5 @@
 # Pociag do Predykcji — developer tasks. Run `make help` for the list.
-# Prerequisites: Docker, Go 1.25+, uv, Node 22.
+# Prerequisites: Docker, Go 1.25+ (older go auto-downloads it unless GOTOOLCHAIN=local), uv, Node 22.
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 DB_URL ?= postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable
