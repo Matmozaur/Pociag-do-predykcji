@@ -24,6 +24,10 @@ operations every 10 min, disruptions every 15 min, stations and timetables daily
 
 ## Commands
 
+Host checks need Docker, Go 1.25+, uv and Node 22. An older `go` (1.21+) still works: with the
+default `GOTOOLCHAIN=auto` it downloads go1.25.0 on first use (network needed once). Offline or
+with `GOTOOLCHAIN=local`, install Go 1.25 yourself.
+
 ```bash
 make help        # everything below and more
 make test        # all checks CI runs + frontend build

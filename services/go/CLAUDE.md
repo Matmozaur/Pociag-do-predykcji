@@ -3,6 +3,10 @@
 One module: `api` (`github.com/pociag-do-predykcji/services/go/api`, `go 1.25.0`). See the repo
 root `CLAUDE.md` for architecture and `specs/openapi/api.yml` for the contract.
 
+The `go 1.25.0` line is the minimum toolchain. An older host `go` (1.21+) fetches go1.25.0 itself
+under the default `GOTOOLCHAIN=auto` (needs network once); with `GOTOOLCHAIN=local` or offline,
+install Go 1.25+ or builds fail with `go.mod requires go >= 1.25.0`.
+
 ## api layout
 
 - `cmd/main.go` — config, tracing, pgx pool, HTTP server.
