@@ -8,39 +8,32 @@ Implement code from the spec at **`${input:specFile}`** (e.g. `specs/openapi/my-
 ## Steps
 
 1. **Read the spec** — parse all paths, operations, schemas, and parameters from the file.
-2. **Identify the service language** — check `services/go/` or `services/python/` for an existing
-   service matching the spec name. If none exists, ask which language to use.
+2. **Identify the target** — `specs/openapi/api.yml` is served by the Go api (`services/go/api/`);
+   `specs/pipelines.md` is implemented by the Airflow DAGs and `pociag_processing` plugin
+   (`airflow/`). For any other spec, ask where it should live.
 3. **Generate only what the spec defines** — do not add endpoints, fields, or behaviours
    not present in the spec. If the spec is incomplete, flag the gap rather than guessing.
 
 ## Mapping rules
 
-### OpenAPI → Go service (`services/go/<name>/`)
+### OpenAPI → Go api (`services/go/api/`)
 
 | OpenAPI element | Go code |
 |---|---|
-| `operationId` | Handler method name: `Handle<OperationId>` |
-| `paths` | Routes in `internal/handler/handler.go` |
-| `components/schemas` | Struct types in `internal/handler/handler.go` (request/response) |
-| `components/schemas` (domain) | Struct types in `internal/repository/repository.go` |
-| DB persistence implied | `internal/repository/` methods + `internal/service/` logic |
+| `paths` | Routes in `Handler.Routes` + an unexported camelCase method (e.g. `h.stationBoard`) in `internal/handler/handler.go` |
+| `components/schemas` | Response models in `internal/model/` |
+| Data from PostgreSQL | `internal/repository/` query methods + `internal/service/` view building |
 
 Follow Go conventions from `.github/copilot-instructions.md`:
 - Context as first param, OTel span per handler and DB call, parameterized SQL, zap logging.
 
-### OpenAPI → Python service (`services/python/<name>/`)
+### Pipeline spec → Airflow (`airflow/`)
 
-| OpenAPI element | Python code |
-|---|---|
-| `operationId` | FastAPI path function name (snake_case) |
-| `paths` | Routes in `src/<name>/router.py` |
-| `components/schemas` | Pydantic models in `src/<name>/models.py` |
-| DB persistence implied | `src/<name>/repository.py` + asyncpg |
-
-Follow Python conventions from `.github/copilot-instructions.md`:
-- `async def` everywhere, type annotations, OTel span per endpoint and DB call, structlog.
+Follow `airflow/CLAUDE.md`: thin DAG in `dags/`, logic in `plugins/pociag_processing/`
+(`transform.py` for PLK payloads, SQL only in `repository.py`), idempotent upserts,
+`mypy --strict`.
 
 ## Output
 
-Generate all files needed for a runnable service that exactly satisfies the spec.
+Generate only the code needed to satisfy the spec exactly.
 Include a brief summary of what was created and any spec gaps found.

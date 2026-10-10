@@ -22,7 +22,7 @@ For every review, work through these dimensions in order:
 ### 1. Correctness
 - Logic errors, off-by-one bugs, incorrect error handling (`_ = err`, swallowed errors).
 - Go: missing `defer span.End()`, unchecked `pgx` row errors, missing `context.Context` propagation.
-- Python: missing `await`, sync calls inside async handlers, unhandled exceptions.
+- Python: non-idempotent syncs, SQL outside `repository.py`, unhandled exceptions in DAG tasks.
 
 ### 2. Security (OWASP Top 10)
 - SQL injection: are all queries parameterized? No string-concatenated SQL.
@@ -36,32 +36,26 @@ For every review, work through these dimensions in order:
 
 ### 4. Conventions
 - Go: `internal/` for non-exported packages, `cmd/` for entrypoints, `chi` router, `pgx/v5`, OTel spans on every handler and DB call.
-- Python: `src/<pkg>/` layout, `asyncpg` raw SQL, `mypy --strict` compliance, `structlog` JSON logging.
+- Python: thin DAGs in `airflow/dags/`, logic in `airflow/plugins/pociag_processing/`, `psycopg2` raw SQL, `mypy --strict` compliance, stdlib `logging`.
 - Database: parameterized queries, no ORM, schema changes are additive only.
 
 ### 5. Tests
 - Are there tests for the changed code? At least one happy-path and one error-path per function.
 - Test names follow `Test<Function>_<Scenario>_<ExpectedBehavior>` (Go) / `test_<function>_<scenario>_<expected>` (Python).
-- Integration tests use `testcontainers-go` / `testcontainers` — no mocked DB for repository layer.
+- Repository SQL tests run against a real disposable Postgres (`POCIAG_TEST_DATABASE_URL`) — no mocked DB for the repository layer.
 
 ### 6. Observability
 - Every HTTP handler and DB call has an OTel span with `<noun>.<verb>` naming.
 - Logs include `trace_id` and `span_id`; no sensitive fields.
-- `/metrics` endpoint exposed and standard metrics registered.
+- api `/healthz` and `/readyz` keep working.
 
 ## Running Automated Tests
 
-**Go service** (from `services/go/<service>/`):
+From the repo root (set `POCIAG_TEST_DATABASE_URL` to a disposable database to include SQL tests):
 ```
-go test -race -v ./...
-golangci-lint run ./...
-```
-
-**Python service** (from `services/python/<service>/`):
-```
-uv run pytest tests/ -v
-uv run ruff check src/ tests/
-uv run mypy src/
+make api-test api-lint          # Go api: go test -race, golangci-lint
+make airflow-test airflow-lint  # Airflow: pytest, ruff, mypy --strict
+make frontend-build             # Next.js build
 ```
 
 Run each command, capture the output, and include a pass/fail summary in your report.

@@ -69,7 +69,7 @@ Available project commands:
 
 `/new-python-service` is intentionally retained only as a migration-friendly command
 name. It creates or changes Airflow processing code instead of the obsolete standalone
-FastAPI service described by the old Copilot prompt.
+FastAPI service the name suggests.
 
 ## Updating Configuration
 
