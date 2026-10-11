@@ -23,7 +23,7 @@ processors:
 exporters:
   # Forward traces to Jaeger (enabled when tracing profile is active)
   otlp/jaeger:
-    endpoint: jaeger:14250
+    endpoint: jaeger:4317
     tls:
       insecure: true
 
