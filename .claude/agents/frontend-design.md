@@ -20,11 +20,13 @@ authoritative conventions. Key points:
   `react-leaflet` in client-only `*Client.tsx` components. Icons `lucide-react`.
   Classes composed with `clsx` + `tailwind-merge`. Import alias `@/*` → `src/*`.
 - **Talk only to the api** (`services/go/api`). All server data
-  goes through `apiFetch` / `@tanstack/react-query` hooks in `src/lib/`; no ad-hoc
-  `fetch` in components. Response shapes must match `specs/openapi/api.yml` — do
+  goes through `useQuery` calling the `api` object in `src/lib/api.ts` (shared hooks
+  such as `useStationBoard` live in `src/lib/`); no ad-hoc `fetch` to the api in
+  components. Response shapes must match `specs/openapi/api.yml` — do
   not invent fields or routes; flag a spec gap and stop.
 - Route segments use Polish slugs (`mapa`, `pociagi`, `rozklad`, `utrudnienia`,
-  `wyszukaj`). Query client is in `src/app/providers.tsx`.
+  `wyszukaj`), plus `stations/[id]`; `/` redirects to `/mapa`. UI primitives are in
+  `src/lib/ui.tsx`. Query client is in `src/app/providers.tsx`.
 - Handle loading AND error states for every remote query.
 - Env: `API_URL` (default `http://localhost:8080`), rewritten from `/bff/*`.
 

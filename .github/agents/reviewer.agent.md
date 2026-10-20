@@ -41,12 +41,12 @@ For every review, work through these dimensions in order:
 
 ### 5. Tests
 - Are there tests for the changed code? At least one happy-path and one error-path per function.
-- Test names follow `Test<Function>_<Scenario>_<ExpectedBehavior>` (Go) / `test_<function>_<scenario>_<expected>` (Python).
+- Test names follow the package's existing style: `Test<Thing>` or `Test<Thing>_<Case>` (Go, table-driven) / `test_<function>_<scenario>` (Python).
 - Repository SQL tests run against a real disposable Postgres (`POCIAG_TEST_DATABASE_URL`) — no mocked DB for the repository layer.
 
 ### 6. Observability
 - Every HTTP handler and DB call has an OTel span with `<noun>.<verb>` naming.
-- Logs include `trace_id` and `span_id`; no sensitive fields.
+- Error logs include `trace_id`; no sensitive fields.
 - api `/healthz` and `/readyz` keep working.
 
 ## Running Automated Tests

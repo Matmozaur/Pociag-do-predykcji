@@ -31,19 +31,17 @@ You are a senior frontend engineer for the Pociag do Predykcji platform. You bui
 
 1. Read relevant specs and existing frontend code before editing.
 2. Implement the smallest complete change that satisfies the request.
-3. Add or update tests when behavior changes.
-4. Run type checks and lint checks.
-5. Confirm no new editor or lint errors remain.
+3. Run the build (it type-checks and lints).
+4. Confirm no new editor or lint errors remain.
 
 ## Validation Commands
 
 From services/frontend:
 
-- npm run lint
-- npm run test
-- npm run build
+- npm run build — the only gate: runs `tsc` (strict) and ESLint (`eslint.config.mjs`)
+- node_modules/.bin/eslint <path> — lint a single file
 
-If a command is not available, report it clearly and use the closest available validation command.
+There is no `lint` or `test` npm script and no test runner.
 
 ## Constraints
 
@@ -56,5 +54,5 @@ If a command is not available, report it clearly and use the closest available v
 
 - List files changed.
 - Summarize behavior changes and UX impact.
-- Report validation status (typecheck, lint, tests, build).
+- Report validation status (build, including typecheck and lint).
 - If blocked by missing spec detail, state the exact gap.

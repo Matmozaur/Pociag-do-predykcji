@@ -10,8 +10,9 @@ install Go 1.25+ or builds fail with `go.mod requires go >= 1.25.0`.
 ## api layout
 
 - `cmd/main.go` — config, tracing, pgx pool, HTTP server.
-- `internal/handler` — chi routes, parameter validation (out of range → 400), JSON, error
-  mapping (`service.ErrNotFound` → 404, else logged 500).
+- `internal/handler` — chi routes (`/healthz`, `/readyz` = DB ping, `/api/v1/*`), an open CORS
+  middleware (`*`, `GET, OPTIONS`), parameter validation (out of range → 400), JSON, error
+  mapping (`service.ErrNotFound` → 404, else 500 logged with `trace_id`).
 - `internal/service` — builds the response models (`internal/model`) from repository rows. Pure
   apart from the `Repository` interface it defines; tests use `service/servicetest` (fake repo)
   and `export_test.go` (fixed clock).
