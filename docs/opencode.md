@@ -71,6 +71,22 @@ Available project commands:
 name. It creates or changes Airflow processing code instead of the obsolete standalone
 FastAPI service the name suggests.
 
+## MCP servers
+
+`opencode.json` (and `.mcp.json` for Claude Code) start `context7`, `playwright`,
+`chrome-devtools` (OpenCode only), plus two servers that need the local stack and credentials:
+
+- `postgres` — read-only SQL via dbhub (`.opencode/dbhub.toml`).
+- `airflow` — `airflow-dev-mcp` against the Airflow UI on `127.0.0.1:8090`.
+
+Both source `infra/.env` and then `.opencode/.env` (Git-ignored), which must define:
+
+```bash
+OPENCODE_POSTGRES_DSN=postgres://pociag:<password>@127.0.0.1:5434/pociag?sslmode=disable
+OPENCODE_AIRFLOW_USERNAME=admin
+OPENCODE_AIRFLOW_PASSWORD=<password>
+```
+
 ## Updating Configuration
 
 After changing `opencode.json`, anything under `.opencode/`, or `AGENTS.md`, quit and

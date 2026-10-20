@@ -47,15 +47,8 @@ gh copilot suggest "force-recreate the api container without rebuilding the imag
 
 ```bash
 gh copilot explain "docker compose --profile tracing up -d --no-deps api"
-gh copilot explain "go test -race -count=1 -run TestIngest ./internal/service/..."
+gh copilot explain "go test -race -count=1 -run TestRepository ./internal/repository/..."
 gh copilot explain "migrate -path db/migrations -database $DB_URL force 1"
-```
-
-### Makefile targets that wrap Copilot CLI
-
-```bash
-make copilot-suggest   # opens interactive suggest prompt
-make copilot-explain   # opens interactive explain prompt
 ```
 
 ## VS Code integration
@@ -67,5 +60,5 @@ dedicated terminal panel — press `Ctrl+Shift+P → Run Task` to invoke it.
 ## Tips for this project
 
 - Always name the service you're targeting: *"for the Go api service"*, *"in the airflow-scheduler container"*.
-- Reference Makefile targets: *"equivalent to `make go-test` but only for the handler package"*.
+- Reference Makefile targets: *"equivalent to `make api-test` but only for the handler package"*.
 - For Docker Compose questions, mention the profile: *"using the tracing profile"*.
