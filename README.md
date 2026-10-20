@@ -47,4 +47,5 @@ schema is recreated), e.g. `postgres://pociag:pass@localhost:55432/pociag_test`.
 | `services/go/api/` | Read API for the frontend |
 | `services/frontend/` | Next.js UI |
 | `specs/` | API contract and pipeline spec |
+| `research/` | Exploratory notebooks (marimo, pandas, polars; own uv project) |
 | `infra/` | docker compose stack, OTel / Prometheus / Grafana config |

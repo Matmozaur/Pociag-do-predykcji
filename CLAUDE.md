@@ -73,6 +73,7 @@ database — they recreate its `public` schema. Never point it at the stack's da
 | Postgres (main) | 5434 | Airflow Postgres | 5433 |
 | api | 8080 | Airflow UI | 8090 |
 | frontend | 3100 | Jaeger / Prometheus / Grafana | 16686 / 9090 / 3001 |
+| OTel Collector (gRPC / HTTP) | 4327 / 4328 | | |
 
 ### Branch & commit conventions (observed)
 
