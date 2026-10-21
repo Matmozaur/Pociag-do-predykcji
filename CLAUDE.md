@@ -73,7 +73,7 @@ database — they recreate its `public` schema. Never point it at the stack's da
 | Postgres (main) | 5434 | Airflow Postgres | 5433 |
 | api | 8080 | Airflow UI | 8090 |
 | frontend | 3100 | Jaeger / Prometheus / Grafana | 16686 / 9090 / 3001 |
-| OTel Collector (gRPC / HTTP) | 4327 / 4328 | | |
+| OTel Collector (gRPC / HTTP / metrics) | 4327 / 4328 / 8889 | | |
 
 ### Branch & commit conventions (observed)
 
@@ -91,7 +91,8 @@ database — they recreate its `public` schema. Never point it at the stack's da
 - **No hardcoded secrets** — env vars (Go: `os.LookupEnv`) or Airflow connections.
 - **Tracing**: service names `pociag.api` / `pociag.airflow`, span names `<noun>.<verb>`, OTLP gRPC
   to `OTEL_EXPORTER_OTLP_ENDPOINT`.
-- **Structured JSON logs**: `zap` in Go, `logging` in Python. Never log secrets or payloads.
+- **Structured logs**: `zap` JSON in Go; stdlib `logging` in Python (Airflow's default task-log
+  format). Never log secrets or payloads.
 - **Parameterized SQL only**, on both sides.
 
 ## Shell
