@@ -40,16 +40,16 @@ COMMIT;
 ## Rules
 
 - Wrap everything in `BEGIN; ... COMMIT;`.
-- Every new table must include:
-  ```sql
-  id         BIGSERIAL PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  ```
-- Create indexes explicitly — do not rely on implicit index creation.
+- Follow `001_init.up.sql`: tables keyed by the PLK id when PLK has a stable one (`stations`),
+  otherwise `id BIGSERIAL PRIMARY KEY` plus a `UNIQUE` natural key (`trains`, `operations`);
+  child rows use a composite key (`(train_id, seq)`). Add `updated_at TIMESTAMPTZ NOT NULL
+  DEFAULT now()` where syncs touch the row.
+- Create indexes explicitly for new foreign keys and the predicates both repositories filter
+  on (`airflow/plugins/pociag_processing/repository.py`, `services/go/api/internal/repository`).
 - `down.sql` must exactly reverse `up.sql` (drop tables/columns/indexes created in up).
 - Never use `DROP COLUMN` in `up.sql` — only `ADD COLUMN`; mark old columns with a comment `-- deprecated`.
 - Use `snake_case` for all identifiers.
 - Add a comment block at the top of each file describing what it does.
 
-Generate both migration files with complete, correct SQL.
+Generate both migration files with complete, correct SQL, update both repositories if the
+shape they read or write changed, and run both SQL test suites (`db/migrations/CLAUDE.md`).

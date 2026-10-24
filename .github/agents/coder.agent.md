@@ -47,8 +47,8 @@ Python lives only in `airflow/`: thin DAGs in `dags/`, logic in the `pociag_proc
 - Syncs are idempotent upserts; DAG tasks call one `pociag_processing.pipelines.sync_*` function.
 - Logging: stdlib `logging`; tracing service name `pociag.airflow`, span names `<noun>.<verb>`.
 - `from __future__ import annotations`; **all** type annotations required; code must pass `mypy --strict`.
-- Lint/format: `ruff check` and `ruff format` — no violations allowed.
-- Tests: `pytest` + `pytest-mock`; repository SQL tests need `POCIAG_TEST_DATABASE_URL`; names follow `test_<function>_<scenario>_<expected>`.
+- Lint: `ruff check` — no violations allowed (`ruff format` is not enforced; don't reformat untouched files).
+- Tests: `pytest` + `pytest-mock`; repository SQL tests need `POCIAG_TEST_DATABASE_URL`; names follow `test_<function>_<scenario>` (`test_<function>` when one case suffices).
 
 ```python
 # Canonical DAG task shape (import inside the task keeps DAG parsing cheap)
