@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowLeft, Map, Search, Train } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Map, MapPin, Search, Train } from 'lucide-react'
 import { cn } from '@/lib/ui'
 
 const NAV_ITEMS = [
     { href: '/mapa', label: 'Mapa', icon: Map },
     { href: '/wyszukaj', label: 'Wyszukaj', icon: Search },
+    { href: '/stacje', label: 'Stacje', icon: MapPin },
     { href: '/pociagi', label: 'Pociągi', icon: Train },
     { href: '/utrudnienia', label: 'Utrudnienia', icon: AlertTriangle },
 ]
@@ -94,7 +95,7 @@ export function NavShell({ children, title, showBack }: NavShellProps) {
                                 key={href}
                                 href={href}
                                 className={cn(
-                                    'flex flex-1 flex-col items-center gap-1 py-2 text-xs font-medium transition-colors',
+                                    'flex min-w-0 flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors min-[400px]:text-xs',
                                     active ? 'text-blue-400' : 'text-slate-500 hover:text-slate-300',
                                 )}
                             >
