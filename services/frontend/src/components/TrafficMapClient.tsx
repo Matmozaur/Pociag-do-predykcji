@@ -54,26 +54,38 @@ function buildOutsideMask(poland: PolandFeature): GeoJSON.Feature<GeoJSON.Polygo
     }
 }
 
+// Stations are background context under the trains: small, unstroked, dimmed dots in a
+// muted sky tone that can't be mistaken for a train's delay colour.
+const STATION_RADIUS = 4
 const STATION_PATH_OPTIONS: L.PathOptions = {
-    color: '#38bdf8',
-    weight: 1.5,
-    fillColor: '#0ea5e9',
-    fillOpacity: 0.85,
+    stroke: false,
+    fillColor: '#7dd3fc',
+    fillOpacity: 0.7,
 }
+// Zoomed out below the label zoom, ~3k stations overlap along every line, so draw them
+// smaller and fainter there to keep the trains readable.
+const OVERVIEW_STATION_RADIUS = 2.5
+const OVERVIEW_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, fillOpacity: 0.45 }
 
 // Real-world track geometry from OpenRailwayMap (OSM data, CC-BY-SA). The tiles are
 // transparent, so they overlay the dark Poland fill without needing a base map. Dimmed
-// so the network reads as context and the station dots stay the focal layer.
+// so the network reads as context and the markers stay the focal layer.
 const RAILWAY_TILES_URL = 'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png'
 const RAILWAY_TILES_ATTRIBUTION =
     'Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
     'style: <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (CC-BY-SA)'
 
+// Selected station: a light ring around a soft fill — clearly picked out, but no larger
+// than a train dot and not amber (that's the 1–5 min delay colour). Still painted under
+// the trains on the shared canvas, so trains keep their clicks.
+const SELECTED_STATION_RADIUS = 6
 const SELECTED_STATION_PATH_OPTIONS: L.PathOptions = {
-    color: '#fde68a',
-    weight: 2.5,
-    fillColor: '#f59e0b',
-    fillOpacity: 1,
+    stroke: true, // setStyle merges, so re-enable what STATION_PATH_OPTIONS turned off
+    color: '#bae6fd',
+    weight: 1.5,
+    opacity: 0.9,
+    fillColor: '#38bdf8',
+    fillOpacity: 0.35,
 }
 
 // Permanent station labels only from this zoom up — with ~3k stations they are
@@ -198,34 +210,38 @@ interface StationMarkerProps {
     station: MapStation
     selected: boolean
     labelled: boolean
+    overview: boolean
     renderer: L.Renderer
     onSelect: (station: MapStation) => void
 }
 
-const StationMarker = memo(function StationMarker({ station, selected, labelled, renderer, onSelect }: StationMarkerProps) {
+const StationMarker = memo(function StationMarker({ station, selected, labelled, overview, renderer, onSelect }: StationMarkerProps) {
     const center = useMemo<L.LatLngTuple>(() => [station.latitude, station.longitude], [station.latitude, station.longitude])
     const eventHandlers = useMemo(() => ({ click: () => onSelect(station) }), [onSelect, station])
     return (
         <CircleMarker
             center={center}
-            radius={selected ? 10 : 6}
+            radius={selected ? SELECTED_STATION_RADIUS : overview ? OVERVIEW_STATION_RADIUS : STATION_RADIUS}
             renderer={renderer}
-            pathOptions={selected ? SELECTED_STATION_PATH_OPTIONS : STATION_PATH_OPTIONS}
+            pathOptions={
+                selected ? SELECTED_STATION_PATH_OPTIONS : overview ? OVERVIEW_STATION_PATH_OPTIONS : STATION_PATH_OPTIONS
+            }
             eventHandlers={eventHandlers}
         >
             {labelled ? (
                 <Tooltip
                     key="label"
                     direction="top"
-                    offset={[0, -6]}
+                    offset={[0, -4]}
                     opacity={1}
                     permanent
+                    pane="stationLabelsPane"
                     className="station-label-tooltip"
                 >
                     <span className="font-semibold">{station.name}</span>
                 </Tooltip>
             ) : (
-                <Tooltip key="hover" direction="top" offset={[0, -6]} opacity={1} className="station-label-tooltip">
+                <Tooltip key="hover" direction="top" offset={[0, -4]} opacity={1} className="station-label-tooltip">
                     <span className="font-semibold">{station.name}</span>
                 </Tooltip>
             )}
@@ -264,6 +280,7 @@ function StationsLayer({ stations, selectedStationId, renderer, onStationSelect 
                     station={station}
                     selected={station.external_id === selectedStationId}
                     labelled={showLabels && view.bounds.contains([station.latitude, station.longitude])}
+                    overview={!showLabels}
                     renderer={renderer}
                     onSelect={handleSelect}
                 />
@@ -352,7 +369,7 @@ const TrainMarker = memo(function TrainMarker({ train, latitude, longitude, data
     return (
         <CircleMarker
             center={center}
-            radius={open ? 7 : 5}
+            radius={open ? 8.5 : 6.5}
             renderer={renderer}
             pathOptions={trainStyle(delayTone(train.delay_minutes), train.confidence === 'low', open)}
             eventHandlers={eventHandlers}
@@ -494,7 +511,7 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                 )}
 
                 {/* Explicit panes pin the paint order: Poland fill (overlayPane, z 400) →
-                    railway tiles → outside-Poland mask → station dots → trains. */}
+                    railway tiles → outside-Poland mask → station dots → station labels → trains. */}
                 <Pane name="railwayPane" style={{ zIndex: 410 }}>
                     <TileLayer
                         url={RAILWAY_TILES_URL}
@@ -526,6 +543,9 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                         />
                     )}
                 </Pane>
+
+                {/* Permanent station labels sit under the trains (the default tooltip pane is z 650). */}
+                <Pane name="stationLabelsPane" style={{ zIndex: 425 }} />
 
                 <Pane name="trainsPane" style={{ zIndex: 430 }}>
                     {showTrains && trainsData && (
