@@ -41,7 +41,7 @@ npm start         # next start (prod)
   `poland-border.geojson`, are the exception). Query client (default `staleTime` 30 s) is set
   up in `src/app/providers.tsx`. Handle loading + error states.
 - Route segments in `src/app/`: Polish slugs `mapa` (home; `/` redirects there), `pociagi`,
-  `pociagi/[id]`, `rozklad/[id]`, `utrudnienia`, `wyszukaj`, plus `stations/[id]` (station
+  `pociagi/[id]`, `rozklad/[id]`, `stacje` (station list), `utrudnienia`, `wyszukaj`, plus `stations/[id]` (station
   board). Pages are client components (`'use client'`) wrapped in `NavShell`.
 - Shared components in `src/components/`; UI primitives (`cn`, `Badge`, `Button`, `Card`,
   `Input`, `Spinner`, `EmptyState`) in `src/lib/ui.tsx`; API client and formatting helpers

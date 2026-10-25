@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useCallback, useEffect, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
     AlertTriangle,
     ArrowLeft,
@@ -21,6 +21,7 @@ import {
     delayVariant,
     formatDelay,
     api,
+    sortByDelay,
     statusLabel,
     type DisruptionSummaryView,
     type LiveTrainSummary,
@@ -119,7 +120,9 @@ function MapHome() {
     }, [selectedStationId, selectStation])
 
     const overviewQuery = useQuery({ queryKey: ['dashboardOverview'], queryFn: api.getDashboardOverview, staleTime: 30_000 })
-    const trainsQuery = useQuery({ queryKey: ['mapLiveTrains'], queryFn: () => api.getLiveTrains({ limit: 4 }), staleTime: 30_000, refetchInterval: 60_000 })
+    // All active trains (shared cache with /pociagi), sorted by delay before truncating.
+    const trainsQuery = useQuery({ queryKey: ['allLiveTrains'], queryFn: () => api.getAllLiveTrains(), staleTime: 30_000, refetchInterval: 60_000 })
+    const topDelayedTrains = useMemo(() => (trainsQuery.data ? sortByDelay(trainsQuery.data.data).slice(0, 4) : []), [trainsQuery.data])
     const disruptionsQuery = useQuery({ queryKey: ['mapDisruptions'], queryFn: () => api.listDisruptions(3), staleTime: 60_000 })
     const isRefreshing = overviewQuery.isFetching || trainsQuery.isFetching || disruptionsQuery.isFetching
     const refreshAll = () => { void Promise.all([overviewQuery.refetch(), trainsQuery.refetch(), disruptionsQuery.refetch()]) }
@@ -174,7 +177,7 @@ function MapHome() {
                 <section aria-labelledby="live-trains-heading" className="border-t border-white/8 pt-4">
                     <div className="mb-1 flex items-center justify-between"><h2 id="live-trains-heading" className="text-sm font-semibold text-white">Pociągi w ruchu</h2><Link href="/pociagi" className="text-xs font-medium text-blue-300 hover:text-blue-200">Zobacz wszystkie</Link></div>
                     <DataFreshness lastUpdated={overviewQuery.data?.data_freshness.operations_last_updated} className="mb-2" />
-                    {trainsQuery.isLoading ? <div className="flex justify-center py-5"><Spinner /></div> : trainsQuery.isError ? <QueryMessage onRetry={() => trainsQuery.refetch()}>Nie udało się pobrać pociągów.</QueryMessage> : trainsQuery.data?.data.length ? <div>{trainsQuery.data.data.map((train) => <TrainRow key={train.operation_id} train={train} />)}</div> : <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><CheckCircle2 size={17} className="text-emerald-400" /> Brak pociągów w ruchu.</div>}
+                    {trainsQuery.isLoading ? <div className="flex justify-center py-5"><Spinner /></div> : trainsQuery.isError ? <QueryMessage onRetry={() => trainsQuery.refetch()}>Nie udało się pobrać pociągów.</QueryMessage> : topDelayedTrains.length ? <div>{topDelayedTrains.map((train) => <TrainRow key={train.operation_id} train={train} />)}</div> : <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><CheckCircle2 size={17} className="text-emerald-400" /> Brak pociągów w ruchu.</div>}
                 </section>
 
                 <section aria-labelledby="disruptions-heading" className="mt-3 border-t border-white/8 pt-4">

@@ -1,8 +1,9 @@
 'use client'
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import Link from 'next/link'
 import { ArrowRight, MapPin, RefreshCw, Train } from 'lucide-react'
-import { delayVariant, formatDelay, api, statusLabel, statusVariant, type LiveTrainSummary } from '@/lib/api'
+import { delayVariant, formatDelay, api, sortByDelay, statusLabel, statusVariant, type LiveTrainSummary } from '@/lib/api'
 import { Badge, Button, Card, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
 import { DataFreshness } from '@/components/DataFreshness'
@@ -44,11 +45,12 @@ function LiveTrainCard({ train }: { train: LiveTrainSummary }) {
 
 export default function PociagiPage() {
     const trainsQuery = useQuery({
-        queryKey: ['liveTrains', ''],
-        queryFn: () => api.getLiveTrains({ carriers: undefined, limit: 50 }),
+        queryKey: ['allLiveTrains'],
+        queryFn: () => api.getAllLiveTrains(),
         refetchInterval: 60_000,
         staleTime: 30_000,
     })
+    const sortedTrains = useMemo(() => (trainsQuery.data ? sortByDelay(trainsQuery.data.data) : []), [trainsQuery.data])
     const overviewQuery = useQuery({
         queryKey: ['dashboardOverview'],
         queryFn: api.getDashboardOverview,
@@ -94,12 +96,12 @@ export default function PociagiPage() {
                             </Button>
                         }
                     />
-                ) : trainsQuery.data && trainsQuery.data.data.length > 0 ? (
+                ) : sortedTrains.length > 0 ? (
                     <div className="space-y-3">
                         <p className="text-xs text-slate-500">
-                            {trainsQuery.data.data.length} pociągów · auto-odświeżanie co 60s
+                            {sortedTrains.length} pociągów · auto-odświeżanie co 60s
                         </p>
-                        {trainsQuery.data.data.map((train) => (
+                        {sortedTrains.map((train) => (
                             <LiveTrainCard key={train.operation_id} train={train} />
                         ))}
                     </div>

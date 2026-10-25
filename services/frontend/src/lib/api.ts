@@ -300,6 +300,20 @@ export const api = {
             offset: params?.offset ? String(params.offset) : undefined,
         }),
 
+    // Every active train: the api orders by operation id and caps a page at 100, so a
+    // client-side sort (e.g. by delay) needs all pages, not just the first one.
+    getAllLiveTrains: async (params?: { carriers?: string }): Promise<LiveTrainsResponse> => {
+        const pageSize = 100
+        const first = await api.getLiveTrains({ ...params, limit: pageSize })
+        const offsets: number[] = []
+        for (let offset = pageSize; offset < first.pagination.total; offset += pageSize) offsets.push(offset)
+        const rest = await Promise.all(offsets.map((offset) => api.getLiveTrains({ ...params, limit: pageSize, offset })))
+        const data = [first, ...rest].flatMap((page) => page.data)
+        // Pages are separate queries, so a train can shift across a page boundary; keep one copy.
+        const unique = [...new Map(data.map((train) => [train.operation_id, train])).values()]
+        return { ...first, data: unique, pagination: { ...first.pagination, limit: unique.length } }
+    },
+
     getTrainDetail: (operationId: number) =>
         apiFetch<TrainDetailView>(`/api/v1/trains/${operationId}`),
 
@@ -327,6 +341,23 @@ export function formatDelay(minutes: number | null | undefined): string {
     if (minutes === 0) return 'Na czas'
     if (minutes > 0) return `+${minutes} min`
     return `${minutes} min`
+}
+
+/** Comparator: largest delay first, unknown delay last, ties by train name. */
+export function compareByDelay(
+    a: Pick<LiveTrainSummary, 'delay_minutes' | 'train_name'>,
+    b: Pick<LiveTrainSummary, 'delay_minutes' | 'train_name'>,
+): number {
+    const aKnown = a.delay_minutes != null
+    const bKnown = b.delay_minutes != null
+    if (aKnown !== bKnown) return aKnown ? -1 : 1
+    if (aKnown && bKnown && a.delay_minutes !== b.delay_minutes) return b.delay_minutes! - a.delay_minutes!
+    return a.train_name.localeCompare(b.train_name, 'pl')
+}
+
+/** Returns a new array sorted with `compareByDelay`; the input is not mutated. */
+export function sortByDelay<T extends Pick<LiveTrainSummary, 'delay_minutes' | 'train_name'>>(trains: readonly T[]): T[] {
+    return [...trains].sort(compareByDelay)
 }
 
 export function delayVariant(
