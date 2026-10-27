@@ -8,15 +8,21 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, MapPin, TrainFront } from 'lucide-react'
 import { CircleMarker, GeoJSON, MapContainer, Pane, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { formatDelay, api, type MapStation, type TrainMapPoint, type TrainMapStop } from '@/lib/api'
+import type { RailIndex } from '@/lib/railSnap'
+import { snapTrainPosition, useOverlapOffsets, useRailIndex } from '@/lib/useRailSnap'
 import { Spinner, cn } from '@/lib/ui'
 
-// Padded bounding box around Poland — used both to fit the initial view and to
-// lock panning so users can never scroll out into an empty void.
+// Padded bounding box around Poland — the initial view is fitted to it.
 const POLAND_VIEW_BOUNDS: L.LatLngBoundsExpression = [
     [48.85, 13.85],
     [54.98, 24.4],
 ]
-const MAX_BOUNDS = L.latLngBounds(POLAND_VIEW_BOUNDS).pad(0.15)
+// Panning is locked to roughly Central Europe: enough to follow lines across the border
+// into the neighbouring networks, without scrolling out into an empty void.
+const MAX_BOUNDS = L.latLngBounds([
+    [45, 5],
+    [58, 32],
+])
 
 const POLAND_FILL_STYLE: L.PathOptions = {
     fillColor: '#10141f',
@@ -25,11 +31,12 @@ const POLAND_FILL_STYLE: L.PathOptions = {
     weight: 1.2,
 }
 
-// Everything outside Poland is painted over the railway tiles in the map background
-// colour (see `.leaflet-container` in globals.css), so tracks stop exactly at the border.
+// Everything outside Poland is veiled over the railway tiles in the map background
+// colour (see `.leaflet-container` in globals.css): foreign lines stay visible as dimmed
+// background context (no train data exists for them), Polish ones stay the focus.
 const OUTSIDE_POLAND_STYLE: L.PathOptions = {
     fillColor: '#1a1d27',
-    fillOpacity: 1,
+    fillOpacity: 0.6,
     color: '#334155',
     weight: 1.2,
 }
@@ -69,7 +76,8 @@ const OVERVIEW_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, 
 
 // Real-world track geometry from OpenRailwayMap (OSM data, CC-BY-SA). The tiles are
 // transparent, so they overlay the dark Poland fill without needing a base map. Dimmed
-// so the network reads as context and the markers stay the focal layer.
+// so the network reads as context and the markers stay the focal layer; outside Poland
+// they are dimmed further by the outside mask.
 const RAILWAY_TILES_URL = 'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png'
 const RAILWAY_TILES_ATTRIBUTION =
     'Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
@@ -165,22 +173,23 @@ function hasCoords(stop?: TrainMapStop): stop is TrainMapStop & { latitude: numb
     return stop?.latitude != null && stop.longitude != null
 }
 
-// Linear interpolation between the segment's stops by wall-clock time, clamped to the
-// segment. Falls back to the server position whenever the segment can't be lerped.
-function estimatePosition(train: TrainMapPoint, now: number): [number, number] {
+// Wall-clock share (0–1, clamped) of an en-route train's run between its stops, or null
+// whenever the segment can't be interpolated.
+function segmentFraction(train: TrainMapPoint, now: number): number | null {
     const { previous_stop: prev, next_stop: next } = train
-    if (train.phase === 'en_route' && hasCoords(prev) && hasCoords(next)) {
-        const start = Date.parse(prev.time)
-        const end = Date.parse(next.time)
-        if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-            const f = Math.min(1, Math.max(0, (now - start) / (end - start)))
-            return [
-                prev.latitude + (next.latitude - prev.latitude) * f,
-                prev.longitude + (next.longitude - prev.longitude) * f,
-            ]
-        }
-    }
-    return [train.latitude, train.longitude]
+    if (train.phase !== 'en_route' || !hasCoords(prev) || !hasCoords(next)) return null
+    const start = Date.parse(prev.time)
+    const end = Date.parse(next.time)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+    return Math.min(1, Math.max(0, (now - start) / (end - start)))
+}
+
+// Linear interpolation between the segment's stops at fraction f. Falls back to the
+// server position whenever the segment can't be lerped.
+function estimatePosition(train: TrainMapPoint, f: number | null): [number, number] {
+    const { previous_stop: prev, next_stop: next } = train
+    if (f == null || !hasCoords(prev) || !hasCoords(next)) return [train.latitude, train.longitude]
+    return [prev.latitude + (next.latitude - prev.latitude) * f, prev.longitude + (next.longitude - prev.longitude) * f]
 }
 
 function pluralPl(n: number, one: string, few: string, many: string): string {
@@ -386,11 +395,32 @@ const TrainMarker = memo(function TrainMarker({ train, latitude, longitude, data
     )
 })
 
-function TrainsLayer({ trains, dataAsOf, now, renderer }: { trains: TrainMapPoint[]; dataAsOf?: string; now: number | null; renderer: L.Renderer }) {
+interface TrainsLayerProps {
+    trains: TrainMapPoint[]
+    dataAsOf?: string
+    now: number | null
+    railIndex: RailIndex | null
+    renderer: L.Renderer
+}
+
+function TrainsLayer({ trains, dataAsOf, now, railIndex, renderer }: TrainsLayerProps) {
+    // The single place each train's drawn position is decided: place it along the railway
+    // route between its stops (or snap onto the nearest line), then slide trains that would
+    // overlap on screen apart along their tracks.
+    const points = useMemo(
+        () =>
+            trains.map((train) => {
+                const fraction = now == null ? null : segmentFraction(train, now)
+                const { position, bearing, track } = snapTrainPosition(railIndex, train, estimatePosition(train, fraction), fraction)
+                return { id: train.operation_id, latitude: position[0], longitude: position[1], bearing, track }
+            }),
+        [trains, now, railIndex],
+    )
+    const spread = useOverlapOffsets(points)
     return (
         <>
-            {trains.map((train) => {
-                const [latitude, longitude] = now == null ? [train.latitude, train.longitude] : estimatePosition(train, now)
+            {trains.map((train, i) => {
+                const [latitude, longitude] = spread.get(train.operation_id) ?? [points[i].latitude, points[i].longitude]
                 return (
                     <TrainMarker
                         key={train.operation_id}
@@ -464,14 +494,17 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
     const trainsData = trainsQuery.data
 
     // Interpolation clock. A tick older than the latest response is ignored, so fresh
-    // server positions are shown as-is until the next tick moves them on.
+    // data is placed as of its fetch time until the next tick moves it on — still along
+    // the railway route, so trains don't jump off their line after every refetch.
     const [tick, setTick] = useState<number | null>(null)
     useEffect(() => {
         if (!showTrains) return
         const id = window.setInterval(() => setTick(Date.now()), TRAIN_TICK_MS)
         return () => window.clearInterval(id)
     }, [showTrains])
-    const now = tick != null && tick > trainsQuery.dataUpdatedAt ? tick : null
+    const now = tick != null && tick > trainsQuery.dataUpdatedAt ? tick : trainsQuery.dataUpdatedAt || null
+    // Railway line geometry for snapping; only fetched once trains are shown.
+    const railIndex = useRailIndex(showTrains)
 
     useEffect(() => {
         fetch('/poland-border.geojson')
@@ -495,7 +528,7 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                 bounds={POLAND_VIEW_BOUNDS}
                 maxBounds={MAX_BOUNDS}
                 maxBoundsViscosity={1.0}
-                minZoom={6}
+                minZoom={5}
                 maxZoom={19}
                 worldCopyJump={false}
                 style={{ width: '100%', height: '100%' }}
@@ -511,7 +544,7 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                 )}
 
                 {/* Explicit panes pin the paint order: Poland fill (overlayPane, z 400) →
-                    railway tiles → outside-Poland mask → station dots → station labels → trains. */}
+                    railway tiles → outside-Poland veil → station dots → station labels → trains. */}
                 <Pane name="railwayPane" style={{ zIndex: 410 }}>
                     <TileLayer
                         url={RAILWAY_TILES_URL}
@@ -556,6 +589,7 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                             trains={trainsData.trains}
                             dataAsOf={trainsData.data_as_of}
                             now={now}
+                            railIndex={railIndex}
                             renderer={pointsRenderer}
                         />
                     )}
@@ -615,6 +649,11 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                         )}
                     </div>
                 )}
+
+                <p className="mt-2.5 flex items-center gap-1.5 border-t border-white/8 px-1 pt-2 text-[11px] text-slate-500">
+                    <span aria-hidden="true" className="h-0.5 w-2.5 flex-none rounded-full bg-slate-500/60" />
+                    Linie zagraniczne — tło, bez pociągów
+                </p>
             </div>
         </div>
     )
