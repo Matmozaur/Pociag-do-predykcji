@@ -79,6 +79,39 @@ body {
     display: none;
 }
 
+/* City names from geo-background.geojson: a small grey dot + name, under station labels. */
+.city-label > span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    transform: translate(-2.5px, -50%);
+    color: rgb(203 213 225 / 0.9);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    text-shadow: 0 0 3px #0f1117, 0 0 2px #0f1117;
+}
+
+.city-label > span::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: #94a3b8;
+}
+
+.city-label--minor > span {
+    color: rgb(148 163 184 / 0.9);
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.city-label--minor > span::before {
+    background: #64748b;
+}
+
 /* Keep map credits above the mobile sheet rather than under its scrollable content. */
 @media (max-width: 767px) {
     .map-home .leaflet-bottom {

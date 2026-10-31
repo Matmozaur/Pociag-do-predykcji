@@ -74,8 +74,8 @@ function DisruptionRow({ disruption }: { disruption: DisruptionSummaryView }) {
         <Link href="/utrudnienia" className="group flex gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
             <AlertTriangle size={16} className={`mt-0.5 flex-none ${critical ? 'text-red-400' : 'text-amber-400'}`} aria-hidden="true" />
             <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-slate-200">Utrudnienie w ruchu</span>
-                <span className="block truncate text-xs text-slate-500">{disruption.start_station && disruption.end_station ? `${disruption.start_station} — ${disruption.end_station}` : disruption.message}</span>
+                <span className="block truncate text-sm text-slate-200" title={disruption.message}>{disruption.message}</span>
+                <span className="block truncate text-xs text-slate-500">Utrudnienie w ruchu{disruption.start_station && disruption.end_station ? ` · ${disruption.start_station} — ${disruption.end_station}` : ''}</span>
             </span>
             <ArrowRight size={15} className="mt-1 text-slate-600 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </Link>

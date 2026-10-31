@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, MapPin, TrainFront } from 'lucide-react'
-import { CircleMarker, GeoJSON, MapContainer, Pane, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { formatDelay, api, type MapStation, type TrainMapPoint, type TrainMapStop } from '@/lib/api'
 import type { RailIndex } from '@/lib/railSnap'
 import { snapTrainPosition, useOverlapOffsets, useRailIndex } from '@/lib/useRailSnap'
@@ -82,6 +82,26 @@ const RAILWAY_TILES_URL = 'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}
 const RAILWAY_TILES_ATTRIBUTION =
     'Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
     'style: <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (CC-BY-SA)'
+
+// Geographic context from public/geo-background.geojson (Natural Earth, public domain;
+// built by scripts/build-geo-background.mjs): lakes in a muted navy just above the Poland
+// fill, and river lines in a brighter, semi-transparent water blue drawn OVER the railway
+// tiles — the major rivers share their valleys with the main lines and would vanish under
+// them — yet translucent enough that the rails read through. Both stay darker and more
+// saturated than the sky-blue station dots and far from the delay colours. City names are
+// small and grey. Rank 1 is the major rivers / voivodeship seats and capitals; minor city
+// names appear from CITY_MINOR_MIN_ZOOM and all of them give way to station labels from
+// STATION_LABEL_MIN_ZOOM.
+type GeoBackgroundFeature = GeoJSON.Feature<GeoJSON.Geometry, { kind: 'river' | 'lake' | 'city'; rank: 1 | 2; name?: string }>
+type GeoBackground = GeoJSON.FeatureCollection<GeoJSON.Geometry, GeoBackgroundFeature['properties']>
+const WATER_COLOR = '#2f62a0'
+const LAKE_STYLE: L.PathOptions = { color: WATER_COLOR, weight: 1, fillColor: WATER_COLOR, fillOpacity: 0.85 }
+const RIVER_COLOR = '#3d8bff'
+const MAJOR_RIVER_STYLE: L.PathOptions = { color: RIVER_COLOR, weight: 3.5, opacity: 0.85, lineJoin: 'round', lineCap: 'round' }
+const MINOR_RIVER_STYLE: L.PathOptions = { color: RIVER_COLOR, weight: 1.6, opacity: 0.6, lineJoin: 'round', lineCap: 'round' }
+const riverStyle = (feature?: GeoJSON.Feature): L.PathOptions =>
+    (feature as GeoBackgroundFeature | undefined)?.properties.rank === 1 ? MAJOR_RIVER_STYLE : MINOR_RIVER_STYLE
+const CITY_MINOR_MIN_ZOOM = 7
 
 // Selected station: a light ring around a soft fill — clearly picked out, but no larger
 // than a train dot and not amber (that's the 1–5 min delay colour). Still painted under
@@ -204,6 +224,42 @@ const PHASE_LABELS: Record<TrainMapPoint['phase'], string> = {
     at_station: 'Na stacji',
     en_route: 'W drodze',
     arrived: 'Przyjechał',
+}
+
+interface City {
+    name: string
+    rank: 1 | 2
+    position: L.LatLngTuple
+    icon: L.DivIcon
+}
+
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+
+// Dot + name, styled by .city-label in globals.css (anchored at the dot's centre).
+function cityIcon(name: string, rank: 1 | 2): L.DivIcon {
+    return L.divIcon({
+        className: rank === 1 ? 'city-label' : 'city-label city-label--minor',
+        iconSize: [0, 0],
+        html: `<span>${escapeHtml(name)}</span>`,
+    })
+}
+
+// Non-interactive city names in placeLabelsPane; minor ones only once zoomed in, and all
+// hidden at station-label zoom where station names take over.
+function CityLabels({ cities }: { cities: City[] }) {
+    const map = useMap()
+    const [zoom, setZoom] = useState(() => map.getZoom())
+    useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
+    if (zoom >= STATION_LABEL_MIN_ZOOM) return null
+    return (
+        <>
+            {cities
+                .filter((c) => c.rank === 1 || zoom >= CITY_MINOR_MIN_ZOOM)
+                .map((c) => (
+                    <Marker key={c.name} position={c.position} icon={c.icon} interactive={false} keyboard={false} pane="placeLabelsPane" />
+                ))}
+        </>
+    )
 }
 
 // Pans (without changing zoom) to the selected station whenever the selection changes.
@@ -470,6 +526,7 @@ interface TrafficMapClientProps {
 
 export function TrafficMapClient({ selectedStationId, onStationSelect }: TrafficMapClientProps = {}) {
     const [polandGeo, setPolandGeo] = useState<PolandFeature | null>(null)
+    const [geoBackground, setGeoBackground] = useState<GeoBackground | null>(null)
     const [showStations, setShowStations] = useState(true)
     const [showTrains, setShowTrains] = useState(true)
 
@@ -515,6 +572,40 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
             })
     }, [])
 
+    useEffect(() => {
+        fetch('/geo-background.geojson')
+            .then((r) => r.json())
+            .then((geojson: GeoBackground) => setGeoBackground(geojson))
+            .catch(() => {
+                // geographic context is decoration — fail silently
+            })
+    }, [])
+
+    const lakes = useMemo<GeoBackground | null>(
+        () => (geoBackground ? { ...geoBackground, features: geoBackground.features.filter((f) => f.properties.kind === 'lake') } : null),
+        [geoBackground],
+    )
+    const rivers = useMemo<GeoBackground | null>(
+        () => (geoBackground ? { ...geoBackground, features: geoBackground.features.filter((f) => f.properties.kind === 'river') } : null),
+        [geoBackground],
+    )
+    const cities = useMemo<City[]>(
+        () =>
+            (geoBackground?.features ?? []).flatMap((f) =>
+                f.properties.kind === 'city' && f.geometry.type === 'Point' && f.properties.name
+                    ? [
+                          {
+                              name: f.properties.name,
+                              rank: f.properties.rank,
+                              position: [f.geometry.coordinates[1], f.geometry.coordinates[0]] as L.LatLngTuple,
+                              icon: cityIcon(f.properties.name, f.properties.rank),
+                          },
+                      ]
+                    : [],
+            ),
+        [geoBackground],
+    )
+
     const outsideMask = useMemo(() => (polandGeo ? buildOutsideMask(polandGeo) : null), [polandGeo])
     const selectedStation = stationsData?.stations.find((s) => s.external_id === selectedStationId)
     const stationsDrawn = showStations && stationsData != null
@@ -543,8 +634,13 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                     />
                 )}
 
-                {/* Explicit panes pin the paint order: Poland fill (overlayPane, z 400) →
-                    railway tiles → outside-Poland veil → station dots → station labels → trains. */}
+                {/* Explicit panes pin the paint order: Poland fill (overlayPane, z 400) → lakes →
+                    railway tiles → rivers → outside-Poland veil → city names → station dots →
+                    station labels → trains. */}
+                <Pane name="waterPane" style={{ zIndex: 405, pointerEvents: 'none' }}>
+                    {lakes && <GeoJSON data={lakes} style={LAKE_STYLE} interactive={false} />}
+                </Pane>
+
                 <Pane name="railwayPane" style={{ zIndex: 410 }}>
                     <TileLayer
                         url={RAILWAY_TILES_URL}
@@ -553,6 +649,11 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                         maxZoom={19}
                         opacity={0.6}
                     />
+                </Pane>
+
+                {/* Rivers sit over the rails (they share the valleys) but under the veil. */}
+                <Pane name="riversPane" style={{ zIndex: 412, pointerEvents: 'none' }}>
+                    {rivers && <GeoJSON data={rivers} style={riverStyle} interactive={false} />}
                 </Pane>
 
                 <Pane name="outsideMaskPane" style={{ zIndex: 415 }}>
@@ -564,6 +665,10 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                             interactive={false}
                         />
                     )}
+                </Pane>
+
+                <Pane name="placeLabelsPane" style={{ zIndex: 418, pointerEvents: 'none' }}>
+                    <CityLabels cities={cities} />
                 </Pane>
 
                 <Pane name="stationsPane" style={{ zIndex: 420 }}>
