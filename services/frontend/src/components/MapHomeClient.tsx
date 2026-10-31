@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     AlertTriangle,
     ArrowLeft,
@@ -14,7 +14,9 @@ import {
     Signal,
     Train,
 } from 'lucide-react'
+import { ConnectionResults } from '@/components/ConnectionResults'
 import { DataFreshness } from '@/components/DataFreshness'
+import { MapSearchBar } from '@/components/MapSearchBar'
 import { StationBoard } from '@/components/StationBoard'
 import { TrafficMapClient } from '@/components/TrafficMapClient'
 import {
@@ -25,7 +27,9 @@ import {
     statusLabel,
     type DisruptionSummaryView,
     type LiveTrainSummary,
+    type TrainMapPoint,
 } from '@/lib/api'
+import type { ConnectionEnd } from '@/lib/mapSearch'
 import { Badge, Button, Spinner } from '@/lib/ui'
 
 function retryLabel(isFetching: boolean) {
@@ -96,18 +100,58 @@ function MapHome() {
     const searchParams = useSearchParams()
     const stationParam = searchParams.get('station')
     const selectedStationId = stationParam && /^\d+$/.test(stationParam) ? Number(stationParam) : undefined
+    // Connection ends are a station id or a city / station-name prefix, as /schedules/search takes them.
+    const fromParam = searchParams.get('from')?.trim()
+    const toParam = searchParams.get('to')?.trim()
+    const connection =
+        selectedStationId == null && fromParam && toParam && fromParam.toLowerCase() !== toParam.toLowerCase()
+            ? { from: fromParam, to: toParam }
+            : undefined
     const boardHeadingRef = useRef<HTMLHeadingElement>(null)
+    const connectionHeadingRef = useRef<HTMLHeadingElement>(null)
+    // The nonce lets picking the same train again re-focus it on the map.
+    const [focusedTrain, setFocusedTrain] = useState<{ id: number; nonce: number }>()
 
-    const selectStation = useCallback(
-        (externalId?: number) => {
+    // The panel shows one thing at a time: a station board, a connection, or the overview.
+    const replaceParams = useCallback(
+        (update: (params: URLSearchParams) => void) => {
             const params = new URLSearchParams(searchParams.toString())
-            if (externalId == null) params.delete('station')
-            else params.set('station', String(externalId))
+            update(params)
             const query = params.toString()
             router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
         },
         [pathname, router, searchParams],
     )
+
+    const selectStation = useCallback(
+        (externalId?: number) =>
+            replaceParams((params) => {
+                params.delete('from')
+                params.delete('to')
+                if (externalId == null) params.delete('station')
+                else params.set('station', String(externalId))
+            }),
+        [replaceParams],
+    )
+
+    const selectConnection = useCallback(
+        (from?: ConnectionEnd, to?: ConnectionEnd) =>
+            replaceParams((params) => {
+                params.delete('station')
+                if (from == null || to == null) {
+                    params.delete('from')
+                    params.delete('to')
+                } else {
+                    params.set('from', from.query)
+                    params.set('to', to.query)
+                }
+            }),
+        [replaceParams],
+    )
+
+    const selectTrain = useCallback((train: TrainMapPoint) => {
+        setFocusedTrain((prev) => ({ id: train.operation_id, nonce: (prev?.nonce ?? 0) + 1 }))
+    }, [])
 
     useEffect(() => {
         if (selectedStationId == null) return
@@ -119,6 +163,17 @@ function MapHome() {
         return () => window.removeEventListener('keydown', onKeyDown)
     }, [selectedStationId, selectStation])
 
+    const connectionKey = connection ? `${connection.from}\n${connection.to}` : undefined
+    useEffect(() => {
+        if (connectionKey == null) return
+        connectionHeadingRef.current?.focus()
+        function onKeyDown(e: KeyboardEvent) {
+            if (e.key === 'Escape') selectConnection(undefined)
+        }
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [connectionKey, selectConnection])
+
     const overviewQuery = useQuery({ queryKey: ['dashboardOverview'], queryFn: api.getDashboardOverview, staleTime: 30_000 })
     // All active trains (shared cache with /pociagi), sorted by delay before truncating.
     const trainsQuery = useQuery({ queryKey: ['allLiveTrains'], queryFn: () => api.getAllLiveTrains(), staleTime: 30_000, refetchInterval: 60_000 })
@@ -129,10 +184,21 @@ function MapHome() {
 
     return (
         <div className="map-home h-full w-full bg-[#0a0c14]">
-            <TrafficMapClient selectedStationId={selectedStationId} onStationSelect={(station) => selectStation(station.external_id)} />
+            <TrafficMapClient selectedStationId={selectedStationId} onStationSelect={(station) => selectStation(station.external_id)} focusedTrain={focusedTrain} />
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(10,12,20,.48),transparent_45%),linear-gradient(0deg,rgba(10,12,20,.35),transparent_40%)]" aria-hidden="true" />
 
-            <section aria-labelledby={selectedStationId == null ? 'map-home-title' : undefined} aria-label={selectedStationId == null ? undefined : 'Tablica stacyjna'} className="map-operations-panel absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[500] mx-2 max-h-[min(52%,28rem)] touch-pan-y overflow-y-auto overscroll-contain rounded-t-2xl border border-white/10 bg-[#121622]/95 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:inset-x-auto md:bottom-auto md:left-5 md:top-5 md:mx-0 md:max-h-[calc(100%-2.5rem)] md:w-[390px] md:rounded-2xl md:p-5">
+            {/* Below lg the bar spans the top (clear of the zoom control) and the panels sit under it;
+                from lg it sits right of the operations panel, and from xl also left of the layers panel. z above Leaflet controls (1000) so the dropdown covers them. */}
+            <div className="pointer-events-none absolute left-14 right-3 top-3 z-[1001] md:right-4 md:top-4 lg:left-[26.625rem] xl:right-64">
+                <MapSearchBar
+                    className="mx-auto max-w-xl"
+                    onSelectStation={(station) => selectStation(station.external_id)}
+                    onSelectTrain={selectTrain}
+                    onSelectConnection={selectConnection}
+                />
+            </div>
+
+            <section aria-labelledby={selectedStationId == null && connection == null ? 'map-home-title' : undefined} aria-label={selectedStationId != null ? 'Tablica stacyjna' : connection != null ? 'Połączenia' : undefined} className="map-operations-panel absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[500] mx-2 max-h-[min(52%,28rem)] touch-pan-y overflow-y-auto overscroll-contain rounded-t-2xl border border-white/10 bg-[#121622]/95 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:inset-x-auto md:bottom-auto md:left-5 md:top-[4.5rem] md:mx-0 md:max-h-[calc(100%-5.5rem)] md:w-[390px] md:rounded-2xl md:p-5 lg:top-5 lg:max-h-[calc(100%-2.5rem)]">
                 <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20 md:hidden" aria-hidden="true" />
                 {selectedStationId != null ? (
                     <>
@@ -150,6 +216,13 @@ function MapHome() {
                                 </Link>
                             }
                         />
+                    </>
+                ) : connection != null ? (
+                    <>
+                        <button type="button" onClick={() => selectConnection(undefined)} className="mb-3 inline-flex items-center gap-1.5 rounded-md text-sm text-slate-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                            <ArrowLeft size={14} aria-hidden="true" /> Przegląd sieci
+                        </button>
+                        <ConnectionResults key={connectionKey} from={connection.from} to={connection.to} headingRef={connectionHeadingRef} />
                     </>
                 ) : (
                 <>

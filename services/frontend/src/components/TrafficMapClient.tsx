@@ -409,10 +409,11 @@ function TrainPopupContent({ train, dataAsOf }: { train: TrainMapPoint; dataAsOf
 }
 
 // Keep auto-panned popups clear of the overlays drawn over the map: the operations panel
-// (left on desktop, bottom sheet on mobile) and the layers panel (top right).
+// (left on desktop, bottom sheet on mobile), the search bar (top) and the layers panel
+// (top right).
 function popupPanPadding(): { topLeft: L.PointTuple; bottomRight: L.PointTuple } {
-    if (window.innerWidth >= 768) return { topLeft: [430, 24], bottomRight: [260, 24] }
-    return { topLeft: [12, 24], bottomRight: [12, Math.round(window.innerHeight * 0.5)] }
+    if (window.innerWidth >= 768) return { topLeft: [430, 76], bottomRight: [260, 24] }
+    return { topLeft: [12, 72], bottomRight: [12, Math.round(window.innerHeight * 0.5)] }
 }
 
 interface TrainMarkerProps {
@@ -421,9 +422,22 @@ interface TrainMarkerProps {
     longitude: number
     dataAsOf?: string
     renderer: L.Renderer
+    // Set only on the train picked in search (undefined for every other marker, so memo holds).
+    focusNonce?: number
+    onFocusHandled: (nonce: number) => void
 }
 
-const TrainMarker = memo(function TrainMarker({ train, latitude, longitude, dataAsOf, renderer }: TrainMarkerProps) {
+const TrainMarker = memo(function TrainMarker({
+    train,
+    latitude,
+    longitude,
+    dataAsOf,
+    renderer,
+    focusNonce,
+    onFocusHandled,
+}: TrainMarkerProps) {
+    const map = useMap()
+    const markerRef = useRef<L.CircleMarker>(null)
     const [open, setOpen] = useState(false)
     const center = useMemo<L.LatLngTuple>(() => [latitude, longitude], [latitude, longitude])
     const padding = useMemo(popupPanPadding, [])
@@ -431,8 +445,28 @@ const TrainMarker = memo(function TrainMarker({ train, latitude, longitude, data
         () => ({ popupopen: () => setOpen(true), popupclose: () => setOpen(false) }),
         [],
     )
+
+    // Fly to the train's drawn position and open its popup once the flight ends. Keyed on
+    // the nonce alone so interpolation ticks don't re-fly; the nonce is marked handled only
+    // after the popup opens, so a remount mid-flight simply starts over.
+    useEffect(() => {
+        const marker = markerRef.current
+        if (focusNonce == null || !marker) return
+        const onMoveEnd = () => {
+            marker.openPopup()
+            onFocusHandled(focusNonce)
+        }
+        // flyTo first: it synchronously stops any running pan, which fires its own moveend.
+        map.flyTo(marker.getLatLng(), Math.max(map.getZoom(), 10), { duration: 0.8 })
+        map.once('moveend', onMoveEnd)
+        return () => {
+            map.off('moveend', onMoveEnd)
+        }
+    }, [focusNonce, map, onFocusHandled])
+
     return (
         <CircleMarker
+            ref={markerRef}
             center={center}
             radius={open ? 8.5 : 6.5}
             renderer={renderer}
@@ -457,9 +491,11 @@ interface TrainsLayerProps {
     now: number | null
     railIndex: RailIndex | null
     renderer: L.Renderer
+    focus?: { id: number; nonce: number }
+    onFocusHandled: (nonce: number) => void
 }
 
-function TrainsLayer({ trains, dataAsOf, now, railIndex, renderer }: TrainsLayerProps) {
+function TrainsLayer({ trains, dataAsOf, now, railIndex, renderer, focus, onFocusHandled }: TrainsLayerProps) {
     // The single place each train's drawn position is decided: place it along the railway
     // route between its stops (or snap onto the nearest line), then slide trains that would
     // overlap on screen apart along their tracks.
@@ -485,6 +521,8 @@ function TrainsLayer({ trains, dataAsOf, now, railIndex, renderer }: TrainsLayer
                         longitude={longitude}
                         dataAsOf={dataAsOf}
                         renderer={renderer}
+                        focusNonce={focus?.id === train.operation_id ? focus.nonce : undefined}
+                        onFocusHandled={onFocusHandled}
                     />
                 )
             })}
@@ -522,9 +560,11 @@ function LayerToggle({
 interface TrafficMapClientProps {
     selectedStationId?: number
     onStationSelect?: (station: MapStation) => void
+    // Train picked in search; a new nonce re-focuses even when the same train is picked again.
+    focusedTrain?: { id: number; nonce: number }
 }
 
-export function TrafficMapClient({ selectedStationId, onStationSelect }: TrafficMapClientProps = {}) {
+export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTrain }: TrafficMapClientProps = {}) {
     const [polandGeo, setPolandGeo] = useState<PolandFeature | null>(null)
     const [geoBackground, setGeoBackground] = useState<GeoBackground | null>(null)
     const [showStations, setShowStations] = useState(true)
@@ -562,6 +602,24 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
     const now = tick != null && tick > trainsQuery.dataUpdatedAt ? tick : trainsQuery.dataUpdatedAt || null
     // Railway line geometry for snapping; only fetched once trains are shown.
     const railIndex = useRailIndex(showTrains)
+
+    // A train picked in search turns the trains layer back on; the focus stays pending until
+    // its marker has flown there (handles the trains still loading), and is then dropped so
+    // a TrainsLayer remount doesn't fly to it again.
+    const [handledFocusNonce, setHandledFocusNonce] = useState<number | null>(null)
+    const focusNonce = focusedTrain?.nonce
+    useEffect(() => {
+        if (focusNonce != null) setShowTrains(true)
+    }, [focusNonce])
+    const focusUnhandled = focusedTrain != null && focusedTrain.nonce !== handledFocusNonce
+    const focusInData = focusedTrain != null && !!trainsData?.trains.some((t) => t.operation_id === focusedTrain.id)
+    const pendingFocus = focusUnhandled && focusInData ? focusedTrain : undefined
+    // Fresh data without the picked train drops the focus, so a later refetch that brings the
+    // train back doesn't fly the map unprompted.
+    const dropFocus = focusUnhandled && trainsData != null && !trainsQuery.isFetching && !focusInData
+    useEffect(() => {
+        if (dropFocus && focusNonce != null) setHandledFocusNonce(focusNonce)
+    }, [dropFocus, focusNonce])
 
     useEffect(() => {
         fetch('/poland-border.geojson')
@@ -696,13 +754,15 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                             now={now}
                             railIndex={railIndex}
                             renderer={pointsRenderer}
+                            focus={pendingFocus}
+                            onFocusHandled={setHandledFocusNonce}
                         />
                     )}
                 </Pane>
                 <PanToStation station={selectedStation} />
             </MapContainer>
 
-            <div className="absolute right-3 top-3 z-[450] w-56 rounded-xl border border-white/10 bg-[#121622]/90 p-2.5 text-xs text-slate-300 shadow-lg shadow-black/30 backdrop-blur md:right-4 md:top-4">
+            <div className="absolute right-3 top-[4.25rem] z-[450] w-56 rounded-xl border border-white/10 bg-[#121622]/90 p-2.5 text-xs text-slate-300 shadow-lg shadow-black/30 backdrop-blur md:right-4 xl:top-4">
                 <div role="group" aria-label="Warstwy mapy" className="grid grid-cols-2 gap-1 rounded-lg bg-black/25 p-1">
                     <LayerToggle pressed={showStations} onToggle={() => setShowStations((v) => !v)} icon={<MapPin size={13} aria-hidden="true" />}>
                         Stacje
