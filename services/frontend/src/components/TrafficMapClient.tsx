@@ -6,10 +6,11 @@ import Link from 'next/link'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, MapPin, TrainFront } from 'lucide-react'
-import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, Polyline, Popup, Rectangle, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { formatDelay, api, type MapStation, type TrainMapPoint, type TrainMapStop } from '@/lib/api'
 import type { RailIndex } from '@/lib/railSnap'
 import { snapTrainPosition, useOverlapOffsets, useRailIndex } from '@/lib/useRailSnap'
+import { useTrainRoute } from '@/lib/useTrainRoute'
 import { Spinner, cn } from '@/lib/ui'
 
 // Padded bounding box around Poland — the initial view is fitted to it.
@@ -73,6 +74,9 @@ const STATION_PATH_OPTIONS: L.PathOptions = {
 // smaller and fainter there to keep the trains readable.
 const OVERVIEW_STATION_RADIUS = 2.5
 const OVERVIEW_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, fillOpacity: 0.45 }
+// While a train is selected the stations recede with the rest of the map.
+const DIMMED_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, fillOpacity: 0.2 }
+const DIMMED_OVERVIEW_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, fillOpacity: 0.12 }
 
 // Real-world track geometry from OpenRailwayMap (OSM data, CC-BY-SA). The tiles are
 // transparent, so they overlay the dark Poland fill without needing a base map. Dimmed
@@ -85,13 +89,13 @@ const RAILWAY_TILES_ATTRIBUTION =
 
 // Geographic context from public/geo-background.geojson (Natural Earth, public domain;
 // built by scripts/build-geo-background.mjs): lakes in a muted navy just above the Poland
-// fill, and river lines in a brighter, semi-transparent water blue drawn OVER the railway
-// tiles — the major rivers share their valleys with the main lines and would vanish under
-// them — yet translucent enough that the rails read through. Both stay darker and more
-// saturated than the sky-blue station dots and far from the delay colours. City names are
-// small and grey. Rank 1 is the major rivers / voivodeship seats and capitals; minor city
-// names appear from CITY_MINOR_MIN_ZOOM and all of them give way to station labels from
-// STATION_LABEL_MIN_ZOOM.
+// fill, and river lines in a brighter water blue. All of it, city names included, sits
+// UNDER the railway tiles — geography is background, the rails are always drawn over it;
+// the tiles are translucent, so a river sharing its valley with a main line still reads
+// beside it. Both stay darker and more saturated than the sky-blue station dots and far
+// from the delay colours. City names are small and grey. Rank 1 is the major rivers /
+// voivodeship seats and capitals; minor city names appear from CITY_MINOR_MIN_ZOOM and all
+// of them give way to station labels from STATION_LABEL_MIN_ZOOM.
 type GeoBackgroundFeature = GeoJSON.Feature<GeoJSON.Geometry, { kind: 'river' | 'lake' | 'city'; rank: 1 | 2; name?: string }>
 type GeoBackground = GeoJSON.FeatureCollection<GeoJSON.Geometry, GeoBackgroundFeature['properties']>
 const WATER_COLOR = '#2f62a0'
@@ -115,6 +119,18 @@ const SELECTED_STATION_PATH_OPTIONS: L.PathOptions = {
     fillColor: '#38bdf8',
     fillOpacity: 0.35,
 }
+
+// Selected train: everything but the train and its whole route goes behind a veil in the
+// map background colour, and the route is drawn as a light line on a dark casing — neither
+// a delay colour nor the sky blue of the station dots. The veil covers the whole world so
+// no edge shows at minimum zoom.
+const SELECTION_VEIL_BOUNDS = L.latLngBounds([
+    [-85, -180],
+    [85, 180],
+])
+const SELECTION_VEIL_STYLE: L.PathOptions = { stroke: false, fillColor: '#12151e', fillOpacity: 0.55 }
+const ROUTE_CASING_STYLE: L.PathOptions = { color: '#0a0c14', weight: 7, opacity: 0.85, lineJoin: 'round', lineCap: 'round' }
+const ROUTE_LINE_STYLE: L.PathOptions = { color: '#f1f5f9', weight: 3.5, opacity: 0.95, lineJoin: 'round', lineCap: 'round' }
 
 // Permanent station labels only from this zoom up — with ~3k stations they are
 // unreadable (and slow, one DOM node each) on the country-wide view.
@@ -169,21 +185,22 @@ const LEGEND: { tone: DelayTone; label: string }[] = [
 
 // Pre-built style objects so react-leaflet only calls setStyle when a train's colour
 // or confidence actually changes, not on every 5 s position tick.
-function buildTrainStyle(tone: DelayTone, lowConfidence: boolean, selected: boolean): L.PathOptions {
+// Dimmed: another train is selected, so this one fades into the background.
+function buildTrainStyle(tone: DelayTone, lowConfidence: boolean, selected: boolean, dimmed: boolean): L.PathOptions {
     return {
         color: selected ? '#f8fafc' : '#0a0c14',
         weight: selected ? 2 : 1.25,
-        opacity: lowConfidence ? 0.45 : 1,
+        opacity: dimmed ? 0.25 : lowConfidence ? 0.45 : 1,
         fillColor: DELAY_COLORS[tone],
-        fillOpacity: lowConfidence ? 0.4 : 0.95,
+        fillOpacity: dimmed ? (lowConfidence ? 0.15 : 0.3) : lowConfidence ? 0.4 : 0.95,
     }
 }
 const TRAIN_STYLES = new Map<string, L.PathOptions>()
-function trainStyle(tone: DelayTone, lowConfidence: boolean, selected: boolean): L.PathOptions {
-    const key = `${tone}:${lowConfidence}:${selected}`
+function trainStyle(tone: DelayTone, lowConfidence: boolean, selected: boolean, dimmed: boolean): L.PathOptions {
+    const key = `${tone}:${lowConfidence}:${selected}:${dimmed}`
     let style = TRAIN_STYLES.get(key)
     if (!style) {
-        style = buildTrainStyle(tone, lowConfidence, selected)
+        style = buildTrainStyle(tone, lowConfidence, selected, dimmed)
         TRAIN_STYLES.set(key, style)
     }
     return style
@@ -276,11 +293,12 @@ interface StationMarkerProps {
     selected: boolean
     labelled: boolean
     overview: boolean
+    dimmed: boolean
     renderer: L.Renderer
     onSelect: (station: MapStation) => void
 }
 
-const StationMarker = memo(function StationMarker({ station, selected, labelled, overview, renderer, onSelect }: StationMarkerProps) {
+const StationMarker = memo(function StationMarker({ station, selected, labelled, overview, dimmed, renderer, onSelect }: StationMarkerProps) {
     const center = useMemo<L.LatLngTuple>(() => [station.latitude, station.longitude], [station.latitude, station.longitude])
     const eventHandlers = useMemo(() => ({ click: () => onSelect(station) }), [onSelect, station])
     return (
@@ -289,7 +307,15 @@ const StationMarker = memo(function StationMarker({ station, selected, labelled,
             radius={selected ? SELECTED_STATION_RADIUS : overview ? OVERVIEW_STATION_RADIUS : STATION_RADIUS}
             renderer={renderer}
             pathOptions={
-                selected ? SELECTED_STATION_PATH_OPTIONS : overview ? OVERVIEW_STATION_PATH_OPTIONS : STATION_PATH_OPTIONS
+                selected
+                    ? SELECTED_STATION_PATH_OPTIONS
+                    : dimmed
+                      ? overview
+                          ? DIMMED_OVERVIEW_STATION_PATH_OPTIONS
+                          : DIMMED_STATION_PATH_OPTIONS
+                      : overview
+                        ? OVERVIEW_STATION_PATH_OPTIONS
+                        : STATION_PATH_OPTIONS
             }
             eventHandlers={eventHandlers}
         >
@@ -317,11 +343,12 @@ const StationMarker = memo(function StationMarker({ station, selected, labelled,
 interface StationsLayerProps {
     stations: MapStation[]
     selectedStationId?: number
+    dimmed: boolean
     renderer: L.Renderer
     onStationSelect?: (station: MapStation) => void
 }
 
-function StationsLayer({ stations, selectedStationId, renderer, onStationSelect }: StationsLayerProps) {
+function StationsLayer({ stations, selectedStationId, dimmed, renderer, onStationSelect }: StationsLayerProps) {
     const map = useMap()
     const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds().pad(0.2) }))
     useMapEvents({
@@ -346,6 +373,7 @@ function StationsLayer({ stations, selectedStationId, renderer, onStationSelect 
                     selected={station.external_id === selectedStationId}
                     labelled={showLabels && view.bounds.contains([station.latitude, station.longitude])}
                     overview={!showLabels}
+                    dimmed={dimmed}
                     renderer={renderer}
                     onSelect={handleSelect}
                 />
@@ -409,10 +437,11 @@ function TrainPopupContent({ train, dataAsOf }: { train: TrainMapPoint; dataAsOf
 }
 
 // Keep auto-panned popups clear of the overlays drawn over the map: the operations panel
-// (left on desktop, bottom sheet on mobile) and the layers panel (top right).
+// (left on desktop, bottom sheet on mobile), the search bar (top) and the layers panel
+// (top right).
 function popupPanPadding(): { topLeft: L.PointTuple; bottomRight: L.PointTuple } {
-    if (window.innerWidth >= 768) return { topLeft: [430, 24], bottomRight: [260, 24] }
-    return { topLeft: [12, 24], bottomRight: [12, Math.round(window.innerHeight * 0.5)] }
+    if (window.innerWidth >= 768) return { topLeft: [430, 76], bottomRight: [260, 24] }
+    return { topLeft: [12, 72], bottomRight: [12, Math.round(window.innerHeight * 0.5)] }
 }
 
 interface TrainMarkerProps {
@@ -421,25 +450,83 @@ interface TrainMarkerProps {
     longitude: number
     dataAsOf?: string
     renderer: L.Renderer
+    // Another train is selected (its popup is open).
+    dimmed: boolean
+    // Set only on the train picked in search (undefined for every other marker, so memo holds).
+    focusNonce?: number
+    onFocusHandled: (nonce: number) => void
+    onOpenChange: (operationId: number, open: boolean) => void
 }
 
-const TrainMarker = memo(function TrainMarker({ train, latitude, longitude, dataAsOf, renderer }: TrainMarkerProps) {
+const TrainMarker = memo(function TrainMarker({
+    train,
+    latitude,
+    longitude,
+    dataAsOf,
+    renderer,
+    dimmed,
+    focusNonce,
+    onFocusHandled,
+    onOpenChange,
+}: TrainMarkerProps) {
+    const map = useMap()
+    const markerRef = useRef<L.CircleMarker>(null)
     const [open, setOpen] = useState(false)
     const center = useMemo<L.LatLngTuple>(() => [latitude, longitude], [latitude, longitude])
     const padding = useMemo(popupPanPadding, [])
+    const operationId = train.operation_id
     const eventHandlers = useMemo(
-        () => ({ popupopen: () => setOpen(true), popupclose: () => setOpen(false) }),
-        [],
+        () => ({
+            popupopen: () => {
+                setOpen(true)
+                onOpenChange(operationId, true)
+            },
+            popupclose: () => {
+                setOpen(false)
+                onOpenChange(operationId, false)
+            },
+        }),
+        [onOpenChange, operationId],
     )
+
+    // Draw the selected train over the others on the shared canvas; if the marker goes away
+    // with its popup open (refetch without it, trains layer hidden), drop the selection too.
+    useEffect(() => {
+        if (!open) return
+        markerRef.current?.bringToFront()
+        return () => onOpenChange(operationId, false)
+    }, [open, onOpenChange, operationId])
+
+    // Fly to the train's drawn position and open its popup once the flight ends. Keyed on
+    // the nonce alone so interpolation ticks don't re-fly; the nonce is marked handled only
+    // after the popup opens, so a remount mid-flight simply starts over.
+    useEffect(() => {
+        const marker = markerRef.current
+        if (focusNonce == null || !marker) return
+        const onMoveEnd = () => {
+            marker.openPopup()
+            onFocusHandled(focusNonce)
+        }
+        // flyTo first: it synchronously stops any running pan, which fires its own moveend.
+        map.flyTo(marker.getLatLng(), Math.max(map.getZoom(), 10), { duration: 0.8 })
+        map.once('moveend', onMoveEnd)
+        return () => {
+            map.off('moveend', onMoveEnd)
+        }
+    }, [focusNonce, map, onFocusHandled])
+
     return (
         <CircleMarker
+            ref={markerRef}
             center={center}
             radius={open ? 8.5 : 6.5}
             renderer={renderer}
-            pathOptions={trainStyle(delayTone(train.delay_minutes), train.confidence === 'low', open)}
+            pathOptions={trainStyle(delayTone(train.delay_minutes), train.confidence === 'low', open, dimmed)}
             eventHandlers={eventHandlers}
         >
+            {/* Explicit pane: a Popup otherwise inherits trainsPane and the canvas dots paint over it. */}
             <Popup
+                pane="popupPane"
                 minWidth={240}
                 maxWidth={280}
                 autoPanPaddingTopLeft={padding.topLeft}
@@ -457,9 +544,23 @@ interface TrainsLayerProps {
     now: number | null
     railIndex: RailIndex | null
     renderer: L.Renderer
+    selectedTrainId?: number
+    focus?: { id: number; nonce: number }
+    onFocusHandled: (nonce: number) => void
+    onTrainOpenChange: (operationId: number, open: boolean) => void
 }
 
-function TrainsLayer({ trains, dataAsOf, now, railIndex, renderer }: TrainsLayerProps) {
+function TrainsLayer({
+    trains,
+    dataAsOf,
+    now,
+    railIndex,
+    renderer,
+    selectedTrainId,
+    focus,
+    onFocusHandled,
+    onTrainOpenChange,
+}: TrainsLayerProps) {
     // The single place each train's drawn position is decided: place it along the railway
     // route between its stops (or snap onto the nearest line), then slide trains that would
     // overlap on screen apart along their tracks.
@@ -485,6 +586,10 @@ function TrainsLayer({ trains, dataAsOf, now, railIndex, renderer }: TrainsLayer
                         longitude={longitude}
                         dataAsOf={dataAsOf}
                         renderer={renderer}
+                        dimmed={selectedTrainId != null && selectedTrainId !== train.operation_id}
+                        focusNonce={focus?.id === train.operation_id ? focus.nonce : undefined}
+                        onFocusHandled={onFocusHandled}
+                        onOpenChange={onTrainOpenChange}
                     />
                 )
             })}
@@ -522,9 +627,11 @@ function LayerToggle({
 interface TrafficMapClientProps {
     selectedStationId?: number
     onStationSelect?: (station: MapStation) => void
+    // Train picked in search; a new nonce re-focuses even when the same train is picked again.
+    focusedTrain?: { id: number; nonce: number }
 }
 
-export function TrafficMapClient({ selectedStationId, onStationSelect }: TrafficMapClientProps = {}) {
+export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTrain }: TrafficMapClientProps = {}) {
     const [polandGeo, setPolandGeo] = useState<PolandFeature | null>(null)
     const [geoBackground, setGeoBackground] = useState<GeoBackground | null>(null)
     const [showStations, setShowStations] = useState(true)
@@ -562,6 +669,31 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
     const now = tick != null && tick > trainsQuery.dataUpdatedAt ? tick : trainsQuery.dataUpdatedAt || null
     // Railway line geometry for snapping; only fetched once trains are shown.
     const railIndex = useRailIndex(showTrains)
+
+    // The train whose popup is open. Opening popup B closes popup A first, so a close only
+    // clears the selection when it is still the closing train's.
+    const [selectedTrainId, setSelectedTrainId] = useState<number | undefined>(undefined)
+    const handleTrainOpenChange = useCallback((operationId: number, open: boolean) => {
+        setSelectedTrainId((current) => (open ? operationId : current === operationId ? undefined : current))
+    }, [])
+
+    // A train picked in search turns the trains layer back on; the focus stays pending until
+    // its marker has flown there (handles the trains still loading), and is then dropped so
+    // a TrainsLayer remount doesn't fly to it again.
+    const [handledFocusNonce, setHandledFocusNonce] = useState<number | null>(null)
+    const focusNonce = focusedTrain?.nonce
+    useEffect(() => {
+        if (focusNonce != null) setShowTrains(true)
+    }, [focusNonce])
+    const focusUnhandled = focusedTrain != null && focusedTrain.nonce !== handledFocusNonce
+    const focusInData = focusedTrain != null && !!trainsData?.trains.some((t) => t.operation_id === focusedTrain.id)
+    const pendingFocus = focusUnhandled && focusInData ? focusedTrain : undefined
+    // Fresh data without the picked train drops the focus, so a later refetch that brings the
+    // train back doesn't fly the map unprompted.
+    const dropFocus = focusUnhandled && trainsData != null && !trainsQuery.isFetching && !focusInData
+    useEffect(() => {
+        if (dropFocus && focusNonce != null) setHandledFocusNonce(focusNonce)
+    }, [dropFocus, focusNonce])
 
     useEffect(() => {
         fetch('/poland-border.geojson')
@@ -608,6 +740,8 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
 
     const outsideMask = useMemo(() => (polandGeo ? buildOutsideMask(polandGeo) : null), [polandGeo])
     const selectedStation = stationsData?.stations.find((s) => s.external_id === selectedStationId)
+    const selectedRoute = useTrainRoute(selectedTrainId, stationsData?.stations, railIndex)
+    const trainSelected = selectedTrainId != null
     const stationsDrawn = showStations && stationsData != null
 
     const trainCount = trainsData?.trains.length ?? 0
@@ -635,10 +769,19 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                 )}
 
                 {/* Explicit panes pin the paint order: Poland fill (overlayPane, z 400) → lakes →
-                    railway tiles → rivers → outside-Poland veil → city names → station dots →
-                    station labels → trains. */}
+                    rivers → city names → railway tiles → outside-Poland veil → station dots →
+                    station labels → selected-train veil → selected route → trains. All geography
+                    stays under the rails. */}
                 <Pane name="waterPane" style={{ zIndex: 405, pointerEvents: 'none' }}>
                     {lakes && <GeoJSON data={lakes} style={LAKE_STYLE} interactive={false} />}
+                </Pane>
+
+                <Pane name="riversPane" style={{ zIndex: 407, pointerEvents: 'none' }}>
+                    {rivers && <GeoJSON data={rivers} style={riverStyle} interactive={false} />}
+                </Pane>
+
+                <Pane name="placeLabelsPane" style={{ zIndex: 408, pointerEvents: 'none' }}>
+                    <CityLabels cities={cities} />
                 </Pane>
 
                 <Pane name="railwayPane" style={{ zIndex: 410 }}>
@@ -649,11 +792,6 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                         maxZoom={19}
                         opacity={0.6}
                     />
-                </Pane>
-
-                {/* Rivers sit over the rails (they share the valleys) but under the veil. */}
-                <Pane name="riversPane" style={{ zIndex: 412, pointerEvents: 'none' }}>
-                    {rivers && <GeoJSON data={rivers} style={riverStyle} interactive={false} />}
                 </Pane>
 
                 <Pane name="outsideMaskPane" style={{ zIndex: 415 }}>
@@ -667,15 +805,12 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                     )}
                 </Pane>
 
-                <Pane name="placeLabelsPane" style={{ zIndex: 418, pointerEvents: 'none' }}>
-                    <CityLabels cities={cities} />
-                </Pane>
-
                 <Pane name="stationsPane" style={{ zIndex: 420 }}>
                     {stationsDrawn && (
                         <StationsLayer
                             stations={stationsData.stations}
                             selectedStationId={selectedStationId}
+                            dimmed={trainSelected}
                             renderer={pointsRenderer}
                             onStationSelect={onStationSelect}
                         />
@@ -684,6 +819,23 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
 
                 {/* Permanent station labels sit under the trains (the default tooltip pane is z 650). */}
                 <Pane name="stationLabelsPane" style={{ zIndex: 425 }} />
+
+                {/* Station dots and other trains share the canvas above, so they are dimmed
+                    through their own styles instead. */}
+                <Pane name="selectionVeilPane" style={{ zIndex: 426, pointerEvents: 'none' }}>
+                    {trainSelected && (
+                        <Rectangle bounds={SELECTION_VEIL_BOUNDS} pathOptions={SELECTION_VEIL_STYLE} interactive={false} />
+                    )}
+                </Pane>
+
+                <Pane name="selectedRoutePane" style={{ zIndex: 428, pointerEvents: 'none' }}>
+                    {trainSelected && selectedRoute && (
+                        <>
+                            <Polyline positions={selectedRoute} pathOptions={ROUTE_CASING_STYLE} interactive={false} />
+                            <Polyline positions={selectedRoute} pathOptions={ROUTE_LINE_STYLE} interactive={false} />
+                        </>
+                    )}
+                </Pane>
 
                 <Pane name="trainsPane" style={{ zIndex: 430 }}>
                     {showTrains && trainsData && (
@@ -696,13 +848,17 @@ export function TrafficMapClient({ selectedStationId, onStationSelect }: Traffic
                             now={now}
                             railIndex={railIndex}
                             renderer={pointsRenderer}
+                            selectedTrainId={selectedTrainId}
+                            focus={pendingFocus}
+                            onFocusHandled={setHandledFocusNonce}
+                            onTrainOpenChange={handleTrainOpenChange}
                         />
                     )}
                 </Pane>
                 <PanToStation station={selectedStation} />
             </MapContainer>
 
-            <div className="absolute right-3 top-3 z-[450] w-56 rounded-xl border border-white/10 bg-[#121622]/90 p-2.5 text-xs text-slate-300 shadow-lg shadow-black/30 backdrop-blur md:right-4 md:top-4">
+            <div className="absolute right-3 top-[4.25rem] z-[450] w-56 rounded-xl border border-white/10 bg-[#121622]/90 p-2.5 text-xs text-slate-300 shadow-lg shadow-black/30 backdrop-blur md:right-4 xl:top-4">
                 <div role="group" aria-label="Warstwy mapy" className="grid grid-cols-2 gap-1 rounded-lg bg-black/25 p-1">
                     <LayerToggle pressed={showStations} onToggle={() => setShowStations((v) => !v)} icon={<MapPin size={13} aria-hidden="true" />}>
                         Stacje
