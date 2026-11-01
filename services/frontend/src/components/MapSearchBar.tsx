@@ -16,6 +16,8 @@ export interface MapSearchBarProps {
 const DEBOUNCE_MS = 250
 const MIN_QUERY_LENGTH = 2
 const MAX_STATIONS = 5
+// City pseudo-stations are dropped below, so ask for a few spares.
+const STATION_FETCH_LIMIT = 15
 
 type SearchOption =
     | { kind: 'connection'; key: string; label: string; from: ConnectionEnd; to: ConnectionEnd }
@@ -59,11 +61,24 @@ export function MapSearchBar({ onSelectStation, onSelectTrain, onSelectConnectio
     const isConnection = hasQuery && connection != null
 
     const stationsQuery = useQuery({
-        queryKey: ['stations', debouncedQ],
-        queryFn: () => api.searchStations(debouncedQ),
+        queryKey: ['stations', debouncedQ, STATION_FETCH_LIMIT],
+        queryFn: () => api.searchStations(debouncedQ, STATION_FETCH_LIMIT),
         enabled: hasQuery && !isConnection,
         staleTime: 60_000,
     })
+
+    // Same key as the map, so this shares its cache. Only stations with coordinates can be
+    // flown to; city pseudo-stations from the search endpoint are not in this list.
+    const mapStationsQuery = useQuery({
+        queryKey: ['mapStations'],
+        queryFn: api.getMapStations,
+        staleTime: 60 * 60 * 1000,
+    })
+    const mapStationsPending = mapStationsQuery.isPending
+    const mapStationIds = useMemo(
+        () => new Set((mapStationsQuery.data?.stations ?? []).map((station) => station.external_id)),
+        [mapStationsQuery.data],
+    )
 
     const fromQ = connection?.from ?? ''
     const toQ = connection?.to ?? ''
@@ -96,21 +111,24 @@ export function MapSearchBar({ onSelectStation, onSelectTrain, onSelectConnectio
             if (!from || !to || from.query.toLowerCase() === to.query.toLowerCase()) return []
             return [{ kind: 'connection', key: `connection-${from.query}-${to.query}`, label: `${from.label} → ${to.label}`, from, to }]
         }
+        // Stations would otherwise be inserted above the trains once this loads, moving the active option.
+        if (mapStationsPending) return []
         const stations: SearchOption[] = (stationsQuery.data?.suggestions ?? [])
+            .filter((station) => mapStationIds.has(station.external_id))
             .slice(0, MAX_STATIONS)
             .map((station) => ({ kind: 'station', key: `station-${station.external_id}`, label: station.name, station }))
         const trains: SearchOption[] = matchTrains(trainsQuery.data?.trains ?? [], debouncedQ)
             .map((train) => ({ kind: 'train', key: `train-${train.operation_id}`, label: train.train_name, train }))
         return [...stations, ...trains]
-    }, [hasQuery, isConnection, fromQuery.data, toQuery.data, fromQ, toQ, stationsQuery.data, trainsQuery.data, debouncedQ])
+    }, [hasQuery, isConnection, fromQuery.data, toQuery.data, fromQ, toQ, stationsQuery.data, mapStationsPending, mapStationIds, trainsQuery.data, debouncedQ])
 
     const isFetching = isConnection
         ? fromQuery.isFetching || toQuery.isFetching
-        : hasQuery && (stationsQuery.isFetching || trainsQuery.isFetching)
+        : hasQuery && (stationsQuery.isFetching || mapStationsQuery.isFetching || trainsQuery.isFetching)
     const isPending = inputValue.trim() !== debouncedQ || (isConnection
         ? fromQuery.isLoading || toQuery.isLoading
-        : stationsQuery.isLoading || (trainsQuery.isLoading && !trainsQuery.data))
-    const stationError = isConnection ? fromQuery.isError || toQuery.isError : stationsQuery.isError
+        : stationsQuery.isLoading || mapStationsQuery.isPending || (trainsQuery.isLoading && !trainsQuery.data))
+    const stationError = isConnection ? fromQuery.isError || toQuery.isError : stationsQuery.isError || mapStationsQuery.isError
     const showDropdown = open && hasQuery && inputValue.trim().length >= MIN_QUERY_LENGTH
     const currentActive = activeIndex < options.length ? activeIndex : -1
     const activeOptionId = showDropdown && currentActive >= 0 ? `${baseId}-option-${currentActive}` : undefined
