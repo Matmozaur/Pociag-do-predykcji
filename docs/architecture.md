@@ -165,7 +165,8 @@ Child rows cascade on delete of their train / operation.
 
 - **Map** — react-leaflet, no base map: Poland fill from `public/poland-border.geojson`,
   OpenRailwayMap track tiles (CC-BY-SA), an outside-Poland mask, then stations and trains on a
-  canvas. Train positions are re-interpolated in the browser every 5 s between polls.
+  canvas. Stations merge into count bubbles (`supercluster`, client-side) that split as you zoom
+  in, up to zoom 13. Train positions are re-interpolated in the browser every 5 s between polls.
 - **Freshness** — the UI flags data older than 20 min (`operations_last_updated` / `data_as_of`).
 
 ## Runtime (Docker Compose)
