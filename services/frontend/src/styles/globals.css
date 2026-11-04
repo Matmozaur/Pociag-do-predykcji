@@ -79,6 +79,26 @@ body {
     display: none;
 }
 
+/* Count on a station cluster bubble, centred over its canvas circle. */
+.station-cluster-count {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #f0f9ff !important;
+    font-size: 11px !important;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    padding: 0 !important;
+    text-align: center;
+    text-shadow: 0 1px 2px rgb(8 47 73 / 0.8);
+}
+
+.station-cluster-count--dimmed {
+    color: rgb(240 249 255 / 0.35) !important;
+    text-shadow: none;
+}
+
 /* City names from geo-background.geojson: a small grey dot + name, under station labels. */
 .city-label > span {
     display: flex;

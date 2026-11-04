@@ -10,6 +10,7 @@ import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, Polyline, Popup, Rec
 import { formatDelay, api, type MapStation, type TrainMapPoint, type TrainMapStop } from '@/lib/api'
 import type { RailIndex } from '@/lib/railSnap'
 import { snapTrainPosition, useOverlapOffsets, useRailIndex } from '@/lib/useRailSnap'
+import { useStationClusters, type StationMapItem } from '@/lib/useStationClusters'
 import { useTrainRoute } from '@/lib/useTrainRoute'
 import { Spinner, cn } from '@/lib/ui'
 
@@ -77,6 +78,24 @@ const OVERVIEW_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, 
 // While a train is selected the stations recede with the rest of the map.
 const DIMMED_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, fillOpacity: 0.2 }
 const DIMMED_OVERVIEW_STATION_PATH_OPTIONS: L.PathOptions = { ...STATION_PATH_OPTIONS, fillOpacity: 0.12 }
+// Nearby stations merge into count bubbles: a deeper shade of the station sky tone, opaque
+// enough for the number on top to read. The radius grows with the square root of the count.
+const CLUSTER_MIN_RADIUS = 9
+const CLUSTER_MAX_RADIUS = 26
+const CLUSTER_BASE_RADIUS = 5
+const CLUSTER_RADIUS_PER_SQRT_COUNT = 2.4
+const CLUSTER_PATH_OPTIONS: L.PathOptions = {
+    stroke: true,
+    color: '#7dd3fc',
+    weight: 1,
+    opacity: 0.7,
+    fillColor: '#0284c7',
+    fillOpacity: 0.75,
+}
+const DIMMED_CLUSTER_PATH_OPTIONS: L.PathOptions = { ...CLUSTER_PATH_OPTIONS, opacity: 0.2, fillOpacity: 0.2 }
+const CLUSTER_FLY_DURATION_S = 0.6
+const clusterRadius = (count: number) =>
+    Math.min(CLUSTER_MAX_RADIUS, Math.max(CLUSTER_MIN_RADIUS, CLUSTER_BASE_RADIUS + CLUSTER_RADIUS_PER_SQRT_COUNT * Math.sqrt(count)))
 
 // Real-world track geometry from OpenRailwayMap (OSM data, CC-BY-SA). The tiles are
 // transparent, so they overlay the dark Poland fill without needing a base map. Dimmed
@@ -119,6 +138,19 @@ const SELECTED_STATION_PATH_OPTIONS: L.PathOptions = {
     fillColor: '#38bdf8',
     fillOpacity: 0.35,
 }
+// The same station while it sits inside a cluster: the soft ring vanishes on the bubble, so
+// here it's the one station bigger than a train dot, opaque and cased like the trains. Fuchsia
+// because the near-white count digits can land on it, which rules out a light fill.
+const PINNED_STATION_RADIUS = 8
+const PINNED_STATION_PATH_OPTIONS: L.PathOptions = {
+    stroke: true, // setStyle merges, so re-enable what STATION_PATH_OPTIONS turned off
+    color: '#0a0c14',
+    weight: 2,
+    opacity: 1,
+    fillColor: '#c026d3',
+    fillOpacity: 1,
+}
+const DIMMED_PINNED_STATION_PATH_OPTIONS: L.PathOptions = { ...PINNED_STATION_PATH_OPTIONS, opacity: 0.3, fillOpacity: 0.3 }
 
 // Selected train: everything but the train and its whole route goes behind a veil in the
 // map background colour, and the route is drawn as a light line on a dark casing — neither
@@ -291,6 +323,7 @@ function PanToStation({ station }: { station?: MapStation }) {
 interface StationMarkerProps {
     station: MapStation
     selected: boolean
+    pinned: boolean
     labelled: boolean
     overview: boolean
     dimmed: boolean
@@ -298,24 +331,35 @@ interface StationMarkerProps {
     onSelect: (station: MapStation) => void
 }
 
-const StationMarker = memo(function StationMarker({ station, selected, labelled, overview, dimmed, renderer, onSelect }: StationMarkerProps) {
+const StationMarker = memo(function StationMarker({ station, selected, pinned, labelled, overview, dimmed, renderer, onSelect }: StationMarkerProps) {
     const center = useMemo<L.LatLngTuple>(() => [station.latitude, station.longitude], [station.latitude, station.longitude])
     const eventHandlers = useMemo(() => ({ click: () => onSelect(station) }), [onSelect, station])
+    const markerRef = useRef<L.CircleMarker>(null)
+    // Stations mount on zoom changes, after the trains: canvas paint and hit-test order is add
+    // order, so without this they would cover the trains and steal their clicks.
+    useEffect(() => {
+        markerRef.current?.bringToBack()
+    }, [])
     return (
         <CircleMarker
+            ref={markerRef}
             center={center}
-            radius={selected ? SELECTED_STATION_RADIUS : overview ? OVERVIEW_STATION_RADIUS : STATION_RADIUS}
+            radius={pinned ? PINNED_STATION_RADIUS : selected ? SELECTED_STATION_RADIUS : overview ? OVERVIEW_STATION_RADIUS : STATION_RADIUS}
             renderer={renderer}
             pathOptions={
-                selected
-                    ? SELECTED_STATION_PATH_OPTIONS
-                    : dimmed
-                      ? overview
-                          ? DIMMED_OVERVIEW_STATION_PATH_OPTIONS
-                          : DIMMED_STATION_PATH_OPTIONS
-                      : overview
-                        ? OVERVIEW_STATION_PATH_OPTIONS
-                        : STATION_PATH_OPTIONS
+                pinned
+                    ? dimmed
+                        ? DIMMED_PINNED_STATION_PATH_OPTIONS
+                        : PINNED_STATION_PATH_OPTIONS
+                    : selected
+                      ? SELECTED_STATION_PATH_OPTIONS
+                      : dimmed
+                        ? overview
+                            ? DIMMED_OVERVIEW_STATION_PATH_OPTIONS
+                            : DIMMED_STATION_PATH_OPTIONS
+                        : overview
+                          ? OVERVIEW_STATION_PATH_OPTIONS
+                          : STATION_PATH_OPTIONS
             }
             eventHandlers={eventHandlers}
         >
@@ -334,6 +378,63 @@ const StationMarker = memo(function StationMarker({ station, selected, labelled,
             ) : (
                 <Tooltip key="hover" direction="top" offset={[0, -4]} opacity={1} className="station-label-tooltip">
                     <span className="font-semibold">{station.name}</span>
+                </Tooltip>
+            )}
+        </CircleMarker>
+    )
+})
+
+interface ClusterMarkerProps {
+    latitude: number
+    longitude: number
+    count: number
+    expansionZoom: number
+    // Near the viewport. Each count is a DOM node that Leaflet repositions on every frame of a
+    // flight, so off-screen ones would make zooming stutter.
+    countShown: boolean
+    dimmed: boolean
+    renderer: L.Renderer
+    // Returns the matching unregister function.
+    onMount: (marker: L.CircleMarker) => () => void
+}
+
+const ClusterMarker = memo(function ClusterMarker({ latitude, longitude, count, expansionZoom, countShown, dimmed, renderer, onMount }: ClusterMarkerProps) {
+    const map = useMap()
+    const markerRef = useRef<L.CircleMarker>(null)
+    const center = useMemo<L.LatLngTuple>(() => [latitude, longitude], [latitude, longitude])
+    const eventHandlers = useMemo(
+        () => ({ click: () => map.flyTo(center, expansionZoom, { duration: CLUSTER_FLY_DURATION_S }) }),
+        [map, center, expansionZoom],
+    )
+    // Same reason as StationMarker; StationsLayer then sends clusters below the stations too.
+    useEffect(() => {
+        const marker = markerRef.current
+        if (!marker) return
+        marker.bringToBack()
+        return onMount(marker)
+    }, [onMount])
+    return (
+        <CircleMarker
+            ref={markerRef}
+            center={center}
+            radius={clusterRadius(count)}
+            renderer={renderer}
+            pathOptions={dimmed ? DIMMED_CLUSTER_PATH_OPTIONS : CLUSTER_PATH_OPTIONS}
+            eventHandlers={eventHandlers}
+        >
+            {/* Keyed because react-leaflet doesn't update a tooltip's class. In its own pane above
+                the canvas: stationLabelsPane is under it, so the circle would cover the number. */}
+            {countShown && (
+                <Tooltip
+                    key={dimmed ? 'dimmed' : 'normal'}
+                    direction="center"
+                    offset={[0, 0]}
+                    opacity={1}
+                    permanent
+                    pane="clusterCountsPane"
+                    className={dimmed ? 'station-cluster-count station-cluster-count--dimmed' : 'station-cluster-count'}
+                >
+                    {count}
                 </Tooltip>
             )}
         </CircleMarker>
@@ -363,21 +464,60 @@ function StationsLayer({ stations, selectedStationId, dimmed, renderer, onStatio
     }, [onStationSelect])
     const handleSelect = useCallback((station: MapStation) => onSelectRef.current?.(station), [])
 
+    const items = useStationClusters(stations, view.zoom)
+    // The selected station is always its own dot, even while it sits in a cluster. Appended to
+    // the same list under the same key, so it doesn't remount going in and out of a cluster.
+    const drawnItems = useMemo<StationMapItem[]>(() => {
+        if (selectedStationId == null) return items
+        if (items.some((item) => item.kind === 'station' && item.station.external_id === selectedStationId)) return items
+        const selected = stations.find((station) => station.external_id === selectedStationId)
+        return selected ? [...items, { kind: 'station', station: selected }] : items
+    }, [items, stations, selectedStationId])
+
+    const clusterMarkers = useRef(new Set<L.CircleMarker>())
+    const registerClusterMarker = useCallback((marker: L.CircleMarker) => {
+        const markers = clusterMarkers.current
+        markers.add(marker)
+        return () => {
+            markers.delete(marker)
+        }
+    }, [])
+    // Runs after the markers' own mount effects, which have just sent new stations (and a newly
+    // pinned selected one) below the clusters. Final order: clusters, stations, trains.
+    useEffect(() => {
+        clusterMarkers.current.forEach((marker) => marker.bringToBack())
+    }, [items, selectedStationId])
+
     const showLabels = view.zoom >= STATION_LABEL_MIN_ZOOM
     return (
         <>
-            {stations.map((station) => (
-                <StationMarker
-                    key={station.external_id}
-                    station={station}
-                    selected={station.external_id === selectedStationId}
-                    labelled={showLabels && view.bounds.contains([station.latitude, station.longitude])}
-                    overview={!showLabels}
-                    dimmed={dimmed}
-                    renderer={renderer}
-                    onSelect={handleSelect}
-                />
-            ))}
+            {drawnItems.map((item) =>
+                item.kind === 'cluster' ? (
+                    <ClusterMarker
+                        key={`c${item.id}`}
+                        latitude={item.latitude}
+                        longitude={item.longitude}
+                        count={item.count}
+                        expansionZoom={item.expansionZoom}
+                        countShown={view.bounds.contains([item.latitude, item.longitude])}
+                        dimmed={dimmed}
+                        renderer={renderer}
+                        onMount={registerClusterMarker}
+                    />
+                ) : (
+                    <StationMarker
+                        key={`s${item.station.external_id}`}
+                        station={item.station}
+                        selected={item.station.external_id === selectedStationId}
+                        pinned={drawnItems !== items && item.station.external_id === selectedStationId}
+                        labelled={showLabels && view.bounds.contains([item.station.latitude, item.station.longitude])}
+                        overview={!showLabels}
+                        dimmed={dimmed}
+                        renderer={renderer}
+                        onSelect={handleSelect}
+                    />
+                ),
+            )}
         </>
     )
 }
@@ -639,7 +779,8 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
 
     // One canvas for both stations and trains: a Leaflet canvas swallows pointer events
     // for everything underneath it, so two stacked canvases would leave the lower layer
-    // unclickable. It lives in trainsPane (above stationsPane); trains are drawn last.
+    // unclickable. It lives in trainsPane (above stationsPane); trains are drawn last, as
+    // station and cluster markers send themselves to the back when they mount.
     const pointsRenderer = useMemo(() => L.canvas({ pane: 'trainsPane', padding: 0.5, tolerance: 4 }), [])
 
     const { data: stationsData } = useQuery({
@@ -769,9 +910,9 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
                 )}
 
                 {/* Explicit panes pin the paint order: Poland fill (overlayPane, z 400) → lakes →
-                    rivers → city names → railway tiles → outside-Poland veil → station dots →
-                    station labels → selected-train veil → selected route → trains. All geography
-                    stays under the rails. */}
+                    rivers → city names → railway tiles → outside-Poland veil → station labels →
+                    selected-train veil → selected route → the canvas (clusters, station dots, then
+                    trains) → cluster counts. All geography stays under the rails. */}
                 <Pane name="waterPane" style={{ zIndex: 405, pointerEvents: 'none' }}>
                     {lakes && <GeoJSON data={lakes} style={LAKE_STYLE} interactive={false} />}
                 </Pane>
@@ -855,6 +996,8 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
                         />
                     )}
                 </Pane>
+                {/* Numbers on the canvas's cluster circles; clicks pass through to the canvas. */}
+                <Pane name="clusterCountsPane" style={{ zIndex: 431, pointerEvents: 'none' }} />
                 <PanToStation station={selectedStation} />
             </MapContainer>
 
