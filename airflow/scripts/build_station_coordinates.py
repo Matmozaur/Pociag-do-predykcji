@@ -28,8 +28,10 @@ Generated entries become part of the curated file. A later run therefore keeps t
 To rebuild from scratch, pass ``--curated`` pointing at a file that holds only the hand-curated
 entries.
 
-With ``--adjacent-stops`` the script only fills stations that have no coordinates yet, using the
-timetable as evidence (see ``fill_missing_coordinates``). Export the pairs from the curated DB::
+With ``--adjacent-stops``, new stations (those with no curated entry yet) are added only when
+the timetable confirms the match (see ``fill_missing_coordinates``). Low-precision curated
+entries are refined from OSM either way (see ``refine_low_precision``). Export the pairs from the
+curated DB::
 
     psql -h localhost -p 5434 -U pociag -d pociag -c "\\copy (SELECT DISTINCT station_id,
         next_station_id FROM (SELECT station_id, lead(station_id) OVER (PARTITION BY train_id
@@ -723,7 +725,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--adjacent-stops",
         type=Path,
         default=None,
-        help="CSV station_id,next_station_id from the timetable: only fill stations with no entry",
+        help="CSV station_id,next_station_id from the timetable: add new stations only when it confirms the match",
     )
     parser.add_argument(
         "--active-ids", type=Path, default=None, help="file of station ids (one per line) to report"
