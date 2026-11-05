@@ -24,8 +24,8 @@ npm start         # next start (prod)
   - browser: `process.env.NEXT_PUBLIC_API_BASE ?? '/bff'` — the `/bff/*` path is rewritten to
     the api in `next.config.ts` (`API_URL ?? 'http://localhost:8080'`).
   - server (RSC): `process.env.API_URL ?? 'http://localhost:8080'` directly.
-- All fetching happens in the browser, so `apiFetch`'s `next: { revalidate: 30 }` has no
-  effect; freshness comes from TanStack Query. Match shapes to `specs/openapi/api.yml`; declare response `interface`s in `api.ts` (see `StationSuggestion`
+- All fetching happens in the browser; freshness comes from TanStack Query (`apiFetch` passes no
+  Next cache options and no `Content-Type` on GETs). Match shapes to `specs/openapi/api.yml`; declare response `interface`s in `api.ts` (see `StationSuggestion`
   etc.) — no implicit `any`.
 
 ## Env vars
