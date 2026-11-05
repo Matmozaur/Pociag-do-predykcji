@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/zap"
@@ -133,8 +136,11 @@ func TestOffsetAtSpecMaximum(t *testing.T) {
 func TestServerSpansAreNamedByRoute(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	reader := sdkmetric.NewManualReader()
+	meters := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	h := handler.New(service.New(&servicetest.Repository{}), zap.NewNop())
-	server := otelhttp.NewHandler(h.Routes(), "pociag.api", otelhttp.WithTracerProvider(provider))
+	server := otelhttp.NewHandler(h.Routes(), "pociag.api",
+		otelhttp.WithTracerProvider(provider), otelhttp.WithMeterProvider(meters))
 
 	for _, c := range []struct {
 		method, target, name, route string
@@ -164,6 +170,29 @@ func TestServerSpansAreNamedByRoute(t *testing.T) {
 		}
 		if route != c.route {
 			t.Errorf("%s %s: http.route = %q, want %q", c.method, c.target, route, c.route)
+		}
+	}
+
+	// The request metrics carry the route too, so they can be split per endpoint.
+	var metrics metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &metrics); err != nil {
+		t.Fatal(err)
+	}
+	routes := map[string]bool{}
+	for _, scope := range metrics.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if hist, ok := m.Data.(metricdata.Histogram[float64]); ok {
+				for _, point := range hist.DataPoints {
+					if v, ok := point.Attributes.Value("http.route"); ok {
+						routes[v.AsString()] = true
+					}
+				}
+			}
+		}
+	}
+	for _, want := range []string{"/api/v1/trains/{operationId}", "/api/v1/dashboard/overview", "/healthz"} {
+		if !routes[want] {
+			t.Errorf("no request metric labelled http.route=%q; got %v", want, routes)
 		}
 	}
 }

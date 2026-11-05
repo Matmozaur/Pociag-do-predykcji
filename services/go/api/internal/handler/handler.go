@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
@@ -250,7 +251,8 @@ func csv(r *http.Request, name string) []string {
 }
 
 // routeSpan names the server span after the matched route, which is known only once the request
-// has been routed. A request that matched no route gets the bare method, never its raw path.
+// has been routed, and labels the request metrics with it. A request that matched no route gets
+// the bare method, never its raw path.
 func routeSpan(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)
@@ -262,6 +264,9 @@ func routeSpan(next http.Handler) http.Handler {
 		}
 		span.SetName(r.Method + " " + route)
 		span.SetAttributes(semconv.HTTPRoute(route))
+		if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
+			labeler.Add(semconv.HTTPRoute(route))
+		}
 	})
 }
 
