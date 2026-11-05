@@ -83,8 +83,8 @@ database — they recreate its `public` schema. Never point it at the stack's da
   (`Add stations on the map`, `Fix ...`, `Update ...`, `Remove ...`). Keep them scoped.
 - Merge to `main` via GitHub PR ("Merge pull request #N from Matmozaur/<branch>").
 - CI (`.github/workflows/ci-cd.yaml`) runs on every branch push: Go test + lint for the api and
-  ruff / mypy / pytest for `airflow/`, both with a Postgres service for the SQL tests. Build &
-  deploy stages are placeholders.
+  ruff / mypy / pytest for `airflow/`, both with a Postgres service for the SQL tests, a frontend
+  build and Docker image builds. The deploy stage is a placeholder.
 
 ## Cross-cutting conventions
 

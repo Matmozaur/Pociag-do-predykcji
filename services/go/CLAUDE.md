@@ -29,8 +29,8 @@ POCIAG_TEST_DATABASE_URL=postgres://… make api-test   # also runs internal/rep
 
 ## Env vars
 
-`HTTP_ADDR`, `DATABASE_DSN` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, tracing off when
-unset).
+`HTTP_ADDR`, `DATABASE_DSN` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, tracing and metrics
+off when unset).
 
 ## Patterns
 
