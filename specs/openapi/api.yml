@@ -188,7 +188,7 @@ components:
   parameters:
     Carriers: {name: carriers, in: query, description: Comma-separated carrier codes, schema: {type: string}}
     Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
-    Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+    Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
 
   responses:
     Error:
@@ -444,8 +444,8 @@ components:
             in_progress: {type: integer, description: Status P and in the latest snapshot}
             completed: {type: integer}
             cancelled: {type: integer, description: Fully or partially}
-            avg_delay_minutes: {type: number, description: Over started trains with a delay}
-            on_time_percentage: {type: number, description: Started trains with max confirmed delay <= 5 min}
+            avg_delay_minutes: {type: number, description: 'Mean maximum confirmed delay of started trains (in_progress + completed) with a delay'}
+            on_time_percentage: {type: number, description: 'Share of started trains (in_progress + completed) with at least one confirmed stop and max confirmed delay <= 5 min. A confirmed stop without delay minutes counts as 0'}
         disruptions_active: {type: integer}
         data_freshness:
           type: object
