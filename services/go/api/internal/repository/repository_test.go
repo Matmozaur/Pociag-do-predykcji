@@ -247,4 +247,63 @@ func TestRepository(t *testing.T) {
 	})
 }
 
+// TestLiveTrainsSortByDelay runs the delay sort over rows read from PostgreSQL, where a NULL delay
+// column and an unconfirmed stop must not be confused. The service has the real clock here, so the
+// rows are relative to now; the seeded operations are too old to count as active.
+func TestLiveTrainsSortByDelay(t *testing.T) {
+	repo := setup(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, os.Getenv("POCIAG_TEST_DATABASE_URL"))
+	check(t, err)
+	t.Cleanup(pool.Close)
+
+	now := time.Now().UTC()
+	for _, run := range []struct {
+		id        int64
+		delay     *int
+		confirmed bool
+	}{
+		{200, nil, false}, // unknown: no confirmed stop
+		{201, ptr(5), true},
+		{202, ptr(-2), true}, // early
+		{203, ptr(30), true},
+		{204, ptr(5), true},
+		{205, nil, true}, // confirmed with NULL delay columns: on time
+		{206, nil, false},
+	} {
+		_, err := pool.Exec(ctx, `INSERT INTO trains (id, schedule_id, order_id, operating_dates) VALUES ($1, 2026, $2, '{}')`, run.id, run.id)
+		check(t, err)
+		_, err = pool.Exec(ctx, `INSERT INTO operations (id, train_id, operating_date, status, updated_at) VALUES ($1, $2, $3, 'P', $4)`,
+			run.id, run.id, position.OperatingDates(now)[0], now.Add(-time.Minute))
+		check(t, err)
+		_, err = pool.Exec(ctx, `INSERT INTO operation_stops (operation_id, seq, station_id, planned_departure, departure_delay, is_confirmed, is_cancelled)
+			VALUES ($1, 1, 1, $2, $3, $4, false)`, run.id, now.Add(-30*time.Minute), run.delay, run.confirmed)
+		check(t, err)
+		_, err = pool.Exec(ctx, `INSERT INTO operation_stops (operation_id, seq, station_id, planned_arrival, is_confirmed, is_cancelled)
+			VALUES ($1, 2, 4, $2, false, false)`, run.id, now.Add(time.Hour))
+		check(t, err)
+	}
+
+	list := func(sortBy string, limit, offset int) ([]int64, []*int) {
+		t.Helper()
+		resp, err := service.New(repo).LiveTrains(ctx, nil, sortBy, limit, offset)
+		check(t, err)
+		equal(t, "total", resp.Pagination.Total, 7)
+		ids, delays := make([]int64, 0, len(resp.Data)), make([]*int, 0, len(resp.Data))
+		for _, train := range resp.Data {
+			ids = append(ids, train.OperationID)
+			delays = append(delays, train.DelayMinutes)
+		}
+		return ids, delays
+	}
+
+	ids, _ := list("", 100, 0)
+	equal(t, "default order", ids, []int64{200, 201, 202, 203, 204, 205, 206})
+	ids, delays := list(service.SortDelay, 100, 0)
+	equal(t, "by delay", ids, []int64{203, 201, 204, 205, 202, 200, 206})
+	equal(t, "delays", delays, []*int{ptr(30), ptr(5), ptr(5), ptr(0), ptr(-2), nil, nil})
+	ids, _ = list(service.SortDelay, 2, 2)
+	equal(t, "page", ids, []int64{204, 205})
+}
+
 func ptr[T any](v T) *T { return &v }
