@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,18 +35,21 @@ func (s *Service) SearchSchedules(ctx context.Context, q ConnectionQuery, sortBy
 		return nil, fmt.Errorf("search schedules: %w", err)
 	}
 
-	results := make([]model.ScheduleSearchResult, 0, len(connections))
-	for _, c := range connections {
-		results = append(results, searchResult(c))
-	}
-	less := func(a, b model.ScheduleSearchResult) bool { return a.Departure.Time < b.Departure.Time }
+	// Sort on the offsets: they exceed 24 h past midnight, where HH:MM wraps around.
+	key := func(c Connection) time.Duration { return offsetOrZero(c.From.Departure) }
 	switch sortBy {
 	case SortArrival:
-		less = func(a, b model.ScheduleSearchResult) bool { return a.Arrival.Time < b.Arrival.Time }
+		key = func(c Connection) time.Duration { return offsetOrZero(c.To.Arrival) }
 	case SortDuration:
-		less = func(a, b model.ScheduleSearchResult) bool { return a.DurationMinutes < b.DurationMinutes }
+		key = connectionDuration
 	}
-	sort.SliceStable(results, func(i, j int) bool { return less(results[i], results[j]) })
+	sorted := slices.Clone(connections)
+	sort.SliceStable(sorted, func(i, j int) bool { return key(sorted[i]) < key(sorted[j]) })
+
+	results := make([]model.ScheduleSearchResult, 0, len(sorted))
+	for _, c := range sorted {
+		results = append(results, searchResult(c))
+	}
 
 	return &model.ScheduleSearchResponse{
 		Data:       results[min(offset, len(results)):min(offset+limit, len(results))],
@@ -70,10 +74,23 @@ func searchResult(c Connection) model.ScheduleSearchResult {
 	if t := offsetClock(c.To.Arrival); t != nil {
 		result.Arrival.Time = *t
 	}
-	if c.From.Departure != nil && c.To.Arrival != nil {
-		result.DurationMinutes = int((*c.To.Arrival - *c.From.Departure).Minutes())
-	}
+	result.DurationMinutes = int(connectionDuration(c).Minutes())
 	return result
+}
+
+func offsetOrZero(d *time.Duration) time.Duration {
+	if d == nil {
+		return 0
+	}
+	return *d
+}
+
+// connectionDuration is the time from departure to arrival, zero if either is unknown.
+func connectionDuration(c Connection) time.Duration {
+	if c.From.Departure == nil || c.To.Arrival == nil {
+		return 0
+	}
+	return *c.To.Arrival - *c.From.Departure
 }
 
 func placeString(p Place) string {

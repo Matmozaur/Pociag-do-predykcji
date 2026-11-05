@@ -283,6 +283,34 @@ func TestSearchSchedules(t *testing.T) {
 	equal(t, "overnight duration", last.DurationMinutes, 80)
 }
 
+func TestSearchSchedulesSortsPastMidnight(t *testing.T) {
+	repo := &servicetest.Repository{Connections: []service.Connection{
+		// Departs 01:10 and arrives 02:00 the next day: last, though its HH:MM sorts first.
+		connection(10, 25*time.Hour+10*time.Minute, 26*time.Hour, 1, 2),
+		connection(11, 23*time.Hour, 23*time.Hour+30*time.Minute, 1, 2),
+		connection(12, 6*time.Hour, 25*time.Hour, 1, 2),
+	}}
+	q := service.ConnectionQuery{
+		Date: ts("2026-10-05T00:00:00Z"), From: service.ParsePlace("Warszawa"), To: service.ParsePlace("6000"),
+	}
+
+	for sortBy, want := range map[string][]int64{
+		service.SortDeparture: {12, 11, 10},
+		service.SortArrival:   {11, 12, 10},
+		service.SortDuration:  {11, 10, 12},
+	} {
+		resp, err := service.NewAt(repo, now).SearchSchedules(context.Background(), q, sortBy, 10, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := []int64{}
+		for _, r := range resp.Data {
+			got = append(got, r.RouteID)
+		}
+		equal(t, "order by "+sortBy, got, want)
+	}
+}
+
 func TestScheduleDetail(t *testing.T) {
 	repo := &servicetest.Repository{Schedule: &service.TrainSchedule{
 		Train: service.Train{ID: 3, Category: sp("Os"), Number: sp("69967"), CarrierCode: sp("KD")},
