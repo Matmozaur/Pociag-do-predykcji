@@ -176,3 +176,60 @@ def test_build_payload_keeps_curated_entries_first_and_unchanged() -> None:
     assert payload["stations"][1] == {
         "external_id": 2, "name": "B", "latitude": 52.12346, "longitude": 21.65432,
     }
+
+
+@pytest.mark.parametrize(
+    ("latitude", "longitude", "expected"),
+    [
+        (51.249, 22.532, True),
+        (53.0, 18.598, True),
+        (52.2288, 21.003, True),  # hand-typed, one value has 3 decimals
+        (52.2519, 21.0512, False),  # hand-typed, but both values have 4 decimals
+        (52.12345, 18.123, False),  # round(x, 5) dropped the trailing zeros of one value
+    ],
+)
+def test_is_low_precision_ignores_trailing_zeros_of_osm_values(
+    latitude: float, longitude: float, expected: bool
+) -> None:
+    assert bsc.is_low_precision({"latitude": latitude, "longitude": longitude}) is expected
+
+
+def test_refine_low_precision_replaces_only_low_precision_matches_in_place() -> None:
+    low = {"external_id": 1, "name": "Low", "latitude": 51.249, "longitude": 22.532}
+    precise = {"external_id": 2, "name": "Precise", "latitude": 52.2288, "longitude": 21.0512}
+    osm = _osm("node/1", "Low OSM", 51.2301234, 22.5401234)
+    matches = [
+        bsc.Match(bsc.PlkStation(1, "Low"), osm, "name:unique"),
+        bsc.Match(bsc.PlkStation(2, "Precise"), osm, "name:unique"),
+    ]
+    entries, refined, kept = bsc.refine_low_precision([low, precise], matches)
+    expected = {"external_id": 1, "name": "Low", "latitude": 51.23012, "longitude": 22.54012}
+    assert entries == [expected, precise]
+    assert refined == [expected]
+    assert kept == []
+
+
+def test_refine_low_precision_keeps_unmatched_and_distant_entries() -> None:
+    unmatched = {"external_id": 1, "name": "Unmatched", "latitude": 51.249, "longitude": 22.532}
+    distant = {"external_id": 2, "name": "Distant", "latitude": 51.249, "longitude": 22.532}
+    far_osm = _osm("node/9", "Distant", 52.5, 22.532)
+    matches = [bsc.Match(bsc.PlkStation(2, "Distant"), far_osm, "name:unique")]
+    entries, refined, kept = bsc.refine_low_precision([unmatched, distant], matches)
+    assert entries == [unmatched, distant]
+    assert refined == []
+    assert [(e["external_id"], why.split(" ")[0]) for e, why in kept] == [
+        (1, "no-osm-match"),
+        (2, "too-far"),
+    ]
+    assert "node/9" in kept[1][1]
+
+
+def test_refine_low_precision_is_idempotent() -> None:
+    low = {"external_id": 1, "name": "Low", "latitude": 51.249, "longitude": 22.532}
+    osm = _osm("node/1", "Low", 51.2301234, 22.5401234)
+    matches = [bsc.Match(bsc.PlkStation(1, "Low"), osm, "name:unique")]
+    once, _, _ = bsc.refine_low_precision([low], matches)
+    twice, refined, kept = bsc.refine_low_precision(once, matches)
+    assert twice == once
+    assert refined == []
+    assert kept == []

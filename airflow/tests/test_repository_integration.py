@@ -64,6 +64,17 @@ def test_save_stations_sets_city_and_coordinates(db: Any) -> None:
     ]
 
 
+def test_save_stations_overwrites_existing_coordinates(db: Any) -> None:
+    repo = Repository()
+    stations = transform.stations(load("stations.json"))
+    repo.save_stations(stations, {}, [StationCoordinates(21501, 52.87, 18.69)])
+    repo.save_stations(stations, {}, [StationCoordinates(21501, 52.87123, 18.68456)])
+
+    assert query(db, "SELECT latitude, longitude FROM stations WHERE id = 21501") == [
+        (52.87123, 18.68456),
+    ]
+
+
 def test_save_schedules_is_idempotent_and_merges_operating_dates(db: Any) -> None:
     repo = Repository()
     batch = transform.schedules(load("schedules.json"))
