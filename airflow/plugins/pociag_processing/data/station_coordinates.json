@@ -17904,6 +17904,102 @@
             "name": "Grodzisk Mazowiecki Jordanowice",
             "latitude": 52.10332,
             "longitude": 20.63678
+        },
+        {
+            "external_id": 2345,
+            "name": "Witkowo",
+            "latitude": 53.28451,
+            "longitude": 15.07834
+        },
+        {
+            "external_id": 36541,
+            "name": "Janówek",
+            "latitude": 52.42529,
+            "longitude": 20.77844
+        },
+        {
+            "external_id": 39339,
+            "name": "Wygoda",
+            "latitude": 51.68877,
+            "longitude": 21.73102
+        },
+        {
+            "external_id": 39826,
+            "name": "Sabinka",
+            "latitude": 52.17315,
+            "longitude": 22.17264
+        },
+        {
+            "external_id": 46128,
+            "name": "Międzybórz",
+            "latitude": 51.40105,
+            "longitude": 17.65296
+        },
+        {
+            "external_id": 46631,
+            "name": "Kolumna",
+            "latitude": 51.61489,
+            "longitude": 19.19594
+        },
+        {
+            "external_id": 51391,
+            "name": "Majdan",
+            "latitude": 51.14839,
+            "longitude": 22.42647
+        },
+        {
+            "external_id": 65706,
+            "name": "Chmielów",
+            "latitude": 50.51511,
+            "longitude": 21.66133
+        },
+        {
+            "external_id": 65771,
+            "name": "Dąbrowica Małopolska",
+            "latitude": 50.48658,
+            "longitude": 21.62285
+        },
+        {
+            "external_id": 65789,
+            "name": "Skopanie",
+            "latitude": 50.47256,
+            "longitude": 21.55965
+        },
+        {
+            "external_id": 66589,
+            "name": "Zwierzyniec",
+            "latitude": 50.6094,
+            "longitude": 22.98402
+        },
+        {
+            "external_id": 83030,
+            "name": "Głuchów",
+            "latitude": 50.08347,
+            "longitude": 22.27908
+        },
+        {
+            "external_id": 251577,
+            "name": "Gdańsk Oliwa SKM",
+            "latitude": 54.40949,
+            "longitude": 18.57198
+        },
+        {
+            "external_id": 280442,
+            "name": "Łagiewniki",
+            "latitude": 51.30541,
+            "longitude": 22.61711
+        },
+        {
+            "external_id": 281290,
+            "name": "Bydgoszcz Stary Fordon",
+            "latitude": 53.14772,
+            "longitude": 18.16605
+        },
+        {
+            "external_id": 281390,
+            "name": "Padew Narodowa",
+            "latitude": 50.4342,
+            "longitude": 21.50594
         }
     ]
 }

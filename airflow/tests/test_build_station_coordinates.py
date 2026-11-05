@@ -233,3 +233,77 @@ def test_refine_low_precision_is_idempotent() -> None:
     assert twice == once
     assert refined == []
     assert kept == []
+# --------------------------------------------------------------------------- filling gaps
+
+
+def _curated(external_id: int, lat: float, lon: float) -> dict[str, Any]:
+    return {"external_id": external_id, "name": "N", "latitude": lat, "longitude": lon}
+
+
+def test_fill_keeps_a_unique_match_and_skips_stations_with_coordinates() -> None:
+    plk = [bsc.PlkStation(1, "Kolumna"), bsc.PlkStation(2, "Skopanie")]
+    osm = [_osm("node/1", "Kolumna", 51.6, 19.2), _osm("node/2", "Skopanie", 50.5, 21.6)]
+    matches, unmatched = bsc.fill_missing_coordinates(plk, osm, [_curated(2, 50.0, 20.0)], [])
+    assert [(m.station.external_id, m.method) for m in matches] == [(1, "name:unique")]
+    assert unmatched == []
+
+
+def test_fill_rejects_a_unique_match_far_from_route_neighbours() -> None:
+    plk = [bsc.PlkStation(1, "Krasne")]
+    osm = [_osm("node/1", "Krasne", 52.9, 20.6)]
+    matches, unmatched = bsc.fill_missing_coordinates(plk, osm, [_curated(9, 50.0, 24.0)], [(1, 9)])
+    assert matches == []
+    assert unmatched == [(plk[0], "far from route neighbours (node/1)")]
+
+
+def test_fill_breaks_a_name_tie_by_route_neighbours() -> None:
+    plk = [bsc.PlkStation(1, "Majdan")]
+    osm = [_osm("node/1", "Majdan", 49.206, 22.299), _osm("node/2", "Majdan", 51.148, 22.426)]
+    curated = [_curated(9, 51.17, 22.45)]
+    matches, unmatched = bsc.fill_missing_coordinates(plk, osm, curated, [(9, 1)])
+    assert [(m.osm.osm_id, m.method) for m in matches] == [("node/2", "name:route")]
+    assert unmatched == []
+
+
+def test_fill_leaves_a_name_tie_without_neighbours_or_margin() -> None:
+    osm = [_osm("node/1", "Otok", 52.0, 20.0), _osm("node/2", "Otok", 52.0, 20.3)]
+    no_neighbours = bsc.PlkStation(1, "Otok")
+    # These two lie 20 km apart, so they are not collapsed into one station.
+    matches, unmatched = bsc.fill_missing_coordinates([no_neighbours], osm, [], [])
+    assert matches == []
+    assert unmatched[0][1].startswith("ambiguous")
+    # Both candidates lie next to the neighbour: no margin, no match.
+    near_both = bsc.PlkStation(2, "Otok")
+    curated = [_curated(9, 52.0, 20.15)]
+    matches, _ = bsc.fill_missing_coordinates([near_both], osm, curated, [(2, 9)])
+    assert matches == []
+
+
+def test_fill_drops_an_operator_suffix_only_for_one_place() -> None:
+    plk = [bsc.PlkStation(1, "Gdańsk Oliwa SKM"), bsc.PlkStation(2, "Otok SKM")]
+    osm = [
+        _osm("node/1", "Gdańsk Oliwa", 54.409, 18.572),
+        _osm("node/2", "Otok", 52.0, 20.0),
+        _osm("node/3", "Otok", 50.0, 20.0),
+    ]
+    matches, unmatched = bsc.fill_missing_coordinates(plk, osm, [], [])
+    assert [(m.station.external_id, m.method) for m in matches] == [(1, "operator-suffix")]
+    assert [(s.external_id, why) for s, why in unmatched] == [(2, "no-candidate")]
+
+
+def test_fill_adds_a_regional_qualifier_only_with_timetable_evidence() -> None:
+    osm = [
+        _osm("node/1", "Międzybórz Sycowski", 51.401, 17.653),
+        _osm("node/2", "Chmielów Zagumnie", 50.523, 21.686),
+    ]
+    near = bsc.PlkStation(1, "Międzybórz")
+    curated = [_curated(9, 51.41, 17.68), _curated(8, 50.5, 21.7)]
+    matches, _ = bsc.fill_missing_coordinates([near], osm, curated, [(1, 9)])
+    assert [(m.osm.osm_id, m.method) for m in matches] == [("node/1", "qualifier:route")]
+    # No neighbours: a bare name is not enough.
+    matches, unmatched = bsc.fill_missing_coordinates([near], osm, curated, [])
+    assert matches == [] and unmatched == [(near, "no-candidate")]
+    # A district name is a different halt, not a qualifier, even right next to the neighbour.
+    other = bsc.PlkStation(2, "Chmielów")
+    matches, _ = bsc.fill_missing_coordinates([other], osm, curated, [(2, 8)])
+    assert matches == []
