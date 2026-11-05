@@ -135,6 +135,11 @@ func (h *Handler) scheduleDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) liveTrains(w http.ResponseWriter, r *http.Request) {
+	sortBy := r.URL.Query().Get("sort")
+	if sortBy != "" && sortBy != service.SortDelay {
+		badRequest(w, "sort must be one of: delay")
+		return
+	}
 	limit, ok := intParam(w, r, "limit", 20, 1, 100)
 	if !ok {
 		return
@@ -143,7 +148,7 @@ func (h *Handler) liveTrains(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h.respond(w, r, "failed to load live trains")(h.svc.LiveTrains(r.Context(), csv(r, "carriers"), limit, offset))
+	h.respond(w, r, "failed to load live trains")(h.svc.LiveTrains(r.Context(), csv(r, "carriers"), sortBy, limit, offset))
 }
 
 func (h *Handler) trainDetail(w http.ResponseWriter, r *http.Request) {

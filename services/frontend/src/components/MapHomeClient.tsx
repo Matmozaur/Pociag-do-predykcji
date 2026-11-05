@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
     AlertTriangle,
     ArrowLeft,
@@ -23,7 +23,6 @@ import {
     delayVariant,
     formatDelay,
     api,
-    sortByDelay,
     statusLabel,
     type DisruptionSummaryView,
     type LiveTrainSummary,
@@ -175,9 +174,8 @@ function MapHome() {
     }, [connectionKey, selectConnection])
 
     const overviewQuery = useQuery({ queryKey: ['dashboardOverview'], queryFn: api.getDashboardOverview, staleTime: 30_000 })
-    // All active trains (shared cache with /pociagi), sorted by delay before truncating.
-    const trainsQuery = useQuery({ queryKey: ['allLiveTrains'], queryFn: () => api.getAllLiveTrains(), staleTime: 30_000, refetchInterval: 60_000 })
-    const topDelayedTrains = useMemo(() => (trainsQuery.data ? sortByDelay(trainsQuery.data.data).slice(0, 4) : []), [trainsQuery.data])
+    const trainsQuery = useQuery({ queryKey: ['topDelayedTrains'], queryFn: () => api.getLiveTrains({ sort: 'delay', limit: 4 }), staleTime: 30_000, refetchInterval: 60_000 })
+    const topDelayedTrains = trainsQuery.data?.data ?? []
     const disruptionsQuery = useQuery({ queryKey: ['mapDisruptions'], queryFn: () => api.listDisruptions(3), staleTime: 60_000 })
     const isRefreshing = overviewQuery.isFetching || trainsQuery.isFetching || disruptionsQuery.isFetching
     const refreshAll = () => { void Promise.all([overviewQuery.refetch(), trainsQuery.refetch(), disruptionsQuery.refetch()]) }

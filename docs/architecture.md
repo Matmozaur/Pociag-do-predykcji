@@ -117,7 +117,7 @@ Child rows cascade on delete of their train / operation.
   departure), its operating date is today or yesterday (Europe/Warsaw), its `updated_at` is
   within 15 min of the latest snapshot, and now lies in [effective first departure − 5 min,
   effective last arrival], with cancelled stops ignored. SQL pre-filters, `position.IsActive`
-  decides; carrier filtering and `/trains/live` pagination happen in Go. Freshness is relative to
+  decides; carrier filtering and `/trains/live` sorting and pagination happen in Go. Freshness is relative to
   the latest snapshot, so if ingestion stalls the last snapshot's trains stay live and only their
   `confidence` drops.
 - **Position model** (`internal/position`, pure Go) — effective times (actual, else planned +
@@ -156,8 +156,8 @@ Child rows cascade on delete of their train / operation.
 
 | Route | Endpoints | Refresh |
 |---|---|---|
-| `/mapa` | `map/trains`, `map/stations`, `dashboard/overview`, `trains/live?limit=4`, `disruptions?limit=3`, board of the selected station | trains poll 30 s; live list and board 60 s; stations stale 1 h; overview / disruptions stale 30 / 60 s |
-| `/pociagi`, `/pociagi/[id]` | `trains/live?limit=50`, `dashboard/overview`; `trains/{id}` | poll 60 s |
+| `/mapa` | `map/trains`, `map/stations`, `dashboard/overview`, `trains/live?sort=delay&limit=4`, `disruptions?limit=3`, board of the selected station | trains poll 30 s; live list and board 60 s; stations stale 1 h; overview / disruptions stale 30 / 60 s |
+| `/pociagi`, `/pociagi/[id]` | `trains/live?sort=delay&limit=100` (next pages on demand), `dashboard/overview`; `trains/{id}` | poll 60 s |
 | `/rozklad/[id]` | `schedules/{id}` | stale 5 min |
 | `/utrudnienia` | `disruptions` (top 20) | stale 2 min |
 | `/wyszukaj` | `search/stations` (debounced 300 ms), `schedules/search` | on input (stale 60 s) / submit |

@@ -1,12 +1,14 @@
 'use client'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import Link from 'next/link'
 import { ArrowRight, MapPin, RefreshCw, Train } from 'lucide-react'
-import { delayVariant, formatDelay, api, sortByDelay, statusLabel, statusVariant, type LiveTrainSummary } from '@/lib/api'
+import { delayVariant, formatDelay, api, statusLabel, statusVariant, type LiveTrainSummary } from '@/lib/api'
 import { Badge, Button, Card, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
 import { DataFreshness } from '@/components/DataFreshness'
+
+const PAGE_SIZE = 100
 
 function LiveTrainCard({ train }: { train: LiveTrainSummary }) {
     return (
@@ -44,13 +46,20 @@ function LiveTrainCard({ train }: { train: LiveTrainSummary }) {
 }
 
 export default function PociagiPage() {
-    const trainsQuery = useQuery({
-        queryKey: ['allLiveTrains'],
-        queryFn: () => api.getAllLiveTrains(),
+    const trainsQuery = useInfiniteQuery({
+        queryKey: ['liveTrainsByDelay'],
+        queryFn: ({ pageParam }) => api.getLiveTrains({ sort: 'delay', limit: PAGE_SIZE, offset: pageParam }),
+        initialPageParam: 0,
+        getNextPageParam: ({ pagination }) => (pagination.has_more ? pagination.offset + pagination.limit : undefined),
         refetchInterval: 60_000,
         staleTime: 30_000,
     })
-    const sortedTrains = useMemo(() => (trainsQuery.data ? sortByDelay(trainsQuery.data.data) : []), [trainsQuery.data])
+    // Pages are separate queries, so a train can shift across a page boundary; keep one copy.
+    const sortedTrains = useMemo(
+        () => [...new Map(trainsQuery.data?.pages.flatMap((page) => page.data).map((train) => [train.operation_id, train])).values()],
+        [trainsQuery.data],
+    )
+    const total = trainsQuery.data?.pages.at(-1)?.pagination.total
     const overviewQuery = useQuery({
         queryKey: ['dashboardOverview'],
         queryFn: api.getDashboardOverview,
@@ -99,11 +108,21 @@ export default function PociagiPage() {
                 ) : sortedTrains.length > 0 ? (
                     <div className="space-y-3">
                         <p className="text-xs text-slate-500">
-                            {sortedTrains.length} pociągów · auto-odświeżanie co 60s
+                            {total} pociągów · auto-odświeżanie co 60s
                         </p>
                         {sortedTrains.map((train) => (
                             <LiveTrainCard key={train.operation_id} train={train} />
                         ))}
+                        {trainsQuery.hasNextPage && (
+                            <Button
+                                variant="secondary"
+                                className="w-full"
+                                onClick={() => void trainsQuery.fetchNextPage()}
+                                disabled={trainsQuery.isFetchingNextPage}
+                            >
+                                Pokaż więcej
+                            </Button>
+                        )}
                     </div>
                 ) : (
                     <EmptyState

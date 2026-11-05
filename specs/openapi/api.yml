@@ -128,9 +128,10 @@ paths:
 
   /api/v1/trains/live:
     get:
-      summary: Active trains (same definition as /map/trains), ordered by operation id
+      summary: Active trains (same definition as /map/trains), ordered by operation id by default
       parameters:
         - $ref: '#/components/parameters/Carriers'
+        - {name: sort, in: query, description: 'Set to `delay` for the largest delay first (early trains below on-time ones, unknown delay last, ties by operation id), applied before pagination. Omitted means operation id order.', schema: {type: string, enum: [delay]}}
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
       responses:

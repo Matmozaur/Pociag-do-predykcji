@@ -36,6 +36,7 @@ func TestBadRequests(t *testing.T) {
 		"/api/v1/schedules/x",
 		"/api/v1/trains/live?limit=0",
 		"/api/v1/trains/live?offset=-1",
+		"/api/v1/trains/live?sort=speed",
 		"/api/v1/trains/-5",
 		"/api/v1/disruptions?limit=101",
 	} {
@@ -98,6 +99,15 @@ func TestSearchSchedulesParsesPlaces(t *testing.T) {
 	}
 	if len(repo.Query.Carriers) != 2 || repo.Query.Carriers[1] != "KM" {
 		t.Errorf("carriers = %q", repo.Query.Carriers)
+	}
+}
+
+func TestLiveTrainsAcceptsSortByDelay(t *testing.T) {
+	for _, target := range []string{"/api/v1/trains/live", "/api/v1/trains/live?sort=", "/api/v1/trains/live?sort=delay"} {
+		rec := serve(&servicetest.Repository{}, target)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", target, rec.Code)
+		}
 	}
 }
 
