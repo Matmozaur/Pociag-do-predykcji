@@ -152,6 +152,7 @@ def schedules(payload: Mapping[str, Any]) -> ScheduleBatch:
 
     trains: dict[TrainKey, Train] = {}
     stops: dict[TrainKey, list[ScheduleStop]] = {}
+    skipped_stops = 0
     for route in payload.get("routes") or []:
         schedule_id, order_id = _int(route.get("scheduleId")), _int(route.get("orderId"))
         if schedule_id is None or order_id is None:
@@ -171,7 +172,12 @@ def schedules(payload: Mapping[str, Any]) -> ScheduleBatch:
             ),
         )
         # PLK order numbers are sparse (1, 1009, ...); keep their order, renumber from 1.
-        route_stops = sorted(route.get("stations") or [], key=lambda s: s.get("orderNumber", 0))
+        raw_stops = route.get("stations") or []
+        route_stops = sorted(
+            (s for s in raw_stops if _int(s.get("stationId")) is not None),
+            key=lambda s: s.get("orderNumber", 0),
+        )
+        skipped_stops += len(raw_stops) - len(route_stops)
         stops[key] = [
             ScheduleStop(
                 train=key,
@@ -185,6 +191,8 @@ def schedules(payload: Mapping[str, Any]) -> ScheduleBatch:
             for seq, stop in enumerate(route_stops, start=1)
         ]
 
+    if skipped_stops:
+        logger.warning("Skipped %d schedule stops without a station id", skipped_stops)
     batch.trains = list(trains.values())
     batch.stops = [stop for route_stops in stops.values() for stop in route_stops]
     return batch
@@ -198,6 +206,7 @@ def operations(pages: Iterable[Mapping[str, Any]]) -> OperationBatch:
     station_rows: dict[int, Station] = {}
     runs: dict[RunKey, Operation] = {}
     run_stops: dict[RunKey, dict[int, OperationStop]] = {}
+    complete_runs: set[RunKey] = set()
 
     for page in pages:
         for station in _station_names(page.get("stations")):
@@ -207,16 +216,22 @@ def operations(pages: Iterable[Mapping[str, Any]]) -> OperationBatch:
             if operation is None:
                 continue
             runs[operation.key] = operation
-            run_stops[operation.key] = {
-                stop.seq: stop
-                for raw in train.get("stations") or []
+            raw_stops = train.get("stations") or []
+            stops = [
+                stop for raw in raw_stops
                 if (stop := _operation_stop(operation.key, raw)) is not None
-            }
+            ]
+            run_stops[operation.key] = {stop.seq: stop for stop in stops}
+            if stops and len(stops) == len(raw_stops):
+                complete_runs.add(operation.key)
+            else:
+                complete_runs.discard(operation.key)
 
     return OperationBatch(
         stations=list(station_rows.values()),
         operations=list(runs.values()),
         stops=[stop for by_seq in run_stops.values() for stop in by_seq.values()],
+        complete_runs=complete_runs,
     )
 
 

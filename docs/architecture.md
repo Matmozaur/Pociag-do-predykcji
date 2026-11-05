@@ -50,8 +50,8 @@ DAG are in `specs/pipelines.md`.
   `sync_schedules` (one per day). Stations, coordinates and operation stops skip unchanged rows;
   `trains` (by `sync_schedules`) and `operations` (by `sync_operations`) are always updated, so
   their `updated_at` marks freshness; `schedule_stops` are replaced per train; `disruptions` are
-  deleted and re-inserted. `operation_stops` are only upserted: stops PLK drops or renumbers
-  for a run are never removed.
+  deleted and re-inserted. `operation_stops` are upserted, and stops a run's payload no longer
+  lists (PLK dropped or renumbered them) are deleted in the same transaction.
 - **Referential integrity** — each batch upserts its payload's station dictionary first;
   unknown station ids get placeholder `Stacja <id>` rows and operations for unknown trains get
   bare `trains` rows, so FKs always hold.

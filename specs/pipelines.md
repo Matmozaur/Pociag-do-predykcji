@@ -7,7 +7,7 @@ Europe/Warsaw; `catchup=False`, `max_active_runs=1`.
 | DAG | Schedule | PLK request(s) | Writes |
 |---|---|---|---|
 | `sync_schedules` | `30 2 * * *` | task `stations`: `/dictionaries/stations`, `/dictionaries/cities`; task `schedules`: `/schedules?dateFrom=D&dateTo=D` for today … today+7 | `stations` (+ city, packaged coordinates); `trains` upsert (operating dates merged), `schedule_stops` replaced per train |
-| `sync_operations` | `*/10 * * * *` | `/operations?withPlanned=true`, all pages | `operations` upsert (`updated_at` = seen in this snapshot), `operation_stops` upsert (unchanged rows skipped) |
+| `sync_operations` | `*/10 * * * *` | `/operations?withPlanned=true`, all pages | `operations` upsert (`updated_at` = seen in this snapshot), `operation_stops` upsert (unchanged rows skipped), stops a run no longer lists deleted |
 | `sync_disruptions` | `*/15 * * * *` | `/disruptions?dateFrom=today&dateTo=today+1` | `disruptions` replaced |
 
 ## PLK data rules (`transform.py`)
@@ -15,8 +15,14 @@ Europe/Warsaw; `catchup=False`, `max_active_runs=1`.
 - Naive PLK timestamps are Europe/Warsaw wall-clock time.
 - Schedule times are `HH:MM:SS` + day offset → `INTERVAL` from local midnight of the operating
   date (can exceed 24 h or be negative). PLK order numbers are sparse; stops are renumbered 1..n.
+  A stop without a station id is skipped (counted in a warning); the rest of the batch is written.
 - Planned operation times after midnight on overnight trains lack the day rollover; they are
   shifted by whole days to within 12 h of the actual time.
+- Without a `stations` filter, `/operations` pages by train and lists each run's whole route, so a
+  run's payload is its complete stop list (`actualSequenceNumber` is sparse, which is not a sign of
+  missing stops). Stored stops the payload no longer lists are deleted in the upsert's transaction.
+  Rows stay untouched for runs absent from the fetch, runs with no stops in the payload, and runs
+  with a stop that failed validation, since those payloads do not prove a stop was removed.
 - Each payload carries a dictionary of the stations it references; it is upserted first. Station
   ids missing from every dictionary get a placeholder `Stacja <id>` until a dictionary names them.
 - An operation for a train not in the timetable creates a bare `trains` row.

@@ -123,6 +123,83 @@ def test_save_operations_links_trains_and_updates_in_place(db: Any) -> None:
     """) == [("C", True)]
 
 
+def stored_seqs(conn: Any, order_id: int) -> list[int]:
+    rows = query(conn, f"""
+        SELECT s.seq FROM operation_stops s JOIN operations o ON o.id = s.operation_id
+        JOIN trains t ON t.id = o.train_id WHERE t.order_id = {order_id} ORDER BY s.seq
+    """)
+    return [row[0] for row in rows]
+
+
+def test_save_operations_removes_stops_a_run_no_longer_lists(db: Any) -> None:
+    repo = Repository()
+    page1, page2 = load("operations_page1.json"), load("operations_page2.json")
+    repo.save_operations(transform.operations([page1, page2]))
+    assert stored_seqs(db, 140621539) == [1, 2, 7, 9, 10, 22]
+    other_run = stored_seqs(db, 546554298)
+
+    # Dropped (seq 2, 9) and renumbered (22 -> 11) stops; the other run is absent from this fetch.
+    stations = page1["trains"][0]["stations"]
+    last = {**stations[5], "actualSequenceNumber": 11}
+    page1["trains"][0]["stations"] = [stations[0], stations[2], stations[4], last]
+    repo.save_operations(transform.operations([page1]))
+
+    assert stored_seqs(db, 140621539) == [1, 7, 10, 11]
+    assert stored_seqs(db, 546554298) == other_run
+    assert query(db, """
+        SELECT s.station_id FROM operation_stops s JOIN operations o ON o.id = s.operation_id
+        JOIN trains t ON t.id = o.train_id WHERE t.order_id = 140621539 AND s.seq = 11
+    """) == [(30601,)]
+
+
+def test_save_operations_keeps_stops_when_the_payload_proves_nothing(db: Any) -> None:
+    repo = Repository()
+    page = load("operations_page1.json")
+    repo.save_operations(transform.operations([page]))
+    stored = stored_seqs(db, 140621539)
+
+    # No stops at all.
+    empty = load("operations_page1.json")
+    empty["trains"][0]["stations"] = []
+    repo.save_operations(transform.operations([empty]))
+    assert stored_seqs(db, 140621539) == stored
+
+    # A stop failed validation, so a missing one may be that stop.
+    invalid = load("operations_page1.json")
+    invalid["trains"][0]["stations"] = invalid["trains"][0]["stations"][:3]
+    del invalid["trains"][0]["stations"][0]["actualSequenceNumber"]
+    repo.save_operations(transform.operations([invalid]))
+    assert stored_seqs(db, 140621539) == stored
+
+
+def test_save_operations_keeps_stops_across_execute_values_pages(db: Any) -> None:
+    # More kept stops than one execute_values page: a paged delete would keep only the last page.
+    stations = [{"stationId": 13904, "actualSequenceNumber": seq} for seq in range(1, 1501)]
+    page = load("operations_page1.json")
+    page["trains"][0]["stations"] = stations
+    repo = Repository()
+    repo.save_operations(transform.operations([page]))
+    repo.save_operations(transform.operations([page]))
+
+    assert stored_seqs(db, 140621539) == list(range(1, 1501))
+
+
+def test_save_operations_rolls_back_the_delete_when_the_upsert_fails(db: Any) -> None:
+    repo = Repository()
+    page = load("operations_page1.json")
+    repo.save_operations(transform.operations([page]))
+    stored = stored_seqs(db, 140621539)
+
+    page["trains"][0]["stations"] = page["trains"][0]["stations"][:2]
+    with (
+        patch("pociag_processing.repository._UPSERT_OPERATION_STOPS", "SELECT broken %s"),
+        pytest.raises(psycopg2.Error),
+    ):
+        repo.save_operations(transform.operations([page]))
+
+    assert stored_seqs(db, 140621539) == stored
+
+
 def test_replace_disruptions_replaces_the_snapshot(db: Any) -> None:
     repo = Repository()
     batch = transform.disruptions(load("disruptions.json"))
