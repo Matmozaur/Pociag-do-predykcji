@@ -220,9 +220,11 @@ def test_operations_complete_runs_exclude_payloads_that_prove_nothing() -> None:
     assert batch.complete_runs == set()
     assert len(batch.stops) == 5
 
-    # The last copy of a run decides, as it does for the stops themselves.
+    # A run seen on more than one page is never complete, even when each copy is valid:
+    # the copies might each hold part of the stops.
     assert transform.operations([full, bad_stop]).complete_runs == set()
-    assert transform.operations([bad_stop, full]).complete_runs == {run}
+    assert transform.operations([bad_stop, full]).complete_runs == set()
+    assert transform.operations([full, load("operations_page1.json")]).complete_runs == set()
 
 
 def test_operations_skip_unknown_status() -> None:

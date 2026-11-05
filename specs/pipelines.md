@@ -21,8 +21,9 @@ Europe/Warsaw; `catchup=False`, `max_active_runs=1`.
 - Without a `stations` filter, `/operations` pages by train and lists each run's whole route, so a
   run's payload is its complete stop list (`actualSequenceNumber` is sparse, which is not a sign of
   missing stops). Stored stops the payload no longer lists are deleted in the upsert's transaction.
-  Rows stay untouched for runs absent from the fetch, runs with no stops in the payload, and runs
-  with a stop that failed validation, since those payloads do not prove a stop was removed.
+  Rows stay untouched for runs absent from the fetch, runs with no stops in the payload, runs
+  with a stop that failed validation, and runs that appear on more than one page, since those
+  payloads do not prove a stop was removed.
 - Each payload carries a dictionary of the stations it references; it is upserted first. Station
   ids missing from every dictionary get a placeholder `Stacja <id>` until a dictionary names them.
 - An operation for a train not in the timetable creates a bare `trains` row.

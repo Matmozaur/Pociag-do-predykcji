@@ -207,6 +207,9 @@ def operations(pages: Iterable[Mapping[str, Any]]) -> OperationBatch:
     runs: dict[RunKey, Operation] = {}
     run_stops: dict[RunKey, dict[int, OperationStop]] = {}
     complete_runs: set[RunKey] = set()
+    # A run seen on more than one page is never "complete": its copies might each
+    # hold part of the stops, so deleting by the last copy could drop real ones.
+    repeated_runs: set[RunKey] = set()
 
     for page in pages:
         for station in _station_names(page.get("stations")):
@@ -215,6 +218,8 @@ def operations(pages: Iterable[Mapping[str, Any]]) -> OperationBatch:
             operation = _operation(train)
             if operation is None:
                 continue
+            if operation.key in runs:
+                repeated_runs.add(operation.key)
             runs[operation.key] = operation
             raw_stops = train.get("stations") or []
             stops = [
@@ -222,7 +227,7 @@ def operations(pages: Iterable[Mapping[str, Any]]) -> OperationBatch:
                 if (stop := _operation_stop(operation.key, raw)) is not None
             ]
             run_stops[operation.key] = {stop.seq: stop for stop in stops}
-            if stops and len(stops) == len(raw_stops):
+            if stops and len(stops) == len(raw_stops) and operation.key not in repeated_runs:
                 complete_runs.add(operation.key)
             else:
                 complete_runs.discard(operation.key)
