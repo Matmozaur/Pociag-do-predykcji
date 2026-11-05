@@ -5,7 +5,12 @@ from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pociag_processing import pipelines
 from pociag_processing.plk import PlkClient
 from pociag_processing.repository import Repository
@@ -49,6 +54,11 @@ class RecordingRepository:
         return lambda *args: self.calls.append((name, args))
 
 
+class BrokenRepository:
+    def save_operations(self, batch: Any) -> None:
+        raise RuntimeError("database down")
+
+
 def run(fn: Any, *args: Any) -> tuple[dict[str, int], FakePlk, RecordingRepository]:
     plk, repo = FakePlk(), RecordingRepository()
     summary = fn(*args, client=cast(PlkClient, plk), repository=cast(Repository, repo))
@@ -82,6 +92,27 @@ def test_sync_operations_reads_every_page() -> None:
     [(name, (batch,))] = repo.calls
     assert name == "save_operations"
     assert len(batch.operations) == 2
+
+
+def test_sync_exports_its_spans_before_returning_and_on_failure() -> None:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    # A delay no test waits out: spans only reach the exporter through force_flush.
+    provider.add_span_processor(BatchSpanProcessor(exporter, schedule_delay_millis=3_600_000))
+    plk, repo = cast(PlkClient, FakePlk()), cast(Repository, RecordingRepository())
+
+    with (
+        patch("opentelemetry.trace.get_tracer_provider", return_value=provider),
+        patch("pociag_processing.tracing.get_tracer", return_value=provider.get_tracer("test")),
+    ):
+        pipelines.sync_operations(client=plk, repository=repo)
+        assert [s.name for s in exporter.get_finished_spans()] == ["operations.sync"]
+
+        with pytest.raises(RuntimeError):
+            pipelines.sync_operations(client=plk, repository=cast(Repository, BrokenRepository()))
+        assert [s.name for s in exporter.get_finished_spans()][-1] == "operations.sync"
+        assert len(exporter.get_finished_spans()) == 2
+    provider.shutdown()
 
 
 def test_sync_disruptions_covers_today_and_tomorrow() -> None:
