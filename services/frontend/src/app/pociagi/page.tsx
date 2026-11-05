@@ -54,11 +54,14 @@ export default function PociagiPage() {
         refetchInterval: 60_000,
         staleTime: 30_000,
     })
-    // Pages are separate queries, so a train can shift across a page boundary; keep one copy.
-    const sortedTrains = useMemo(
-        () => [...new Map(trainsQuery.data?.pages.flatMap((page) => page.data).map((train) => [train.operation_id, train])).values()],
-        [trainsQuery.data],
-    )
+    // Pages are separate queries, so a train can shift across a page boundary; keep its first copy,
+    // whose delay matches the position it is listed at.
+    const sortedTrains = useMemo(() => {
+        const seen = new Set<number>()
+        return (trainsQuery.data?.pages.flatMap((page) => page.data) ?? []).filter(
+            (train) => !seen.has(train.operation_id) && seen.add(train.operation_id),
+        )
+    }, [trainsQuery.data])
     const total = trainsQuery.data?.pages.at(-1)?.pagination.total
     const overviewQuery = useQuery({
         queryKey: ['dashboardOverview'],
