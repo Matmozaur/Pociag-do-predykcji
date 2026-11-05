@@ -240,7 +240,7 @@ func TestRepository(t *testing.T) {
 		check(t, err)
 		// 100 (P, confirmed delay 4), 101 (S), 102 (P but stale, so not started).
 		equal(t, "stats", *stats, service.DayStatistics{
-			Total: 3, InProgress: 1, Started: 1, OnTime: 1, AvgDelay: ptr(4.0),
+			Total: 3, InProgress: 1, Started: 1, Rated: 1, OnTime: 1, AvgDelay: ptr(4.0),
 		})
 
 		f, err := repo.GetFreshness(ctx)
@@ -418,7 +418,8 @@ func TestDayStatisticsPopulation(t *testing.T) {
 	equal(t, "stats", *stats, service.DayStatistics{
 		Total: 8, InProgress: 4, Completed: 1, Cancelled: 1,
 		Started:  5, // in progress + completed; the stale 304 is neither
-		OnTime:   3, // 300, 303, 305; 301 is late and 302 has nothing confirmed
+		Rated:    4, // started with a confirmed stop; 302 has nothing confirmed, so no known delay
+		OnTime:   3, // 300, 303, 305; 301 is late
 		AvgDelay: ptr((3.0 + 12.0 + 2.0) / 3),
 	})
 	equal(t, "started is in progress + completed", stats.Started, stats.InProgress+stats.Completed)

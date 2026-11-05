@@ -446,7 +446,7 @@ components:
             completed: {type: integer}
             cancelled: {type: integer, description: Fully or partially}
             avg_delay_minutes: {type: number, description: 'Mean maximum confirmed delay of started trains (in_progress + completed) with a delay'}
-            on_time_percentage: {type: number, description: 'Share of started trains (in_progress + completed) with at least one confirmed stop and max confirmed delay <= 5 min. A confirmed stop without delay minutes counts as 0'}
+            on_time_percentage: {type: number, description: 'Among started trains (in_progress + completed) with at least one confirmed stop, the share whose max confirmed delay is <= 5 min. Started trains with no confirmed stop yet are left out. A confirmed stop without delay minutes counts as 0'}
         disruptions_active: {type: integer}
         data_freshness:
           type: object

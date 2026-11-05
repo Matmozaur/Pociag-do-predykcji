@@ -398,7 +398,7 @@ func TestDisruptions(t *testing.T) {
 
 func TestDashboardOverview(t *testing.T) {
 	repo := &servicetest.Repository{
-		Statistics: service.DayStatistics{Total: 10, InProgress: 2, Completed: 2, Cancelled: 1, Started: 4, OnTime: 3},
+		Statistics: service.DayStatistics{Total: 10, InProgress: 2, Completed: 2, Cancelled: 1, Started: 5, Rated: 4, OnTime: 3},
 		Freshness:  service.Freshness{OperationsUpdatedAt: tp("2026-10-04T11:58:00Z"), Disruptions: 7},
 	}
 	// 00:30 in Warsaw on 5 October: the operating date is already the 5th.

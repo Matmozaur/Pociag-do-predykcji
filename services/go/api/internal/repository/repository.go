@@ -459,13 +459,14 @@ func (r *Repository) GetDayStatistics(ctx context.Context, date, seenSince time.
 		       count(*) FILTER (WHERE status = 'C'),
 		       count(*) FILTER (WHERE status IN ('X', 'Q')),
 		       count(*) FILTER (WHERE in_progress OR status = 'C'),
+		       count(*) FILTER (WHERE (in_progress OR status = 'C') AND max_delay IS NOT NULL),
 		       count(*) FILTER (WHERE (in_progress OR status = 'C') AND max_delay <= 5),
 		       AVG(max_delay) FILTER (WHERE (in_progress OR status = 'C') AND max_delay > 0)::float8
 		FROM runs`
 
 	var s service.DayStatistics
 	err = r.pool.QueryRow(ctx, sql, date, seenSince).Scan(
-		&s.Total, &s.InProgress, &s.Completed, &s.Cancelled, &s.Started, &s.OnTime, &s.AvgDelay)
+		&s.Total, &s.InProgress, &s.Completed, &s.Cancelled, &s.Started, &s.Rated, &s.OnTime, &s.AvgDelay)
 	if err != nil {
 		return nil, fmt.Errorf("day statistics: %w", err)
 	}

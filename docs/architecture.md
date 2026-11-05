@@ -130,8 +130,8 @@ Child rows cascade on delete of their train / operation.
   at station (terminus: 5 min after arrival), arrivals and departures.
 - **Dashboard** — today's Warsaw operating date: counts by status (`in_progress` uses the 15 min
   snapshot window); on-time % and average delay are over started trains (`in_progress` +
-  `completed`), on-time being ≤ 5 min by maximum confirmed delay with at least one confirmed
-  stop (PLK omits delay minutes when on time, so a confirmed stop without them counts as 0);
+  `completed`) with at least one confirmed stop, on-time being ≤ 5 min by maximum confirmed
+  delay (PLK omits delay minutes when on time, so a confirmed stop without them counts as 0);
   and data freshness
   (`MAX(trains.updated_at)` over trains with operating dates, `MAX(operations.updated_at)`,
   disruption count).
@@ -188,13 +188,13 @@ Child rows cascade on delete of their train / operation.
 | `airflow-init` | apache/airflow:2.10.4 | airflow | — | airflow-db healthy | `db migrate` + `admin` user, exits |
 | `airflow-webserver` | apache/airflow:2.10.4 | airflow | 8090 → 8080 | airflow-init done | UI / REST API |
 | `airflow-scheduler` | apache/airflow:2.10.4 | airflow | — | airflow-init, migrate done | Runs tasks (LocalExecutor) |
-| `jaeger` | jaegertracing/all-in-one:1.63.0 | tracing | 16686 | — | Trace UI, in-memory |
+| `jaeger` | jaegertracing/all-in-one:1.63.0 | — | 16686 | — | Trace UI, in-memory |
 | `prometheus` | prom/prometheus:v3.1.0 | monitoring | 9090 | — | Scrapes collector :8889, 15 d retention |
 | `grafana` | grafana/grafana:11.4.0 | monitoring | 3001 → 3000 | prometheus | Anonymous viewer; Prometheus datasource provisioned, no dashboards |
 
 - **Profiles** — services without a profile start with every invocation. `make up` =
   `--profile all` (everything); `make up-core` = no profile: postgres, migrate, otel-collector,
-  api.
+  jaeger, api.
 - **Networks** — every service is on `default` except the frontend, which is only on `web`; the
   api is on both, so the frontend can reach only the api.
 - **Volumes** — `postgres_data`, `airflow_db_data`, `airflow_logs`, `prometheus_data`,
@@ -204,7 +204,7 @@ Child rows cascade on delete of their train / operation.
 - **Config** — `PLK_BASE_URL`, `PLK_API_KEY` (required), `POSTGRES_PASSWORD`,
   `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY` (required, generate your own),
   `AIRFLOW__WEBSERVER__SECRET_KEY`; optional `FRONTEND_PORT`, `AIRFLOW_ADMIN_USERNAME` and
-  `AIRFLOW_ADMIN_PASSWORD` (default `admin`), `OTEL_TRACES_EXPORTERS` (default `[debug]`). Airflow connections are `AIRFLOW_CONN_*` env vars built from these, not rows in
+  `AIRFLOW_ADMIN_PASSWORD` (default `admin`). Airflow connections are `AIRFLOW_CONN_*` env vars built from these, not rows in
   the Airflow DB.
 - **Images** — api: `golang:1.25.0-alpine3.22` → `alpine:3.22.1`, static binary, non-root (uid
   1001). frontend: `node:22.23.4-alpine3.24` deps → build → `next start` on 3000 with production
@@ -215,7 +215,7 @@ Child rows cascade on delete of their train / operation.
 
 ```
 api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
-  traces  → memory_limiter, batch, resource (deployment.environment=local) → $OTEL_TRACES_EXPORTERS
+  traces  → memory_limiter, batch, resource (deployment.environment=local) → Jaeger, debug
   metrics → Prometheus exporter :8889 (namespace pociag) ◄── Prometheus (15 s scrape) ◄── Grafana
   logs    → debug
 ```
@@ -224,10 +224,8 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
   `db.<noun>.<verb>` (mostly table names; failures set the span's error status), W3C
   TraceContext. Airflow: `<sync>.sync` › `plk.get` /
   `db.<table>.save|replace`. Both export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (compose
-  sets it). Jaeger runs only with the `tracing` profile. The collector
-  (always on) exports traces to `OTEL_TRACES_EXPORTERS`: `[debug]` by default, `[otlp/jaeger, debug]`
-  from `make up`. Compose cannot pass active profiles to the collector, so `docker compose
-  --profile tracing|all` run by hand must set that variable or Jaeger stays empty. Healthcheck
+  sets it). Jaeger has no profile: it starts with the collector, which always exports traces to
+  it, so every compose invocation keeps tracing working. Healthcheck
   requests (`/healthz`, `/readyz`) are filtered out of traces and metrics.
 - **Metrics** — the api exports `otelhttp` server metrics over OTLP (when the endpoint is set); they
   reach Prometheus as `pociag_http_server_*`. Airflow emits none. Grafana has a provisioned
