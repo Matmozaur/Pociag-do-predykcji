@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/position"
@@ -25,9 +27,9 @@ func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool, tracer: otel.Tracer("pociag.api")}
 }
 
-func (r *Repository) Ping(ctx context.Context) error {
+func (r *Repository) Ping(ctx context.Context) (err error) {
 	ctx, span := r.tracer.Start(ctx, "db.ping")
-	defer span.End()
+	defer endSpan(span, &err)
 	return r.pool.Ping(ctx)
 }
 
@@ -73,6 +75,24 @@ func notFound(err error) error {
 	return err
 }
 
+// endSpan ends a query span, marking it failed if *err is set. A missing row is a result the
+// caller turns into a 404, not a failure.
+func endSpan(span trace.Span, err *error) {
+	if *err != nil && !errors.Is(*err, service.ErrNotFound) {
+		span.RecordError(*err)
+		span.SetStatus(codes.Error, (*err).Error())
+	}
+	span.End()
+}
+
+// likeLiteral escapes user text for use in a LIKE pattern, so that it only matches itself.
+// Backslash is PostgreSQL's default LIKE escape character.
+func likeLiteral(text string) string {
+	return likeEscaper.Replace(text)
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 // seconds converts EXTRACT(EPOCH FROM interval) to a duration.
 func seconds(v *int) *time.Duration {
 	if v == nil {
@@ -84,9 +104,9 @@ func seconds(v *int) *time.Duration {
 
 // ── Stations ──────────────────────────────────────────────────────────────────
 
-func (r *Repository) SearchStations(ctx context.Context, query string, limit int) ([]service.Station, error) {
+func (r *Repository) SearchStations(ctx context.Context, query string, limit int) (_ []service.Station, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.stations.search")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	// Prefix matches first, then other substring matches; shorter names first within each.
 	const sql = `
@@ -95,12 +115,12 @@ func (r *Repository) SearchStations(ctx context.Context, query string, limit int
 		WHERE name ILIKE '%' || $1 || '%' OR city ILIKE $1 || '%'
 		ORDER BY name NOT ILIKE $1 || '%', length(name), name
 		LIMIT $2`
-	return r.stations(ctx, sql, query, limit)
+	return r.stations(ctx, sql, likeLiteral(query), limit)
 }
 
-func (r *Repository) ListMappedStations(ctx context.Context) ([]service.Station, error) {
+func (r *Repository) ListMappedStations(ctx context.Context) (_ []service.Station, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.stations.mapped")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	const sql = `
 		SELECT id, name, city, latitude, longitude
@@ -110,9 +130,9 @@ func (r *Repository) ListMappedStations(ctx context.Context) ([]service.Station,
 	return r.stations(ctx, sql)
 }
 
-func (r *Repository) GetStation(ctx context.Context, id int) (*service.Station, error) {
+func (r *Repository) GetStation(ctx context.Context, id int) (_ *service.Station, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.stations.get")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	const sql = `SELECT id, name, city, latitude, longitude FROM stations WHERE id = $1`
 	var st service.Station
@@ -141,9 +161,9 @@ func (r *Repository) stations(ctx context.Context, sql string, args ...any) ([]s
 // ListBoardStops returns the stops at the station planned (departure, else arrival) within
 // [from, to], of runs that are not fully cancelled. The time predicate matches the expression of
 // operation_stops_station_time_idx.
-func (r *Repository) ListBoardStops(ctx context.Context, stationID int, from, to time.Time) ([]service.BoardStop, error) {
+func (r *Repository) ListBoardStops(ctx context.Context, stationID int, from, to time.Time) (_ []service.BoardStop, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.station_board.query")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	sql := `
 		SELECT ` + runColumns + `, ` + trainColumns + `, ` + stopColumns + `,
@@ -189,9 +209,9 @@ func (r *Repository) ListBoardStops(ctx context.Context, stationID int, from, to
 
 // ── Operations ────────────────────────────────────────────────────────────────
 
-func (r *Repository) LatestSnapshot(ctx context.Context) (time.Time, error) {
+func (r *Repository) LatestSnapshot(ctx context.Context) (_ time.Time, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.operations.latest_snapshot")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	var latest *time.Time
 	if err := r.pool.QueryRow(ctx, `SELECT MAX(updated_at) FROM operations`).Scan(&latest); err != nil {
@@ -207,9 +227,9 @@ func (r *Repository) LatestSnapshot(ctx context.Context) (time.Time, error) {
 // one of dates, seen since seenSince, with effective first departure (minus
 // position.PreDepartureWindow) <= at <= effective last arrival. Effective times follow
 // position.EffectiveTimes. Cancelled stops are left out.
-func (r *Repository) ListActiveRuns(ctx context.Context, at, seenSince time.Time, dates []time.Time) ([]service.Run, error) {
+func (r *Repository) ListActiveRuns(ctx context.Context, at, seenSince time.Time, dates []time.Time) (_ []service.Run, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.operations.active")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	sql := `
 		WITH runs AS (
@@ -244,14 +264,14 @@ func (r *Repository) ListActiveRuns(ctx context.Context, at, seenSince time.Time
 	return collectRuns(rows)
 }
 
-func (r *Repository) GetRun(ctx context.Context, operationID int64) (*service.Run, error) {
+func (r *Repository) GetRun(ctx context.Context, operationID int64) (_ *service.Run, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.operations.get")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	var run service.Run
 	runSQL := `SELECT ` + runColumns + `, ` + trainColumns + `
 		FROM operations o JOIN trains t ON t.id = o.train_id WHERE o.id = $1`
-	err := r.pool.QueryRow(ctx, runSQL, operationID).Scan(targets(runTargets(&run), trainTargets(&run.Train))...)
+	err = r.pool.QueryRow(ctx, runSQL, operationID).Scan(targets(runTargets(&run), trainTargets(&run.Train))...)
 	if err != nil {
 		return nil, fmt.Errorf("get run %d: %w", operationID, notFound(err))
 	}
@@ -302,9 +322,9 @@ func collectRuns(rows pgx.Rows) ([]service.Run, error) {
 // SearchConnections finds trains running on q.Date that depart from a q.From station and later
 // arrive at a q.To station. A Place name matches a station's city or the start of its name. For
 // several matching stations, the earliest departure and then the earliest arrival win.
-func (r *Repository) SearchConnections(ctx context.Context, q service.ConnectionQuery) ([]service.Connection, error) {
+func (r *Repository) SearchConnections(ctx context.Context, q service.ConnectionQuery) (_ []service.Connection, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.schedules.search")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	sql := `
 		SELECT DISTINCT ON (t.id) ` + trainColumns + `,
@@ -322,7 +342,7 @@ func (r *Repository) SearchConnections(ctx context.Context, q service.Connection
 		  AND (cardinality($7::text[]) = 0 OR t.category = ANY($7))
 		ORDER BY t.id, a.departure, b.arrival`
 
-	rows, err := r.pool.Query(ctx, sql, q.Date, q.From.StationID, q.From.Name, q.To.StationID, q.To.Name,
+	rows, err := r.pool.Query(ctx, sql, q.Date, q.From.StationID, likeLiteral(q.From.Name), q.To.StationID, likeLiteral(q.To.Name),
 		nonNil(q.Carriers), nonNil(q.Categories))
 	if err != nil {
 		return nil, fmt.Errorf("query connections: %w", err)
@@ -351,13 +371,13 @@ func nonNil(values []string) []string {
 	return values
 }
 
-func (r *Repository) GetTrainSchedule(ctx context.Context, trainID int64) (*service.TrainSchedule, error) {
+func (r *Repository) GetTrainSchedule(ctx context.Context, trainID int64) (_ *service.TrainSchedule, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.schedules.get")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	var schedule service.TrainSchedule
 	trainSQL := `SELECT ` + trainColumns + `, t.operating_dates FROM trains t WHERE t.id = $1`
-	err := r.pool.QueryRow(ctx, trainSQL, trainID).Scan(append(trainTargets(&schedule.Train), &schedule.OperatingDates)...)
+	err = r.pool.QueryRow(ctx, trainSQL, trainID).Scan(append(trainTargets(&schedule.Train), &schedule.OperatingDates)...)
 	if err != nil {
 		return nil, fmt.Errorf("get train %d: %w", trainID, notFound(err))
 	}
@@ -387,9 +407,9 @@ func (r *Repository) GetTrainSchedule(ctx context.Context, trainID int64) (*serv
 
 // ── Disruptions & statistics ──────────────────────────────────────────────────
 
-func (r *Repository) ListDisruptions(ctx context.Context, limit, offset int) ([]service.Disruption, int, error) {
+func (r *Repository) ListDisruptions(ctx context.Context, limit, offset int) (_ []service.Disruption, _ int, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.disruptions.list")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	var total int
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM disruptions`).Scan(&total); err != nil {
@@ -417,29 +437,34 @@ func (r *Repository) ListDisruptions(ctx context.Context, limit, offset int) ([]
 	return out, total, nil
 }
 
-func (r *Repository) GetDayStatistics(ctx context.Context, date, seenSince time.Time) (*service.DayStatistics, error) {
+func (r *Repository) GetDayStatistics(ctx context.Context, date, seenSince time.Time) (_ *service.DayStatistics, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.operations.statistics")
-	defer span.End()
+	defer endSpan(span, &err)
 
+	// Started runs are the ones in progress (seen since seenSince) plus the completed ones. max_delay
+	// is NULL without a confirmed stop, so such a run is neither on time nor delayed. PLK leaves the
+	// delay minutes out of an on-time stop, so a confirmed stop without them counts as 0.
 	const sql = `
 		WITH runs AS (
-		    SELECT o.status, o.updated_at,
+		    SELECT o.status,
+		           o.status = 'P' AND o.updated_at >= $2 AS in_progress,
 		           (SELECT GREATEST(COALESCE(MAX(s.arrival_delay), 0), COALESCE(MAX(s.departure_delay), 0))
-		            FROM operation_stops s WHERE s.operation_id = o.id AND s.is_confirmed) AS max_delay
+		            FROM operation_stops s WHERE s.operation_id = o.id AND s.is_confirmed
+		            HAVING count(*) > 0) AS max_delay
 		    FROM operations o
 		    WHERE o.operating_date = $1
 		)
 		SELECT count(*),
-		       count(*) FILTER (WHERE status = 'P' AND updated_at >= $2),
+		       count(*) FILTER (WHERE in_progress),
 		       count(*) FILTER (WHERE status = 'C'),
 		       count(*) FILTER (WHERE status IN ('X', 'Q')),
-		       count(*) FILTER (WHERE status IN ('P', 'C')),
-		       count(*) FILTER (WHERE status IN ('P', 'C') AND max_delay <= 5),
-		       AVG(max_delay) FILTER (WHERE status IN ('P', 'C') AND max_delay > 0)::float8
+		       count(*) FILTER (WHERE in_progress OR status = 'C'),
+		       count(*) FILTER (WHERE (in_progress OR status = 'C') AND max_delay <= 5),
+		       AVG(max_delay) FILTER (WHERE (in_progress OR status = 'C') AND max_delay > 0)::float8
 		FROM runs`
 
 	var s service.DayStatistics
-	err := r.pool.QueryRow(ctx, sql, date, seenSince).Scan(
+	err = r.pool.QueryRow(ctx, sql, date, seenSince).Scan(
 		&s.Total, &s.InProgress, &s.Completed, &s.Cancelled, &s.Started, &s.OnTime, &s.AvgDelay)
 	if err != nil {
 		return nil, fmt.Errorf("day statistics: %w", err)
@@ -447,9 +472,9 @@ func (r *Repository) GetDayStatistics(ctx context.Context, date, seenSince time.
 	return &s, nil
 }
 
-func (r *Repository) GetFreshness(ctx context.Context) (*service.Freshness, error) {
+func (r *Repository) GetFreshness(ctx context.Context) (_ *service.Freshness, err error) {
 	ctx, span := r.tracer.Start(ctx, "db.freshness")
-	defer span.End()
+	defer endSpan(span, &err)
 
 	const sql = `
 		SELECT (SELECT MAX(updated_at) FROM trains WHERE cardinality(operating_dates) > 0),

@@ -129,7 +129,10 @@ Child rows cascade on delete of their train / operation.
 - **Station board** — stops planned in [now − 6 h, now + 12 h], excluding `X` runs; bucketed into
   at station (terminus: 5 min after arrival), arrivals and departures.
 - **Dashboard** — today's Warsaw operating date: counts by status (`in_progress` uses the 15 min
-  snapshot window), on-time ≤ 5 min by maximum confirmed delay, and data freshness
+  snapshot window); on-time % and average delay are over started trains (`in_progress` +
+  `completed`), on-time being ≤ 5 min by maximum confirmed delay with at least one confirmed
+  stop (PLK omits delay minutes when on time, so a confirmed stop without them counts as 0);
+  and data freshness
   (`MAX(trains.updated_at)` over trains with operating dates, `MAX(operations.updated_at)`,
   disruption count).
 - **Time** — operating dates and "today" are Europe/Warsaw; times shown to people are Warsaw
@@ -215,8 +218,9 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
   logs    → debug
 ```
 
-- **Traces** — api: `otelhttp` server spans (all named `pociag.api`) with repository child spans
-  `db.<noun>.<verb>` (mostly table names), W3C TraceContext. Airflow: `<sync>.sync` › `plk.get` /
+- **Traces** — api: `otelhttp` server spans named `<METHOD> <route>` with repository child spans
+  `db.<noun>.<verb>` (mostly table names; failures set the span's error status), W3C
+  TraceContext. Airflow: `<sync>.sync` › `plk.get` /
   `db.<table>.save|replace`. Both export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (compose
   sets it). Jaeger runs only with the `tracing` profile, but the
   collector (always on) always exports to it, so without that profile it logs export errors.

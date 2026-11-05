@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
@@ -31,6 +32,7 @@ func New(svc *service.Service, logger *zap.Logger) *Handler {
 
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
+	r.Use(routeSpan)
 	r.Use(cors)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/readyz", h.ready)
@@ -240,6 +242,22 @@ func csv(r *http.Request, name string) []string {
 		}
 	}
 	return out
+}
+
+// routeSpan names the server span after the matched route, which is known only once the request
+// has been routed. A request that matched no route gets the bare method, never its raw path.
+func routeSpan(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		span := trace.SpanFromContext(r.Context())
+		route := chi.RouteContext(r.Context()).RoutePattern()
+		if route == "" || strings.HasSuffix(route, "/*") { // "/*" is a subrouter with no match
+			span.SetName(r.Method)
+			return
+		}
+		span.SetName(r.Method + " " + route)
+		span.SetAttributes(semconv.HTTPRoute(route))
+	})
 }
 
 func cors(next http.Handler) http.Handler {
