@@ -14,8 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
@@ -60,6 +62,16 @@ func run(logger *zap.Logger) error {
 		_ = shutdownTracing(shutdownCtx)
 	}()
 
+	shutdownMetrics, err := setupMetrics(ctx, cfg.OTLPEndpoint)
+	if err != nil {
+		return fmt.Errorf("setup metrics: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownMetrics(shutdownCtx)
+	}()
+
 	pool, err := pgxpool.New(ctx, cfg.DatabaseDSN)
 	if err != nil {
 		return fmt.Errorf("connect db: %w", err)
@@ -69,7 +81,7 @@ func run(logger *zap.Logger) error {
 	h := handler.New(service.New(repository.New(pool)), logger)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           otelhttp.NewHandler(h.Routes(), serviceName),
+		Handler:           otelhttp.NewHandler(h.Routes(), serviceName, otelhttp.WithFilter(notProbe)),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      30 * time.Second,
 	}
@@ -110,4 +122,28 @@ func setupTracing(ctx context.Context, endpoint string) (func(context.Context) e
 	provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter), sdktrace.WithResource(res))
 	otel.SetTracerProvider(provider)
 	return provider.Shutdown, nil
+}
+
+// setupMetrics exports metrics over OTLP gRPC when endpoint is set; otherwise it is a no-op.
+// otelhttp picks the provider up, so this must run before its handler is built.
+func setupMetrics(ctx context.Context, endpoint string) (func(context.Context) error, error) {
+	if endpoint == "" {
+		return func(context.Context) error { return nil }, nil
+	}
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpoint(endpoint), otlpmetricgrpc.WithInsecure())
+	if err != nil {
+		return nil, fmt.Errorf("create otlp metric exporter: %w", err)
+	}
+	res, err := resource.New(ctx, resource.WithAttributes(semconv.ServiceNameKey.String(serviceName)))
+	if err != nil {
+		return nil, fmt.Errorf("create resource: %w", err)
+	}
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)), sdkmetric.WithResource(res))
+	otel.SetMeterProvider(provider)
+	return provider.Shutdown, nil
+}
+
+// notProbe keeps the container healthcheck out of traces and metrics.
+func notProbe(r *http.Request) bool {
+	return r.URL.Path != "/healthz" && r.URL.Path != "/readyz"
 }

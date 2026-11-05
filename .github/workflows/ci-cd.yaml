@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - "**"
-  pull_request:
 
 permissions:
   contents: read
@@ -45,7 +44,7 @@ jobs:
         run: go test -race -v ./...
 
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
       - name: Lint
         run: $(go env GOPATH)/bin/golangci-lint run --timeout=5m ./...
@@ -93,26 +92,51 @@ jobs:
       - name: Test (pytest)
         run: uv run pytest tests/ -v
 
-  build-placeholder:
-    name: Build Placeholder
+  frontend:
+    name: Next.js (frontend)
     runs-on: ubuntu-latest
-    needs:
-      - api
-      - airflow
+    defaults:
+      run:
+        working-directory: services/frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build placeholder
-        run: |
-          echo "Build stage placeholder."
-          echo "TODO: Add container/image build steps when build strategy is finalized."
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: services/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (type check + lint)
+        run: npm run build
+
+  images:
+    name: Docker images
+    runs-on: ubuntu-latest
+    needs:
+      - api
+      - airflow
+      - frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build api image
+        run: docker build -t pociag-api:ci services/go/api
+
+      - name: Build frontend image
+        run: docker build -t pociag-frontend:ci services/frontend
 
   deploy-placeholder:
     name: Deploy Placeholder (no deployment yet)
     runs-on: ubuntu-latest
     needs:
-      - build-placeholder
+      - images
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     environment:
       name: staging

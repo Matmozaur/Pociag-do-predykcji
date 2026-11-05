@@ -22,4 +22,4 @@ and read by `services/go/api/internal/repository`. Overview: `docs/architecture.
 
 `docker compose` applies migrations on start (`migrate` service). Manually:
 `make db-migrate-up | db-migrate-down | db-migrate-status | db-psql` against `DB_URL`
-(default `postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable`).
+(default `postgres://pociag:$POSTGRES_PASSWORD@127.0.0.1:5434/pociag?sslmode=disable`, password read from `infra/.env`).

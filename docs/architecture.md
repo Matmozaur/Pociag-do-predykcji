@@ -176,18 +176,18 @@ Child rows cascade on delete of their train / operation.
 
 | Service | Image | Profile | Host → container | Starts after | Role |
 |---|---|---|---|---|---|
-| `postgres` | postgres:16-alpine | — (always) | 5434 → 5432 | — (healthcheck) | Curated DB `pociag` |
+| `postgres` | postgres:16-alpine | — (always) | 127.0.0.1:5434 → 5432 | — (healthcheck) | Curated DB `pociag` |
 | `migrate` | migrate/migrate:v4.18.1 | — (always) | — | postgres healthy | `up` on `db/migrations`, exits |
 | `otel-collector` | otel/opentelemetry-collector-contrib:0.117.0 | — (always) | 4327 → 4317, 4328 → 4318, 8889 | — | OTLP receiver |
-| `api` | build `services/go/api` | — (always) | 8080 → 8080 | migrate done, collector | Read API |
-| `frontend` | build `services/frontend` | frontend | `${FRONTEND_PORT:-3100}` → 3000 | api started | Next.js |
-| `airflow-db` | postgres:16-alpine | airflow | 5433 → 5432 | — (healthcheck) | Airflow metadata only |
+| `api` | build `services/go/api` | — (always) | 8080 → 8080 | migrate done, collector (healthcheck) | Read API |
+| `frontend` | build `services/frontend` | frontend | `${FRONTEND_PORT:-3100}` → 3000 | api healthy | Next.js |
+| `airflow-db` | postgres:16-alpine | airflow | 127.0.0.1:5433 → 5432 | — (healthcheck) | Airflow metadata only |
 | `airflow-init` | apache/airflow:2.10.4 | airflow | — | airflow-db healthy | `db migrate` + `admin` user, exits |
 | `airflow-webserver` | apache/airflow:2.10.4 | airflow | 8090 → 8080 | airflow-init done | UI / REST API |
 | `airflow-scheduler` | apache/airflow:2.10.4 | airflow | — | airflow-init, migrate done | Runs tasks (LocalExecutor) |
 | `jaeger` | jaegertracing/all-in-one:1.63.0 | tracing | 16686 | — | Trace UI, in-memory |
 | `prometheus` | prom/prometheus:v3.1.0 | monitoring | 9090 | — | Scrapes collector :8889, 15 d retention |
-| `grafana` | grafana/grafana:11.4.0 | monitoring | 3001 → 3000 | prometheus | Anonymous viewer; nothing provisioned |
+| `grafana` | grafana/grafana:11.4.0 | monitoring | 3001 → 3000 | prometheus | Anonymous viewer; Prometheus datasource provisioned, no dashboards |
 
 - **Profiles** — services without a profile start with every invocation. `make up` =
   `--profile all` (everything); `make up-core` = no profile: postgres, migrate, otel-collector,
@@ -195,22 +195,24 @@ Child rows cascade on delete of their train / operation.
 - **Networks** — every service is on `default` except the frontend, which is only on `web`; the
   api is on both, so the frontend can reach only the api.
 - **Volumes** — `postgres_data`, `airflow_db_data`, `airflow_logs`, `prometheus_data`,
-  `grafana_data`. Only the two Postgres services have healthchecks.
+  `grafana_data`. Only the two Postgres services and the api (`/healthz`) have healthchecks.
 - **Migrations** — the `migrate` service applies them on every `up`; `make db-migrate-*` runs the
-  same image on the host network against `DB_URL` (port 5434).
+  same image on the host network against `DB_URL` (port 5434, password from `infra/.env`).
 - **Config** — `PLK_BASE_URL`, `PLK_API_KEY` (required), `POSTGRES_PASSWORD`,
-  `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY`, `AIRFLOW__WEBSERVER__SECRET_KEY`; optional
-  `FRONTEND_PORT`. Airflow connections are `AIRFLOW_CONN_*` env vars built from these, not rows in
+  `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY` (required, generate your own),
+  `AIRFLOW__WEBSERVER__SECRET_KEY`; optional `FRONTEND_PORT`, `AIRFLOW_ADMIN_USERNAME` and
+  `AIRFLOW_ADMIN_PASSWORD` (default `admin`), `OTEL_TRACES_EXPORTERS` (default `[debug]`). Airflow connections are `AIRFLOW_CONN_*` env vars built from these, not rows in
   the Airflow DB.
 - **Images** — api: `golang:1.25.0-alpine3.22` → `alpine:3.22.1`, static binary, non-root (uid
-  1001). frontend: `node:22-alpine` deps → build → `next start` on 3000 (runs as root).
+  1001). frontend: `node:22.23.4-alpine3.24` deps → build → `next start` on 3000 with production
+  deps only, non-root (`node`).
   Everything else is a stock image.
 
 ## Observability
 
 ```
 api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
-  traces  → memory_limiter, batch, resource (deployment.environment=local) → Jaeger + debug
+  traces  → memory_limiter, batch, resource (deployment.environment=local) → $OTEL_TRACES_EXPORTERS
   metrics → Prometheus exporter :8889 (namespace pociag) ◄── Prometheus (15 s scrape) ◄── Grafana
   logs    → debug
 ```
@@ -218,10 +220,14 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
 - **Traces** — api: `otelhttp` server spans (all named `pociag.api`) with repository child spans
   `db.<noun>.<verb>` (mostly table names), W3C TraceContext. Airflow: `<sync>.sync` › `plk.get` /
   `db.<table>.save|replace`. Both export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (compose
-  sets it). Jaeger runs only with the `tracing` profile, but the
-  collector (always on) always exports to it, so without that profile it logs export errors.
-- **Metrics** — the pipeline exists, but no component emits metrics and Grafana has no datasource
-  or dashboards, so Prometheus/Grafana show no application data yet.
+  sets it). Jaeger runs only with the `tracing` profile. The collector
+  (always on) exports traces to `OTEL_TRACES_EXPORTERS`: `[debug]` by default, `[otlp/jaeger, debug]`
+  from `make up`. Compose cannot pass active profiles to the collector, so `docker compose
+  --profile tracing|all` run by hand must set that variable or Jaeger stays empty. Healthcheck
+  requests (`/healthz`, `/readyz`) are filtered out of traces and metrics.
+- **Metrics** — the api exports `otelhttp` server metrics over OTLP (when the endpoint is set); they
+  reach Prometheus as `pociag_http_server_*`. Airflow emits none. Grafana has a provisioned
+  Prometheus datasource (`infra/grafana/provisioning`) and no dashboards.
 - **Logs** — container stdout via Docker `json-file` (10 MB × 3; the one-shot `migrate` and
   `airflow-init` use the daemon default). api: zap JSON (startup,
   shutdown, readiness, 500s; no access log). Airflow: stdlib `logging` in Airflow's default text
@@ -229,10 +235,10 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
 
 ## CI
 
-`.github/workflows/ci-cd.yaml` on every push and PR: `api` (`go test -race`, golangci-lint v2, unpinned `@latest`)
+`.github/workflows/ci-cd.yaml` on every branch push: `api` (`go test -race`, golangci-lint pinned to v2.14.0)
 and `airflow` (ruff, mypy strict via `pyproject.toml`, pytest), each with a Postgres 16 service for the SQL tests,
-which load `001_init.up.sql` directly. Not in CI: frontend build, image builds. The build and
-deploy jobs are placeholders.
+which load `001_init.up.sql` directly; `frontend` (`next build`); `images` (`docker build` of the api and
+frontend). The deploy job is a placeholder.
 
 ## Design decisions
 
@@ -252,8 +258,8 @@ deploy jobs are placeholders.
 ## Cross-cutting
 
 - Secrets via env vars (`infra/.env`, git-ignored) and Airflow `AIRFLOW_CONN_*` env vars. The
-  committed defaults — `.env.example` passwords and Fernet key, the Airflow `admin/admin` user,
-  the Makefile `DB_URL` — are for local development only.
+  committed defaults — `.env.example` passwords and the Airflow `admin/admin` user — are for
+  local development only; the Fernet key has no default. Both Postgres ports bind to 127.0.0.1.
 - No authentication on the api or the frontend (read-only public data); the Airflow UI and REST
   API use Airflow login / basic auth.
 - Parameterised SQL only.
