@@ -737,6 +737,21 @@ function TrainsLayer({
     )
 }
 
+function MapLoadError({ children, onRetry }: { children: React.ReactNode; onRetry: () => void }) {
+    return (
+        <div role="alert" className="text-slate-300">
+            <p>{children}</p>
+            <button
+                type="button"
+                onClick={onRetry}
+                className="mt-1 font-semibold text-red-300 underline underline-offset-4 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+                Spróbuj ponownie
+            </button>
+        </div>
+    )
+}
+
 function LayerToggle({
     pressed,
     onToggle,
@@ -772,7 +787,6 @@ interface TrafficMapClientProps {
 }
 
 export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTrain }: TrafficMapClientProps = {}) {
-    const [polandGeo, setPolandGeo] = useState<PolandFeature | null>(null)
     const [geoBackground, setGeoBackground] = useState<GeoBackground | null>(null)
     const [showStations, setShowStations] = useState(true)
     const [showTrains, setShowTrains] = useState(true)
@@ -783,11 +797,12 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
     // station and cluster markers send themselves to the back when they mount.
     const pointsRenderer = useMemo(() => L.canvas({ pane: 'trainsPane', padding: 0.5, tolerance: 4 }), [])
 
-    const { data: stationsData } = useQuery({
+    const stationsQuery = useQuery({
         queryKey: ['mapStations'],
         queryFn: api.getMapStations,
         staleTime: 60 * 60 * 1000,
     })
+    const stationsData = stationsQuery.data
 
     const trainsQuery = useQuery({
         queryKey: ['mapTrains'],
@@ -836,14 +851,16 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
         if (dropFocus && focusNonce != null) setHandledFocusNonce(focusNonce)
     }, [dropFocus, focusNonce])
 
-    useEffect(() => {
-        fetch('/poland-border.geojson')
-            .then((r) => r.json())
-            .then((geojson: PolandFeature) => setPolandGeo(geojson))
-            .catch(() => {
-                // border shape not critical to interactivity — fail silently
-            })
-    }, [])
+    const borderQuery = useQuery({
+        queryKey: ['polandBorder'],
+        queryFn: () =>
+            fetch('/poland-border.geojson').then((r) => {
+                if (!r.ok) throw new Error(`poland border: HTTP ${r.status}`)
+                return r.json() as Promise<PolandFeature>
+            }),
+        staleTime: Infinity,
+    })
+    const polandGeo = borderQuery.data
 
     useEffect(() => {
         fetch('/geo-background.geojson')
@@ -1011,6 +1028,18 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
                     </LayerToggle>
                 </div>
 
+                {showStations && stationsData == null && (
+                    <div className="mt-2.5 px-1" aria-live="polite">
+                        {stationsQuery.isPending || stationsQuery.isFetching ? (
+                            <div className="flex items-center gap-2 text-slate-400">
+                                <Spinner className="h-3.5 w-3.5" /> Ładowanie stacji…
+                            </div>
+                        ) : (
+                            <MapLoadError onRetry={() => void stationsQuery.refetch()}>Nie udało się pobrać stacji.</MapLoadError>
+                        )}
+                    </div>
+                )}
+
                 {showTrains && (
                     <div className="mt-2.5 px-1" aria-live="polite">
                         {trainsQuery.isPending ? (
@@ -1051,6 +1080,12 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
                                 </ul>
                             </>
                         )}
+                    </div>
+                )}
+
+                {borderQuery.isError && !borderQuery.isFetching && (
+                    <div className="mt-2.5 px-1">
+                        <MapLoadError onRetry={() => void borderQuery.refetch()}>Nie udało się wczytać granicy Polski.</MapLoadError>
                     </div>
                 )}
 

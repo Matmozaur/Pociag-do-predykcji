@@ -5,13 +5,13 @@ import { api, type DisruptionSummaryView } from '@/lib/api'
 import { Badge, Button, Card, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
 
-const severityLabel: Record<string, string> = {
+const severityLabel: Record<DisruptionSummaryView['severity'], string> = {
     low: 'Niski',
     medium: 'Sredni',
     high: 'Wysoki',
 }
 
-const severityVariant: Record<string, 'success' | 'warning' | 'danger'> = {
+const severityVariant: Record<DisruptionSummaryView['severity'], 'success' | 'warning' | 'danger'> = {
     low: 'success',
     medium: 'warning',
     high: 'danger',
@@ -33,11 +33,7 @@ function DisruptionCard({ disruption }: { disruption: DisruptionSummaryView }) {
                         }
                     />
                 </div>
-                {disruption.severity && (
-                    <Badge variant={severityVariant[disruption.severity] ?? 'default'}>
-                        {severityLabel[disruption.severity] ?? disruption.severity}
-                    </Badge>
-                )}
+                <Badge variant={severityVariant[disruption.severity]}>{severityLabel[disruption.severity]}</Badge>
             </div>
 
             {(disruption.start_station || disruption.end_station) && (
@@ -60,7 +56,7 @@ function DisruptionCard({ disruption }: { disruption: DisruptionSummaryView }) {
                         </span>
                     </div>
                 )}
-                {disruption.affected_routes_count != null && <span>{disruption.affected_routes_count} tras dotyczy</span>}
+                <span>{disruption.affected_routes_count} tras dotyczy</span>
             </div>
         </Card>
     )
