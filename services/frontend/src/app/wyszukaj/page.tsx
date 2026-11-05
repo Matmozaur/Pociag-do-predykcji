@@ -148,7 +148,7 @@ function ConnectionResultCard({ result }: { result: ScheduleSearchResult }) {
                     <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
                         <MapPin size={11} />
                         <span>{result.carrier.name}</span>
-                        {result.stops_count != null && <span className="ml-1">· {result.stops_count} przystankow</span>}
+                        <span className="ml-1">· {result.stops_count} przystankow</span>
                     </div>
                 </div>
 
@@ -158,15 +158,13 @@ function ConnectionResultCard({ result }: { result: ScheduleSearchResult }) {
                         <span className="text-slate-600">→</span>
                         <span className="font-semibold text-white">{result.arrival.time}</span>
                     </div>
-                    {result.duration_minutes != null && (
-                        <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
-                            <Clock size={11} />
-                            <span>
-                                {Math.floor(result.duration_minutes / 60)}h{' '}
-                                {result.duration_minutes % 60 > 0 ? `${result.duration_minutes % 60}min` : ''}
-                            </span>
-                        </div>
-                    )}
+                    <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                        <Clock size={11} />
+                        <span>
+                            {Math.floor(result.duration_minutes / 60)}h{' '}
+                            {result.duration_minutes % 60 > 0 ? `${result.duration_minutes % 60}min` : ''}
+                        </span>
+                    </div>
                 </div>
             </Card>
         </Link>
