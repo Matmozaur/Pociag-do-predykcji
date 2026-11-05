@@ -13,6 +13,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/position"
 	"github.com/pociag-do-predykcji/services/go/api/internal/repository"
@@ -234,9 +238,9 @@ func TestRepository(t *testing.T) {
 		stats, err := repo.GetDayStatistics(ctx, time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC),
 			time.Date(2026, 10, 4, 11, 43, 0, 0, time.UTC))
 		check(t, err)
-		// 100 (P, confirmed delay 4), 101 (S), 102 (P but stale).
+		// 100 (P, confirmed delay 4), 101 (S), 102 (P but stale, so not started).
 		equal(t, "stats", *stats, service.DayStatistics{
-			Total: 3, InProgress: 1, Started: 2, OnTime: 2, AvgDelay: ptr(4.0),
+			Total: 3, InProgress: 1, Started: 1, OnTime: 1, AvgDelay: ptr(4.0),
 		})
 
 		f, err := repo.GetFreshness(ctx)
@@ -304,6 +308,211 @@ func TestLiveTrainsSortByDelay(t *testing.T) {
 	equal(t, "delays", delays, []*int{ptr(30), ptr(5), ptr(5), ptr(0), ptr(-2), nil, nil})
 	ids, _ = list(service.SortDelay, 2, 2)
 	equal(t, "page", ids, []int64{204, 205})
+}
+
+// A wildcard in user text is a literal character, and a trailing backslash is not an error.
+func TestSearchTreatsLikeWildcardsLiterally(t *testing.T) {
+	repo := setup(t)
+	ctx := context.Background()
+	date := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
+	execSQL(ctx, t, `
+		INSERT INTO stations (id, name, city) VALUES
+		    (20, '50% Junction', '100%'),
+		    (21, 'Under_score', 'A_B'),
+		    (22, 'Back\slash', 'C\D'),
+		    (23, 'Underxscore', 'AxB');
+		INSERT INTO trains (id, schedule_id, order_id, operating_dates) VALUES (20, 2026, 200, '{2026-10-07}');
+		INSERT INTO schedule_stops (train_id, seq, station_id, arrival, departure) VALUES
+		    (20, 1, 20, NULL, '08:00'),
+		    (20, 2, 21, '09:00', '09:01'),
+		    (20, 3, 23, '10:00', '10:01'),
+		    (20, 4, 22, '11:00', NULL);`)
+
+	for query, want := range map[string][]string{
+		"__":       {},
+		"%%":       {},
+		"%":        {"50% Junction"},
+		"_":        {"Under_score"},
+		"r_s":      {"Under_score"},
+		"Under_":   {"Under_score"},
+		`k\s`:      {`Back\slash`},
+		`\`:        {`Back\slash`},
+		"Underx":   {"Underxscore"},
+		"100%":     {"50% Junction"},
+		"Warsz_wa": {},
+	} {
+		stations, err := repo.SearchStations(ctx, query, 10)
+		check(t, err)
+		names := []string{}
+		for _, st := range stations {
+			names = append(names, st.Name)
+		}
+		equal(t, "stations matching "+query, names, want)
+	}
+
+	for name, want := range map[string]string{
+		"Under_":      "Under_score", // name prefix
+		"A_B":         "Under_score", // city
+		`Back\`:       `Back\slash`,
+		`C\D`:         `Back\slash`,
+		"Under":       "Under_score", // earliest of the two literal-prefix matches
+		"Warsz%":      "",
+		"%":           "",
+		"_nder_score": "",
+		`Back\slash\`: "",
+	} {
+		// The connection runs from the first stop to whichever later stop the name selects.
+		found, err := repo.SearchConnections(ctx, service.ConnectionQuery{
+			Date: date, From: service.Place{StationID: 20}, To: service.Place{Name: name},
+		})
+		check(t, err)
+		got := ""
+		if len(found) > 0 {
+			got = found[0].To.StationName
+		}
+		equal(t, "to "+name, got, want)
+
+		reverse, err := repo.SearchConnections(ctx, service.ConnectionQuery{
+			Date: date, From: service.Place{Name: name}, To: service.Place{StationID: 22},
+		})
+		check(t, err)
+		// Back\slash is the terminus, so it never matches as an origin of this train.
+		wantOrigin := want
+		if wantOrigin == `Back\slash` {
+			wantOrigin = ""
+		}
+		gotOrigin := ""
+		if len(reverse) > 0 {
+			gotOrigin = reverse[0].From.StationName
+		}
+		equal(t, "from "+name, gotOrigin, wantOrigin)
+	}
+}
+
+func TestDayStatisticsPopulation(t *testing.T) {
+	repo := setup(t)
+	ctx := context.Background()
+	execSQL(ctx, t, `
+		INSERT INTO trains (id, schedule_id, order_id) SELECT g, 2026, 1000 + g FROM generate_series(30, 37) g;
+		INSERT INTO operations (id, train_id, operating_date, status, updated_at) VALUES
+		    (300, 30, '2026-10-06', 'P', '2026-10-06T11:58:00Z'), -- moving, confirmed 3 late
+		    (301, 31, '2026-10-06', 'P', '2026-10-06T11:58:00Z'), -- moving, confirmed 12 late
+		    (302, 32, '2026-10-06', 'P', '2026-10-06T11:58:00Z'), -- moving, no stop confirmed yet
+		    (303, 33, '2026-10-06', 'P', '2026-10-06T11:58:00Z'), -- moving, confirmed without delay minutes
+		    (304, 34, '2026-10-06', 'P', '2026-10-06T08:00:00Z'), -- stale, confirmed 60 late
+		    (305, 35, '2026-10-06', 'C', '2026-10-06T08:00:00Z'), -- finished long ago, confirmed 2 late
+		    (306, 36, '2026-10-06', 'S', '2026-10-06T11:58:00Z'), -- not started
+		    (307, 37, '2026-10-06', 'X', '2026-10-06T11:58:00Z'); -- cancelled
+		INSERT INTO operation_stops (operation_id, seq, station_id, arrival_delay, departure_delay, is_confirmed) VALUES
+		    (300, 1, 1, NULL, 3, true),
+		    (300, 2, 2, 90, NULL, false), -- an unconfirmed forecast does not count
+		    (301, 1, 1, 12, 7, true),
+		    (302, 1, 1, NULL, 30, false),
+		    (303, 1, 1, NULL, NULL, true),
+		    (304, 1, 1, 60, NULL, true),
+		    (305, 1, 1, 2, NULL, true);`)
+
+	stats, err := repo.GetDayStatistics(ctx, time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 10, 6, 11, 43, 0, 0, time.UTC))
+	check(t, err)
+	equal(t, "stats", *stats, service.DayStatistics{
+		Total: 8, InProgress: 4, Completed: 1, Cancelled: 1,
+		Started:  5, // in progress + completed; the stale 304 is neither
+		OnTime:   3, // 300, 303, 305; 301 is late and 302 has nothing confirmed
+		AvgDelay: ptr((3.0 + 12.0 + 2.0) / 3),
+	})
+	equal(t, "started is in progress + completed", stats.Started, stats.InProgress+stats.Completed)
+}
+
+// recordSpans routes the global tracer, which repository.New picks up, to a span recorder.
+func recordSpans(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+	return recorder
+}
+
+// Needs no database: every call on a closed pool fails.
+func TestFailedQueriesMarkTheirSpans(t *testing.T) {
+	recorder := recordSpans(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, "postgres://nobody@127.0.0.1:1/none?connect_timeout=1")
+	check(t, err)
+	pool.Close()
+	repo := repository.New(pool)
+	day := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+
+	for name, call := range map[string]func() error{
+		"db.ping":            func() error { return repo.Ping(ctx) },
+		"db.stations.search": func() error { _, err := repo.SearchStations(ctx, "Wa", 1); return err },
+		"db.stations.mapped": func() error { _, err := repo.ListMappedStations(ctx); return err },
+		"db.stations.get":    func() error { _, err := repo.GetStation(ctx, 1); return err },
+		"db.station_board.query": func() error {
+			_, err := repo.ListBoardStops(ctx, 1, day, day)
+			return err
+		},
+		"db.operations.latest_snapshot": func() error { _, err := repo.LatestSnapshot(ctx); return err },
+		"db.operations.active": func() error {
+			_, err := repo.ListActiveRuns(ctx, day, day, []time.Time{day})
+			return err
+		},
+		"db.operations.get": func() error { _, err := repo.GetRun(ctx, 1); return err },
+		"db.schedules.search": func() error {
+			_, err := repo.SearchConnections(ctx, service.ConnectionQuery{Date: day})
+			return err
+		},
+		"db.schedules.get":    func() error { _, err := repo.GetTrainSchedule(ctx, 1); return err },
+		"db.disruptions.list": func() error { _, _, err := repo.ListDisruptions(ctx, 1, 0); return err },
+		"db.operations.statistics": func() error {
+			_, err := repo.GetDayStatistics(ctx, day, day)
+			return err
+		},
+		"db.freshness": func() error { _, err := repo.GetFreshness(ctx); return err },
+	} {
+		if err := call(); err == nil {
+			t.Errorf("%s: want an error from a closed pool", name)
+		}
+		spans := recorder.Ended()
+		span := spans[len(spans)-1]
+		equal(t, "span name", span.Name(), name)
+		equal(t, name+" status", span.Status().Code, codes.Error)
+		events := span.Events()
+		if len(events) != 1 || events[0].Name != "exception" {
+			t.Errorf("%s: events = %v, want one recorded exception", name, events)
+		}
+	}
+}
+
+// A missing row is a result the caller maps to 404, not a failed query.
+func TestMissingRowLeavesSpanHealthy(t *testing.T) {
+	recorder := recordSpans(t)
+	repo := setup(t)
+	ctx := context.Background()
+
+	for name, call := range map[string]func() error{
+		"db.stations.get":   func() error { _, err := repo.GetStation(ctx, 99); return err },
+		"db.operations.get": func() error { _, err := repo.GetRun(ctx, 999); return err },
+		"db.schedules.get":  func() error { _, err := repo.GetTrainSchedule(ctx, 999); return err },
+	} {
+		equal(t, name+" not found", errors.Is(call(), service.ErrNotFound), true)
+		spans := recorder.Ended()
+		span := spans[len(spans)-1]
+		equal(t, "span name", span.Name(), name)
+		equal(t, name+" status", span.Status().Code, codes.Unset)
+		equal(t, name+" events", len(span.Events()), 0)
+	}
+}
+
+func execSQL(ctx context.Context, t *testing.T, sql string) {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, os.Getenv("POCIAG_TEST_DATABASE_URL"))
+	check(t, err)
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, sql); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func ptr[T any](v T) *T { return &v }

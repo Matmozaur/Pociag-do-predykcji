@@ -115,8 +115,8 @@ type DayStatistics struct {
 	InProgress int // status P and in the latest snapshot
 	Completed  int
 	Cancelled  int // fully or partially
-	Started    int
-	OnTime     int // max delay <= 5 minutes
+	Started    int // InProgress + Completed
+	OnTime     int // started, with a confirmed stop and max confirmed delay <= 5 minutes
 	AvgDelay   *float64
 }
 
