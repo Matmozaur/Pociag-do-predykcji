@@ -53,10 +53,9 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.117.0
     restart: unless-stopped
-    environment:
-      # Compose cannot tell the collector which profiles are active. `make up` sets this to
-      # '[otlp/jaeger, debug]'; set it yourself when using `--profile tracing|all` by hand.
-      OTEL_TRACES_EXPORTERS: ${OTEL_TRACES_EXPORTERS:-[debug]}
+    depends_on:
+      jaeger:
+        condition: service_started
     volumes:
       - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
     ports:
@@ -182,7 +181,6 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one:1.63.0
-    profiles: [tracing, all]
     restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: 'true'
