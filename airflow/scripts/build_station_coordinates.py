@@ -18,8 +18,10 @@ The script:
   common suffixes such as "Główny"/"Gł." and "Osobowa"/"Os." canonicalised or stripped;
 * breaks ties with the PLK ``city``, by collapsing nearby duplicates, and by proximity to
   already-matched stations of the same town; if the tie remains, the station is left unmatched;
-* writes the JSON in the existing ``{source, stations: [...]}`` format. Entries already present in
-  the curated file always win;
+* replaces the coordinates of low-precision curated entries (see ``is_low_precision``) with their
+  OSM match, unless the match is suspiciously far (see ``refine_low_precision``);
+* writes the JSON in the existing ``{source, stations: [...]}`` format. Other entries already
+  present in the curated file always win;
 * prints a coverage report, then the unmatched stations.
 
 Generated entries become part of the curated file. A later run therefore keeps them as they are.
@@ -145,6 +147,15 @@ DUPLICATE_RADIUS_KM = 2.0
 TOWN_RADIUS_KM = 25.0
 # ...and clearly closer than the runner-up.
 TOWN_MARGIN_KM = 15.0
+
+# Hand-typed entries are approximate and have at most 4 decimals, with a value of at most this many.
+# One short value alone is not enough: ``round(x, 5)`` drops trailing zeros, so an OSM entry such as
+# (52.12345, 18.12300) is precise. Its other value has the full ``GENERATED_DECIMALS``.
+LOW_PRECISION_DECIMALS = 3
+GENERATED_DECIMALS = 5
+# A low-precision entry further than this from its OSM match is kept and reported, not replaced:
+# hand-typed values are off by a few km, so a larger gap means a wrong name match.
+MAX_REFINE_SHIFT_KM = 10.0
 
 
 @dataclass(frozen=True)
@@ -474,6 +485,55 @@ def build_payload(curated: Sequence[dict[str, Any]], matches: Sequence[Match]) -
     return {"source": SOURCE, "stations": [*curated, *generated]}
 
 
+def _decimals(value: float) -> int:
+    return len(str(value).partition(".")[2])
+
+
+def is_low_precision(entry: dict[str, Any]) -> bool:
+    """Return True if a curated entry has a short value and neither has full OSM precision."""
+    decimals = _decimals(entry["latitude"]), _decimals(entry["longitude"])
+    return min(decimals) <= LOW_PRECISION_DECIMALS and max(decimals) < GENERATED_DECIMALS
+
+
+def refine_low_precision(
+    curated: Sequence[dict[str, Any]], matches: Sequence[Match]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[tuple[dict[str, Any], str]]]:
+    """Replace the coordinates of low-precision curated entries with their OSM match.
+
+    Returns ``(entries, refined, kept)``. ``entries`` holds all curated entries in their original
+    order, ``refined`` the entries that changed, and ``kept`` the low-precision entries left as
+    they are, with the reason.
+    """
+    by_id = {m.station.external_id: m for m in matches}
+    entries: list[dict[str, Any]] = []
+    refined: list[dict[str, Any]] = []
+    kept: list[tuple[dict[str, Any], str]] = []
+    for entry in curated:
+        if not is_low_precision(entry):
+            entries.append(entry)
+            continue
+        match = by_id.get(int(entry["external_id"]))
+        if match is None:
+            entries.append(entry)
+            kept.append((entry, "no-osm-match"))
+            continue
+        shift = haversine_km(
+            entry["latitude"], entry["longitude"], match.osm.latitude, match.osm.longitude
+        )
+        if shift > MAX_REFINE_SHIFT_KM:
+            entries.append(entry)
+            kept.append((entry, f"too-far ({shift:.1f} km from {match.osm.osm_id})"))
+            continue
+        updated = {
+            **entry,
+            "latitude": round(match.osm.latitude, 5),
+            "longitude": round(match.osm.longitude, 5),
+        }
+        entries.append(updated)
+        refined.append(updated)
+    return entries, refined, kept
+
+
 def _pct(part: int, whole: int) -> str:
     return f"{part}/{whole} ({100.0 * part / whole:.1f}%)" if whole else f"{part}/0"
 
@@ -534,6 +594,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"OSM stations/halts with a name: {len(osm)}", file=sys.stderr)
 
     matches, unmatched = match_stations(plk, osm)
+    curated, refined, kept = refine_low_precision(curated, matches)
+    print(f"low-precision entries refined from OSM: {len(refined)}", file=sys.stderr)
+    for entry, why in kept:
+        print(f"low-precision kept: {entry['external_id']}\t{entry['name']}\t{why}", file=sys.stderr)
     payload = build_payload(curated, matches)
     args.output.write_text(
         json.dumps(payload, ensure_ascii=False, indent=4) + "\n", encoding="utf-8"
