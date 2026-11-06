@@ -12,11 +12,11 @@ and read by `services/go/api/internal/repository`. Overview: `docs/architecture.
 
 ## Rules
 
-- Pairs `NNN_description.up.sql` / `.down.sql`, zero-padded and increasing (next: `002_`).
+- Pairs `NNN_description.up.sql` / `.down.sql`, zero-padded and increasing (next: `003_`).
   `.down.sql` fully reverses `.up.sql`; keep DDL in a transaction.
 - Index new foreign keys and the predicates the two repositories filter on.
 - After a change, run both SQL test suites (`POCIAG_TEST_DATABASE_URL=… make api-test
-  airflow-test`); they apply `001_init.up.sql` and later migrations must keep them passing.
+  airflow-test`); they apply every `*.up.sql` in order, so a new migration is tested automatically.
 
 ## Running (from repo root)
 

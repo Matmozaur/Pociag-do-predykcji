@@ -38,7 +38,8 @@ def db() -> Iterator[Any]:
     conn.autocommit = True
     with conn.cursor() as cur:
         cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        cur.execute((MIGRATIONS / "001_init.up.sql").read_text())
+        for migration in sorted(MIGRATIONS.glob("*.up.sql")):
+            cur.execute(migration.read_text())
     with patch("pociag_processing.repository.PostgresHook") as hook:
         hook.return_value.get_conn.side_effect = lambda: psycopg2.connect(DATABASE_URL)
         yield conn
@@ -223,7 +224,17 @@ def test_replace_disruptions_replaces_the_snapshot(db: Any) -> None:
     """) == [(4, "utr_31", 73700, "2026-10-03", "2026-10-04", 2)]
 
 
+def test_replace_disruptions_keeps_int64_ids(db: Any) -> None:
+    # PLK disruption ids are int64 and do exceed the INTEGER range.
+    batch = transform.disruptions(load("disruptions.json"))
+    big = replace(batch.disruptions[0], id=3465064817476233210)
+    Repository().replace_disruptions(replace(batch, disruptions=[big]))
+
+    assert query(db, "SELECT id FROM disruptions") == [(3465064817476233210,)]
+
+
 def test_down_migration_drops_everything(db: Any) -> None:
     with db.cursor() as cur:
-        cur.execute((MIGRATIONS / "001_init.down.sql").read_text())
+        for migration in sorted(MIGRATIONS.glob("*.down.sql"), reverse=True):
+            cur.execute(migration.read_text())
     assert query(db, "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'") == [(0,)]

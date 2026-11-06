@@ -90,11 +90,19 @@ func setup(t *testing.T) *repository.Repository {
 	}
 	t.Cleanup(pool.Close)
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "001_init.up.sql"))
-	if err != nil {
-		t.Fatal(err)
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "*.up.sql"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no migrations found: %v", err)
 	}
-	for _, sql := range []string{"DROP SCHEMA public CASCADE; CREATE SCHEMA public;", string(migration), seed} {
+	sqls := []string{"DROP SCHEMA public CASCADE; CREATE SCHEMA public;"}
+	for _, file := range files { // Glob sorts, so 001_ runs before 002_
+		migration, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqls = append(sqls, string(migration))
+	}
+	for _, sql := range append(sqls, seed) {
 		if _, err := pool.Exec(ctx, sql); err != nil {
 			t.Fatal(err)
 		}

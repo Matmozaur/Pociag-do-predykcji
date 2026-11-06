@@ -424,7 +424,7 @@ components:
       type: object
       required: [id, message, affected_routes_count, severity]
       properties:
-        id: {type: integer, description: Only stable within one snapshot}
+        id: {type: integer, format: int64, description: 'Only stable within one snapshot. PLK ids can exceed 2^53, so treat it as an opaque key'}
         start_station: {type: string}
         end_station: {type: string}
         message: {type: string}
