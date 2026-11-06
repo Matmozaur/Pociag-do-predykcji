@@ -41,13 +41,9 @@ function StopTimeline({ stops }: { stops: TrainStopView[] }) {
                         <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
                                 <p className={cn('text-sm font-medium', stop.is_cancelled ? 'text-slate-500 line-through' : 'text-white')}>
-                                    {stop.station_external_id != null ? (
-                                        <Link href={`/stations/${stop.station_external_id}`} className="hover:text-blue-300 hover:underline underline-offset-4">
-                                            {stop.station_name}
-                                        </Link>
-                                    ) : (
-                                        stop.station_name
-                                    )}
+                                    <Link href={`/stations/${stop.station_external_id}`} className="hover:text-blue-300 hover:underline underline-offset-4">
+                                        {stop.station_name}
+                                    </Link>
                                 </p>
                                 {!stop.is_cancelled && (
                                     <Badge variant={delayVariant(delay)}>{formatDelay(delay)}</Badge>

@@ -35,7 +35,7 @@ export function useTrainRoute(
         if (operationId == null || !detail || detail.operation_id !== operationId) return null
         const points: L.LatLngTuple[] = []
         for (const stop of [...detail.stops].sort((a, b) => a.sequence - b.sequence)) {
-            if (stop.is_cancelled || stop.station_external_id == null) continue
+            if (stop.is_cancelled) continue
             const station = stationsById.get(stop.station_external_id)
             if (!station) continue
             const last = points[points.length - 1]

@@ -1,12 +1,19 @@
 package handler_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/zap"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/handler"
@@ -36,6 +43,10 @@ func TestBadRequests(t *testing.T) {
 		"/api/v1/schedules/x",
 		"/api/v1/trains/live?limit=0",
 		"/api/v1/trains/live?offset=-1",
+		"/api/v1/trains/live?sort=speed",
+		"/api/v1/trains/live?offset=1000001",
+		"/api/v1/disruptions?offset=1000001",
+		"/api/v1/schedules/search?from=1&to=2&date=2026-10-05&offset=1000001",
 		"/api/v1/trains/-5",
 		"/api/v1/disruptions?limit=101",
 	} {
@@ -98,6 +109,91 @@ func TestSearchSchedulesParsesPlaces(t *testing.T) {
 	}
 	if len(repo.Query.Carriers) != 2 || repo.Query.Carriers[1] != "KM" {
 		t.Errorf("carriers = %q", repo.Query.Carriers)
+	}
+}
+
+func TestLiveTrainsAcceptsSortByDelay(t *testing.T) {
+	for _, target := range []string{"/api/v1/trains/live", "/api/v1/trains/live?sort=", "/api/v1/trains/live?sort=delay"} {
+		rec := serve(&servicetest.Repository{}, target)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", target, rec.Code)
+		}
+	}
+}
+
+func TestOffsetAtSpecMaximum(t *testing.T) {
+	for _, target := range []string{
+		"/api/v1/trains/live?offset=1000000",
+		"/api/v1/disruptions?offset=1000000",
+		"/api/v1/schedules/search?from=1&to=2&date=2026-10-05&offset=1000000",
+	} {
+		if rec := serve(&servicetest.Repository{}, target); rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", target, rec.Code)
+		}
+	}
+}
+
+func TestServerSpansAreNamedByRoute(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	reader := sdkmetric.NewManualReader()
+	meters := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	h := handler.New(service.New(&servicetest.Repository{}), zap.NewNop())
+	server := otelhttp.NewHandler(h.Routes(), "pociag.api",
+		otelhttp.WithTracerProvider(provider), otelhttp.WithMeterProvider(meters))
+
+	for _, c := range []struct {
+		method, target, name, route string
+	}{
+		{http.MethodGet, "/api/v1/trains/42", "GET /api/v1/trains/{operationId}", "/api/v1/trains/{operationId}"},
+		{http.MethodGet, "/api/v1/trains/43", "GET /api/v1/trains/{operationId}", "/api/v1/trains/{operationId}"},
+		{http.MethodGet, "/api/v1/dashboard/overview", "GET /api/v1/dashboard/overview", "/api/v1/dashboard/overview"},
+		{http.MethodGet, "/healthz", "GET /healthz", "/healthz"},
+		// Unrouted requests must not put the raw path in the span name.
+		{http.MethodGet, "/no/such/path", "GET", ""},
+		{http.MethodGet, "/api/v1/no/such/path", "GET", ""},
+		{http.MethodOptions, "/api/v1/trains/42", "OPTIONS", ""},
+	} {
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, httptest.NewRequest(c.method, c.target, nil))
+
+		spans := recorder.Ended()
+		span := spans[len(spans)-1]
+		if span.Name() != c.name {
+			t.Errorf("%s %s: span name = %q, want %q", c.method, c.target, span.Name(), c.name)
+		}
+		route := ""
+		for _, attr := range span.Attributes() {
+			if attr.Key == attribute.Key("http.route") {
+				route = attr.Value.AsString()
+			}
+		}
+		if route != c.route {
+			t.Errorf("%s %s: http.route = %q, want %q", c.method, c.target, route, c.route)
+		}
+	}
+
+	// The request metrics carry the route too, so they can be split per endpoint.
+	var metrics metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &metrics); err != nil {
+		t.Fatal(err)
+	}
+	routes := map[string]bool{}
+	for _, scope := range metrics.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if hist, ok := m.Data.(metricdata.Histogram[float64]); ok {
+				for _, point := range hist.DataPoints {
+					if v, ok := point.Attributes.Value("http.route"); ok {
+						routes[v.AsString()] = true
+					}
+				}
+			}
+		}
+	}
+	for _, want := range []string{"/api/v1/trains/{operationId}", "/api/v1/dashboard/overview", "/healthz"} {
+		if !routes[want] {
+			t.Errorf("no request metric labelled http.route=%q; got %v", want, routes)
+		}
 	}
 }
 

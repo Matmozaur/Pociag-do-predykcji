@@ -13,7 +13,7 @@ See [docs/architecture.md](docs/architecture.md) for how it fits together.
 ## Quick start
 
 ```bash
-cp infra/.env.example infra/.env   # set PLK_API_KEY (and passwords)
+cp infra/.env.example infra/.env   # set PLK_API_KEY, AIRFLOW__CORE__FERNET_KEY (and passwords)
 make up                            # build and start everything
 make urls                          # frontend :3100, api :8080, Airflow :8090 (admin/admin)
 ```

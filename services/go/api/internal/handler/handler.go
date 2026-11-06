@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
@@ -31,6 +33,7 @@ func New(svc *service.Service, logger *zap.Logger) *Handler {
 
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
+	r.Use(routeSpan)
 	r.Use(cors)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/readyz", h.ready)
@@ -135,6 +138,11 @@ func (h *Handler) scheduleDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) liveTrains(w http.ResponseWriter, r *http.Request) {
+	sortBy := r.URL.Query().Get("sort")
+	if sortBy != "" && sortBy != service.SortDelay {
+		badRequest(w, "sort must be one of: delay")
+		return
+	}
 	limit, ok := intParam(w, r, "limit", 20, 1, 100)
 	if !ok {
 		return
@@ -143,7 +151,7 @@ func (h *Handler) liveTrains(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h.respond(w, r, "failed to load live trains")(h.svc.LiveTrains(r.Context(), csv(r, "carriers"), limit, offset))
+	h.respond(w, r, "failed to load live trains")(h.svc.LiveTrains(r.Context(), csv(r, "carriers"), sortBy, limit, offset))
 }
 
 func (h *Handler) trainDetail(w http.ResponseWriter, r *http.Request) {
@@ -240,6 +248,26 @@ func csv(r *http.Request, name string) []string {
 		}
 	}
 	return out
+}
+
+// routeSpan names the server span after the matched route, which is known only once the request
+// has been routed, and labels the request metrics with it. A request that matched no route gets
+// the bare method, never its raw path.
+func routeSpan(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		span := trace.SpanFromContext(r.Context())
+		route := chi.RouteContext(r.Context()).RoutePattern()
+		if route == "" || strings.HasSuffix(route, "/*") { // "/*" is a subrouter with no match
+			span.SetName(r.Method)
+			return
+		}
+		span.SetName(r.Method + " " + route)
+		span.SetAttributes(semconv.HTTPRoute(route))
+		if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
+			labeler.Add(semconv.HTTPRoute(route))
+		}
+	})
 }
 
 func cors(next http.Handler) http.Handler {

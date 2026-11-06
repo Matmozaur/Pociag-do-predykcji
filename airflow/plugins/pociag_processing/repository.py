@@ -91,6 +91,17 @@ ON CONFLICT (train_id, operating_date) DO UPDATE SET status = EXCLUDED.status, u
 RETURNING id, train_id, operating_date
 """
 
+# Takes the whole keep-list as arrays: execute_values pages its rows into separate statements, and
+# one page would then read as "keep only these", deleting the stops listed on every other page.
+_DELETE_STALE_OPERATION_STOPS = """
+DELETE FROM operation_stops s
+WHERE s.operation_id = ANY(%s::bigint[])
+  AND NOT EXISTS (
+      SELECT 1 FROM unnest(%s::bigint[], %s::smallint[]) AS keep(operation_id, seq)
+      WHERE keep.operation_id = s.operation_id AND keep.seq = s.seq
+  )
+"""
+
 _UPSERT_OPERATION_STOPS = """
 INSERT INTO operation_stops (
     operation_id, seq, station_id,
@@ -182,7 +193,10 @@ class Repository:
             ])
 
     def save_operations(self, batch: OperationBatch) -> None:
-        """Upsert the runs (marking them seen now) and their stops; unchanged stops are skipped."""
+        """Upsert the runs (marking them seen now) and their stops; unchanged stops are skipped.
+
+        Stored stops that a complete run no longer lists are deleted.
+        """
         with self._transaction("db.operations.save") as cur:
             _upsert_stations(cur, batch.stations)
             _insert_unknown_stations(cur, {s.station_id for s in batch.stops})
@@ -201,6 +215,12 @@ class Repository:
                 (*key_by_train[r[1]], r[2]): r[0] for r in returned
             }
 
+            kept = [s for s in batch.stops if s.run in batch.complete_runs]
+            cur.execute(_DELETE_STALE_OPERATION_STOPS, (
+                [run_ids[run] for run in batch.complete_runs],
+                [run_ids[s.run] for s in kept],
+                [s.seq for s in kept],
+            ))
             _values(cur, _UPSERT_OPERATION_STOPS, [
                 (run_ids[s.run], s.seq, s.station_id,
                  s.planned_arrival, s.planned_departure, s.actual_arrival, s.actual_departure,

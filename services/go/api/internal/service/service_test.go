@@ -175,7 +175,7 @@ func activeRepo() *servicetest.Repository {
 
 func TestLiveTrains(t *testing.T) {
 	repo := activeRepo()
-	resp, err := service.NewAt(repo, now).LiveTrains(context.Background(), nil, 2, 0)
+	resp, err := service.NewAt(repo, now).LiveTrains(context.Background(), nil, "", 2, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +191,47 @@ func TestLiveTrains(t *testing.T) {
 	equal(t, "delay", deref(first.DelayMinutes), any(2))
 	equal(t, "origin", deref(first.Origin), any("A"))
 	equal(t, "destination", deref(first.Destination), any("B"))
+}
+
+func TestLiveTrainsSortByDelay(t *testing.T) {
+	stops := func(delay *int, confirmed bool) []position.Stop {
+		return []position.Stop{
+			{StationID: 1, StationName: sp("A"), SequenceNumber: 1, PlannedDeparture: tp("2026-10-04T11:30:00Z"),
+				DepartureDelayMinutes: delay, IsConfirmed: confirmed, Latitude: fp(52), Longitude: fp(21)},
+			{StationID: 2, StationName: sp("B"), SequenceNumber: 2, PlannedArrival: tp("2026-10-04T12:30:00Z"),
+				Latitude: fp(52), Longitude: fp(22)},
+		}
+	}
+	const seen = "2026-10-04T11:58:00Z"
+	repo := &servicetest.Repository{
+		Snapshot: ts(seen),
+		ActiveRuns: []service.Run{
+			run(1, "KM", seen, stops(nil, false)...), // no confirmed stop: delay unknown
+			run(2, "KM", seen, stops(ip(5), true)...),
+			run(3, "IC", seen, stops(ip(-2), true)...), // early
+			run(4, "KM", seen, stops(ip(20), true)...),
+			run(5, "KM", seen, stops(ip(5), true)...),
+			run(6, "KM", seen, stops(nil, false)...),
+			run(7, "KM", seen, stops(nil, true)...), // confirmed without a delay value: on time
+		},
+	}
+	list := func(carriers []string, sortBy string, limit, offset int) []int64 {
+		t.Helper()
+		resp, err := service.NewAt(repo, now).LiveTrains(context.Background(), carriers, sortBy, limit, offset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]int64, 0, len(resp.Data))
+		for _, train := range resp.Data {
+			ids = append(ids, train.OperationID)
+		}
+		return ids
+	}
+
+	equal(t, "default order", list(nil, "", 10, 0), []int64{1, 2, 3, 4, 5, 6, 7})
+	equal(t, "by delay", list(nil, service.SortDelay, 10, 0), []int64{4, 2, 5, 7, 3, 1, 6})
+	equal(t, "sorted before paginating", list(nil, service.SortDelay, 2, 1), []int64{2, 5})
+	equal(t, "after the carrier filter", list([]string{"ic"}, service.SortDelay, 10, 0), []int64{3})
 }
 
 func TestMapTrains(t *testing.T) {
@@ -283,6 +324,34 @@ func TestSearchSchedules(t *testing.T) {
 	equal(t, "overnight duration", last.DurationMinutes, 80)
 }
 
+func TestSearchSchedulesSortsPastMidnight(t *testing.T) {
+	repo := &servicetest.Repository{Connections: []service.Connection{
+		// Departs 01:10 and arrives 02:00 the next day: last, though its HH:MM sorts first.
+		connection(10, 25*time.Hour+10*time.Minute, 26*time.Hour, 1, 2),
+		connection(11, 23*time.Hour, 23*time.Hour+30*time.Minute, 1, 2),
+		connection(12, 6*time.Hour, 25*time.Hour, 1, 2),
+	}}
+	q := service.ConnectionQuery{
+		Date: ts("2026-10-05T00:00:00Z"), From: service.ParsePlace("Warszawa"), To: service.ParsePlace("6000"),
+	}
+
+	for sortBy, want := range map[string][]int64{
+		service.SortDeparture: {12, 11, 10},
+		service.SortArrival:   {11, 12, 10},
+		service.SortDuration:  {11, 10, 12},
+	} {
+		resp, err := service.NewAt(repo, now).SearchSchedules(context.Background(), q, sortBy, 10, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := []int64{}
+		for _, r := range resp.Data {
+			got = append(got, r.RouteID)
+		}
+		equal(t, "order by "+sortBy, got, want)
+	}
+}
+
 func TestScheduleDetail(t *testing.T) {
 	repo := &servicetest.Repository{Schedule: &service.TrainSchedule{
 		Train: service.Train{ID: 3, Category: sp("Os"), Number: sp("69967"), CarrierCode: sp("KD")},
@@ -329,7 +398,7 @@ func TestDisruptions(t *testing.T) {
 
 func TestDashboardOverview(t *testing.T) {
 	repo := &servicetest.Repository{
-		Statistics: service.DayStatistics{Total: 10, InProgress: 2, Completed: 2, Cancelled: 1, Started: 4, OnTime: 3},
+		Statistics: service.DayStatistics{Total: 10, InProgress: 2, Completed: 2, Cancelled: 1, Started: 5, Rated: 4, OnTime: 3},
 		Freshness:  service.Freshness{OperationsUpdatedAt: tp("2026-10-04T11:58:00Z"), Disruptions: 7},
 	}
 	// 00:30 in Warsaw on 5 October: the operating date is already the 5th.

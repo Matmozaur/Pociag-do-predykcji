@@ -29,10 +29,7 @@ export async function apiFetch<T>(
         })
     }
 
-    const res = await fetch(url.toString(), {
-        headers: { 'Content-Type': 'application/json' },
-        next: { revalidate: 30 },
-    })
+    const res = await fetch(url.toString())
 
     if (!res.ok) {
         const err = await res.json().catch(() => ({ message: res.statusText }))
@@ -41,6 +38,8 @@ export async function apiFetch<T>(
 
     return res.json() as Promise<T>
 }
+
+export type TrainStatus = 'not_started' | 'in_progress' | 'completed' | 'cancelled' | 'partial_cancelled'
 
 export interface StationSuggestion {
     external_id: number
@@ -76,7 +75,7 @@ export interface TrainMapPoint {
     operation_id: number
     train_name: string
     carrier_code?: string
-    status: 'not_started' | 'in_progress' | 'completed' | 'cancelled' | 'partial_cancelled'
+    status: TrainStatus
     phase: 'not_departed' | 'at_station' | 'en_route' | 'arrived'
     delay_minutes?: number
     latitude: number
@@ -114,7 +113,7 @@ export interface StationBoardRow {
     delay_minutes?: number
     platform?: string
     track?: string
-    status: 'not_started' | 'in_progress' | 'completed' | 'cancelled' | 'partial_cancelled'
+    status: TrainStatus
     is_cancelled: boolean
     is_confirmed: boolean
 }
@@ -144,10 +143,10 @@ export interface ScheduleSearchResult {
     train_name: string
     carrier: CarrierInfo
     commercial_category?: string
-    departure: { station_name: string; station_external_id?: number; time: string }
-    arrival: { station_name: string; station_external_id?: number; time: string }
-    duration_minutes?: number
-    stops_count?: number
+    departure: { station_name: string; station_external_id: number; time: string }
+    arrival: { station_name: string; station_external_id: number; time: string }
+    duration_minutes: number
+    stops_count: number
 }
 
 export interface PaginationMeta {
@@ -165,7 +164,7 @@ export interface ScheduleSearchResponse {
 
 export interface ScheduleStopView {
     station_name: string
-    station_external_id?: number
+    station_external_id: number
     order: number
     arrival_time?: string
     departure_time?: string
@@ -187,8 +186,8 @@ export interface LiveTrainSummary {
     operation_id: number
     train_name: string
     carrier_code?: string
-    status: string
-    status_code?: string
+    status: TrainStatus
+    status_code: 'S' | 'P' | 'C' | 'X' | 'Q'
     current_station?: string
     next_station?: string
     delay_minutes?: number
@@ -204,7 +203,7 @@ export interface LiveTrainsResponse {
 
 export interface TrainStopView {
     station_name: string
-    station_external_id?: number
+    station_external_id: number
     sequence: number
     planned_arrival?: string
     planned_departure?: string
@@ -219,13 +218,10 @@ export interface TrainStopView {
 export interface TrainDetailView {
     operation_id: number
     train_name: string
-    carrier?: {
-        code?: string
-        name?: string
-    }
+    carrier?: CarrierInfo
     operating_date: string
-    status: string
-    status_code?: string
+    status: TrainStatus
+    status_code: string
     stops: TrainStopView[]
 }
 
@@ -236,8 +232,8 @@ export interface DisruptionSummaryView {
     message: string
     date_from?: string
     date_to?: string
-    affected_routes_count?: number
-    severity?: 'low' | 'medium' | 'high'
+    affected_routes_count: number
+    severity: 'low' | 'medium' | 'high'
 }
 
 export interface DisruptionListView {
@@ -249,9 +245,9 @@ export interface DashboardOverview {
     statistics: {
         date: string
         total_trains: number
-        in_progress?: number
-        completed?: number
-        cancelled?: number
+        in_progress: number
+        completed: number
+        cancelled: number
         avg_delay_minutes?: number
         on_time_percentage?: number
     }
@@ -293,26 +289,13 @@ export const api = {
     getScheduleDetail: (routeId: number) =>
         apiFetch<ScheduleDetailView>(`/api/v1/schedules/${routeId}`),
 
-    getLiveTrains: (params?: { carriers?: string; limit?: number; offset?: number }) =>
+    getLiveTrains: (params?: { carriers?: string; sort?: 'delay'; limit?: number; offset?: number }) =>
         apiFetch<LiveTrainsResponse>('/api/v1/trains/live', {
             carriers: params?.carriers,
+            sort: params?.sort,
             limit: params?.limit ? String(params.limit) : undefined,
             offset: params?.offset ? String(params.offset) : undefined,
         }),
-
-    // Every active train: the api orders by operation id and caps a page at 100, so a
-    // client-side sort (e.g. by delay) needs all pages, not just the first one.
-    getAllLiveTrains: async (params?: { carriers?: string }): Promise<LiveTrainsResponse> => {
-        const pageSize = 100
-        const first = await api.getLiveTrains({ ...params, limit: pageSize })
-        const offsets: number[] = []
-        for (let offset = pageSize; offset < first.pagination.total; offset += pageSize) offsets.push(offset)
-        const rest = await Promise.all(offsets.map((offset) => api.getLiveTrains({ ...params, limit: pageSize, offset })))
-        const data = [first, ...rest].flatMap((page) => page.data)
-        // Pages are separate queries, so a train can shift across a page boundary; keep one copy.
-        const unique = [...new Map(data.map((train) => [train.operation_id, train])).values()]
-        return { ...first, data: unique, pagination: { ...first.pagination, limit: unique.length } }
-    },
 
     getTrainDetail: (operationId: number) =>
         apiFetch<TrainDetailView>(`/api/v1/trains/${operationId}`),
@@ -341,23 +324,6 @@ export function formatDelay(minutes: number | null | undefined): string {
     if (minutes === 0) return 'Na czas'
     if (minutes > 0) return `+${minutes} min`
     return `${minutes} min`
-}
-
-/** Comparator: largest delay first, unknown delay last, ties by train name. */
-export function compareByDelay(
-    a: Pick<LiveTrainSummary, 'delay_minutes' | 'train_name'>,
-    b: Pick<LiveTrainSummary, 'delay_minutes' | 'train_name'>,
-): number {
-    const aKnown = a.delay_minutes != null
-    const bKnown = b.delay_minutes != null
-    if (aKnown !== bKnown) return aKnown ? -1 : 1
-    if (aKnown && bKnown && a.delay_minutes !== b.delay_minutes) return b.delay_minutes! - a.delay_minutes!
-    return a.train_name.localeCompare(b.train_name, 'pl')
-}
-
-/** Returns a new array sorted with `compareByDelay`; the input is not mutated. */
-export function sortByDelay<T extends Pick<LiveTrainSummary, 'delay_minutes' | 'train_name'>>(trains: readonly T[]): T[] {
-    return [...trains].sort(compareByDelay)
 }
 
 export function delayVariant(

@@ -2,8 +2,13 @@
 # Prerequisites: Docker, Go 1.25+ (older go auto-downloads it unless GOTOOLCHAIN=local), uv, Node 22.
 
 COMPOSE := docker compose -f infra/docker-compose.yml
-DB_URL ?= postgres://pociag:pociag_dev_secret@127.0.0.1:5434/pociag?sslmode=disable
-MIGRATE := docker run --rm --network host -v $(PWD)/db/migrations:/migrations:ro \
+# Taken from infra/.env unless set in the environment; recipes using DB_URL are silent so it is not echoed.
+POSTGRES_PASSWORD ?= $(shell sed -n 's/^POSTGRES_PASSWORD=//p' infra/.env 2>/dev/null | tr -d '\r"')
+DB_URL ?= postgres://pociag:$(POSTGRES_PASSWORD)@127.0.0.1:5434/pociag?sslmode=disable
+# Fails with a clear message when DB_URL is built from an empty password (no infra/.env yet).
+MIGRATE := $(if $(and $(filter file,$(origin DB_URL)),$(if $(POSTGRES_PASSWORD),,1)),\
+	{ echo "POSTGRES_PASSWORD is not set: create infra/.env (see infra/.env.example) or set DB_URL" >&2; exit 1; } &&) \
+	docker run --rm --network host -v $(PWD)/db/migrations:/migrations:ro \
 	migrate/migrate:v4.18.1 -path /migrations -database "$(DB_URL)"
 # golangci-lint from PATH, else from $(go env GOPATH)/bin (where `go install` puts it).
 GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go env GOPATH)/bin/golangci-lint)
@@ -19,7 +24,7 @@ help: ## Show this help message
 up: ## Start everything (Postgres, api, Airflow, frontend, observability), rebuilding images
 	$(COMPOSE) --profile all up -d --build
 
-up-core: ## Start Postgres, migrations and the api only
+up-core: ## Start Postgres, migrations, the OTel Collector, Jaeger and the api only
 	$(COMPOSE) up -d --build
 
 down: ## Stop all containers (keeps data)
@@ -35,13 +40,13 @@ logs: ## Follow logs of all containers
 
 .PHONY: db-migrate-up db-migrate-down db-migrate-status db-psql
 db-migrate-up: ## Apply pending migrations (compose also runs them on start)
-	$(MIGRATE) up
+	@$(MIGRATE) up
 
 db-migrate-down: ## Roll back the last migration
-	$(MIGRATE) down 1
+	@$(MIGRATE) down 1
 
 db-migrate-status: ## Show the current migration version
-	$(MIGRATE) version
+	@$(MIGRATE) version
 
 db-psql: ## Open a psql shell on the curated database
 	$(COMPOSE) exec postgres psql -U pociag -d pociag
@@ -72,7 +77,7 @@ frontend-build: ## Next.js build (type check + lint)
 urls: ## Print local URLs
 	@echo "  Frontend    http://localhost:3100"
 	@echo "  API         http://localhost:8080/api/v1/dashboard/overview"
-	@echo "  Airflow     http://localhost:8090 (admin/admin)"
+	@echo "  Airflow     http://localhost:8090 (admin/admin unless AIRFLOW_ADMIN_* are set)"
 	@echo "  Postgres    localhost:5434 (pociag)"
 	@echo "  Jaeger      http://localhost:16686"
 	@echo "  Prometheus  http://localhost:9090   Grafana http://localhost:3001"

@@ -82,8 +82,8 @@ func (s *Service) DashboardOverview(ctx context.Context) (*model.DashboardOvervi
 			OperationsLastUpdated: freshness.OperationsUpdatedAt,
 		},
 	}
-	if stats.Started > 0 {
-		pct := 100 * float64(stats.OnTime) / float64(stats.Started)
+	if stats.Rated > 0 {
+		pct := 100 * float64(stats.OnTime) / float64(stats.Rated)
 		overview.Statistics.OnTimePercentage = &pct
 	}
 	return overview, nil
