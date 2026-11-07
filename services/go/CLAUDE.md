@@ -12,12 +12,15 @@ install Go 1.25+ or builds fail with `go.mod requires go >= 1.25.0`.
 - `cmd/main.go` — config, tracing, pgx pool, HTTP server.
 - `internal/handler` — chi routes (`/healthz`, `/readyz` = DB ping, `/api/v1/*`), an open CORS
   middleware (`*`, `GET, OPTIONS`), parameter validation (out of range → 400), JSON, error
-  mapping (`service.ErrNotFound` → 404, else 500 logged with `trace_id`).
+  mapping (`service.InvalidRequestError` → 400, `service.ErrNotFound` → 404, else 500 logged
+  with `trace_id`).
 - `internal/service` — builds the response models (`internal/model`) from repository rows. Pure
   apart from the `Repository` interface it defines; tests use `service/servicetest` (fake repo)
   and `export_test.go` (fixed clock).
 - `internal/repository` — all SQL (pgx v5, no ORM), one method per view.
 - `internal/position` — pure train-position model (active predicate, phase, interpolation).
+- `internal/prediction` — delay-prediction `Predictor` interface, the fixed delay ranges, and
+  `Mock` (deterministic placeholder wired in `service.New` until the ML service exists).
 
 ## Commands (from repo root)
 

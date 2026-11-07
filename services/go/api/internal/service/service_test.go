@@ -375,6 +375,69 @@ func TestScheduleDetail(t *testing.T) {
 	equal(t, "duration", deref(detail.TotalDurationMinutes), any(47))
 }
 
+func predictionRepo() *servicetest.Repository {
+	return &servicetest.Repository{Schedule: &service.TrainSchedule{
+		Train:          service.Train{ID: 3, Category: sp("IC"), Number: sp("5300"), CarrierCode: sp("IC")},
+		OperatingDates: []time.Time{ts("2026-10-04T00:00:00Z"), ts("2026-10-18T00:00:00Z"), ts("2026-10-19T00:00:00Z")},
+		Stops: []service.ScheduleStop{
+			{Seq: 1, StationID: 5100, StationName: "Warszawa Centralna", Departure: dp(8 * time.Hour)},
+			{Seq: 2, StationID: 4900, StationName: "Kielce", Arrival: dp(10 * time.Hour), Departure: dp(10*time.Hour + 2*time.Minute)},
+			{Seq: 3, StationID: 3300, StationName: "Kraków Główny", Arrival: dp(11*time.Hour + 30*time.Minute)},
+		},
+	}}
+}
+
+func TestDelayPrediction(t *testing.T) {
+	svc := service.NewAt(predictionRepo(), now)
+
+	p, err := svc.DelayPrediction(context.Background(), 3, ts("2026-10-18T00:00:00Z"), 0, 4900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "from", p.From, model.ScheduleEndpoint{StationName: "Warszawa Centralna", StationExternalID: 5100, Time: "08:00"})
+	equal(t, "to", p.To, model.ScheduleEndpoint{StationName: "Kielce", StationExternalID: 4900, Time: "10:00"})
+	equal(t, "is mock", p.IsMock, true)
+	ranges, sum, best := []string{}, 0.0, p.Buckets[0]
+	for _, b := range p.Buckets {
+		ranges = append(ranges, b.Range)
+		sum += b.Probability
+		if b.Probability > best.Probability {
+			best = b
+		}
+	}
+	equal(t, "ranges", ranges, []string{"0-5", "5-10", "10-20", "20-40", "40-60", "60-120", "120+"})
+	if sum < 0.999999 || sum > 1.000001 {
+		t.Errorf("probabilities sum to %v", sum)
+	}
+	equal(t, "most likely", p.MostLikely, best.Range)
+	equal(t, "open-ended max", p.Buckets[6].MaxMinutes, (*int)(nil))
+
+	again, _ := svc.DelayPrediction(context.Background(), 3, ts("2026-10-18T00:00:00Z"), 5100, 4900)
+	equal(t, "deterministic", again.Buckets, p.Buckets)
+}
+
+func TestDelayPredictionRejects(t *testing.T) {
+	cases := []struct {
+		name     string
+		date     string
+		from, to int
+		notFound bool
+	}{
+		{name: "past", date: "2026-10-03"},
+		{name: "beyond horizon", date: "2026-10-19"},
+		{name: "not an operating date", date: "2026-10-05", notFound: true},
+		{name: "unknown stop", date: "2026-10-04", from: 1},
+		{name: "backwards", date: "2026-10-04", from: 3300, to: 5100},
+	}
+	for _, c := range cases {
+		_, err := service.NewAt(predictionRepo(), now).DelayPrediction(context.Background(), 3, ts(c.date+"T00:00:00Z"), c.from, c.to)
+		var invalid *service.InvalidRequestError
+		if c.notFound && !errors.Is(err, service.ErrNotFound) || !c.notFound && !errors.As(err, &invalid) {
+			t.Errorf("%s: err = %v", c.name, err)
+		}
+	}
+}
+
 // ── Disruptions & dashboard ───────────────────────────────────────────────────
 
 func TestDisruptions(t *testing.T) {

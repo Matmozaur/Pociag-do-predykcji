@@ -126,6 +126,29 @@ paths:
         '400': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/schedules/{routeId}/delay-prediction:
+    get:
+      summary: Predicted arrival delay of a future run of a train, as a probability per delay range
+      description: |
+        Predicts the arrival delay at `to` of the route's run on `date`, travelling from `from`.
+        The prediction comes from the delay model (inputs: the route, the train, the weather
+        forecast and historical delays). It is mocked until the ML service exists (`is_mock`).
+        `date` must be an operating date of the route within the next 14 days (today included,
+        Europe/Warsaw), otherwise 400; a route that does not run on `date` is 404.
+      parameters:
+        - {name: routeId, in: path, required: true, description: trains.id, schema: {type: integer, minimum: 1}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+        - {name: from, in: query, description: Boarding station id (stops of the route). Default the first stop, schema: {type: integer, minimum: 1}}
+        - {name: to, in: query, description: Destination station id, after `from`. Default the last stop, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Delay distribution
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DelayPrediction'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/trains/live:
     get:
       summary: Active trains (same definition as /map/trains), ordered by operation id by default
@@ -333,6 +356,33 @@ components:
               arrival_time: {type: string}
               departure_time: {type: string}
               platform: {type: string}
+
+    DelayBucket:
+      type: object
+      required: [range, min_minutes, probability]
+      description: 'Arrival delay d in (min_minutes, max_minutes]; the first range also holds early and on-time arrivals (d <= 5)'
+      properties:
+        range: {type: string, enum: ['0-5', '5-10', '10-20', '20-40', '40-60', '60-120', '120+']}
+        min_minutes: {type: integer}
+        max_minutes: {type: integer, description: Omitted for the open-ended last range}
+        probability: {type: number, minimum: 0, maximum: 1}
+    DelayPrediction:
+      type: object
+      required: [route_id, train_name, date, from, to, buckets, most_likely, model_version, is_mock, generated_at]
+      properties:
+        route_id: {type: integer}
+        train_name: {type: string}
+        date: {type: string, format: date}
+        from: {$ref: '#/components/schemas/ScheduleEndpoint'}
+        to: {$ref: '#/components/schemas/ScheduleEndpoint'}
+        buckets:
+          type: array
+          description: All seven ranges in order; probabilities sum to 1
+          items: {$ref: '#/components/schemas/DelayBucket'}
+        most_likely: {type: string, description: '`range` of the most probable bucket'}
+        model_version: {type: string}
+        is_mock: {type: boolean, description: True while the prediction is a placeholder, not a model output}
+        generated_at: {type: string, format: date-time}
 
     LiveTrainsResponse:
       type: object
