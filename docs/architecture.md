@@ -23,7 +23,7 @@ role). Everything runs locally under Docker Compose; there is no deployment targ
 |---|---|---|
 | `airflow/dags` | Three thin TaskFlow DAGs; each task calls one `pociag_processing.pipelines.sync_*` | [specs/pipelines.md](../specs/pipelines.md) |
 | `airflow/plugins/pociag_processing` | Fetch PLK, normalise, write. `plk.py` (HTTP), `transform.py` (pure payload → `models.py` rows; all PLK quirks), `repository.py` (all SQL), `pipelines.py` (entrypoints), `tracing.py`, `data/station_coordinates.json` | [specs/pipelines.md](../specs/pipelines.md) |
-| `db/migrations` | The schema below (golang-migrate) | `001_init.up.sql` |
+| `db/migrations` | The schema below (golang-migrate) | `001_init.up.sql`, `002_disruption_id_bigint.up.sql` |
 | `services/go/api` | Frontend-shaped read API: `handler` (HTTP) → `service` (builds views, pure) → `repository` (pgx SQL); `position` is the train-position model | [specs/openapi/api.yml](../specs/openapi/api.yml) |
 | `services/frontend` | Next.js 15 UI, rendered in the browser; all data from the api | `src/lib/api.ts` (hand-written types with `api.yml` field names) |
 | `infra/` | Compose stack, OTel Collector, Prometheus, Grafana | `infra/docker-compose.yml` |
@@ -84,7 +84,7 @@ disruptions ──► stations (start, end; nullable)
 | `schedule_stops` | Planned stop: arrival/departure offsets (may exceed 24 h), platform, track | (train, seq); seq renumbered 1..n |
 | `operations` | A train's run on an operating date and its status | surrogate id; unique (train, date) |
 | `operation_stops` | Planned vs actual arrival/departure (actual = PLK forecast until `is_confirmed`), delays in minutes, cancelled | (operation, seq); seq = PLK `actualSequenceNumber` |
-| `disruptions` | Disruptions for today and tomorrow; dates = min/max affected operating date; `affected_trains` = number of distinct affected runs (the runs themselves are not stored) | PLK id, unique only within one response |
+| `disruptions` | Disruptions for today and tomorrow; dates = min/max affected operating date; `affected_trains` = number of distinct affected runs (the runs themselves are not stored) | PLK id (`BIGINT`: PLK ids are int64 and exceed the INTEGER range), unique only within one response |
 
 Child rows cascade on delete of their train / operation.
 
@@ -199,6 +199,13 @@ Child rows cascade on delete of their train / operation.
   api is on both, so the frontend can reach only the api.
 - **Volumes** — `postgres_data`, `airflow_db_data`, `airflow_logs`, `prometheus_data`,
   `grafana_data`. Only the two Postgres services and the api (`/healthz`) have healthchecks.
+- **Bind mounts after a WSL restart** — Airflow (`dags/`, `plugins/`), the collector, Prometheus
+  and Grafana mount files from the checkout. If Docker restarts the containers before the
+  Windows drive is mounted in WSL, those mounts come up empty: Airflow lists no DAGs and the data
+  stops updating. Recreate them (plain `make up` does not, since their config is unchanged):
+  `docker compose -f infra/docker-compose.yml --profile all up -d --force-recreate --no-deps
+  airflow-webserver airflow-scheduler otel-collector prometheus grafana`. Missed syncs then
+  catch up on their own.
 - **Migrations** — the `migrate` service applies them on every `up`; `make db-migrate-*` runs the
   same image on the host network against `DB_URL` (port 5434, password from `infra/.env`).
 - **Config** — `PLK_BASE_URL`, `PLK_API_KEY` (required), `POSTGRES_PASSWORD`,
@@ -239,7 +246,7 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
 
 `.github/workflows/ci-cd.yaml` on every branch push: `api` (`go test -race`, golangci-lint pinned to v2.14.0)
 and `airflow` (ruff, mypy strict via `pyproject.toml`, pytest), each with a Postgres 16 service for the SQL tests,
-which load `001_init.up.sql` directly; `frontend` (`next build`); `images` (`docker build` of the api and
+which apply every `db/migrations/*.up.sql` in order; `frontend` (`next build`); `images` (`docker build` of the api and
 frontend). The deploy job is a placeholder.
 
 ## Design decisions

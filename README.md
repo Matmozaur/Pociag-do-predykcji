@@ -22,6 +22,15 @@ Migrations run on start and the DAGs are unpaused, so data appears within minute
 operations every 10 min, disruptions every 15 min, stations and timetables daily at 02:30
 (trigger `sync_schedules` in Airflow for an immediate first load).
 
+If Airflow shows no DAGs after a Windows/WSL restart, the containers started before the
+checkout was mounted. Recreate the containers that mount it (see "Bind mounts after a WSL
+restart" in `docs/architecture.md`):
+
+```bash
+docker compose -f infra/docker-compose.yml --profile all up -d --force-recreate --no-deps \
+  airflow-webserver airflow-scheduler otel-collector prometheus grafana
+```
+
 ## Commands
 
 Host checks need Docker, Go 1.25+, uv and Node 22. An older `go` (1.21+) still works: with the

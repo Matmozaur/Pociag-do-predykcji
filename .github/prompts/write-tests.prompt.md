@@ -8,7 +8,7 @@ Write tests for: **`${input:targetFile}`** (or the currently selected code).
 ## Testing strategy
 
 1. **Unit tests** — test each function/method in isolation, with the repo's fakes instead of real dependencies.
-2. **SQL tests** — repository code runs against a real disposable PostgreSQL named by `POCIAG_TEST_DATABASE_URL`; the test skips when it is unset and recreates that database's `public` schema, then applies `db/migrations/001_init.up.sql`. No testcontainers, no build tags.
+2. **SQL tests** — repository code runs against a real disposable PostgreSQL named by `POCIAG_TEST_DATABASE_URL`; the test skips when it is unset and recreates that database's `public` schema, then applies every `db/migrations/*.up.sql` in order. No testcontainers, no build tags.
 3. **Edge cases** — empty inputs, boundary values, error paths, concurrent access where relevant.
 
 ## Go test conventions (`services/go/api`)
