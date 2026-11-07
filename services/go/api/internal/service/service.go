@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/position"
+	"github.com/pociag-do-predykcji/services/go/api/internal/prediction"
 )
 
 // ErrNotFound is returned by Repository lookups of a missing id.
@@ -152,12 +153,14 @@ type Repository interface {
 }
 
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo      Repository
+	predictor prediction.Predictor
+	now       func() time.Time
 }
 
+// New serves views from repo. Delay predictions are mocked until the ML service exists.
 func New(repo Repository) *Service {
-	return &Service{repo: repo, now: time.Now}
+	return &Service{repo: repo, predictor: prediction.Mock{}, now: time.Now}
 }
 
 func (s *Service) Ready(ctx context.Context) error {

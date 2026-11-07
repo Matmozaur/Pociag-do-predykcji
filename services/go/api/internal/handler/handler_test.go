@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
@@ -49,6 +50,9 @@ func TestBadRequests(t *testing.T) {
 		"/api/v1/schedules/search?from=1&to=2&date=2026-10-05&offset=1000001",
 		"/api/v1/trains/-5",
 		"/api/v1/disruptions?limit=101",
+		"/api/v1/schedules/3/delay-prediction",
+		"/api/v1/schedules/3/delay-prediction?date=2026-10-05&from=0",
+		"/api/v1/schedules/3/delay-prediction?date=2000-01-01",
 	} {
 		rec := serve(&servicetest.Repository{}, target)
 		if rec.Code != http.StatusBadRequest {
@@ -58,7 +62,7 @@ func TestBadRequests(t *testing.T) {
 }
 
 func TestNotFound(t *testing.T) {
-	for _, target := range []string{"/api/v1/trains/42", "/api/v1/schedules/42", "/api/v1/stations/42/board"} {
+	for _, target := range []string{"/api/v1/trains/42", "/api/v1/schedules/42", "/api/v1/stations/42/board", "/api/v1/schedules/42/delay-prediction?date=" + time.Now().AddDate(0, 0, 1).Format(time.DateOnly)} {
 		rec := serve(&servicetest.Repository{}, target)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", target, rec.Code)

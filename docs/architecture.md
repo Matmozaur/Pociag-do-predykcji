@@ -128,6 +128,11 @@ Child rows cascade on delete of their train / operation.
   < 30 min ago; else `low`).
 - **Station board** — stops planned in [now − 6 h, now + 12 h], excluding `X` runs; bucketed into
   at station (terminus: 5 min after arrival), arrivals and departures.
+- **Delay prediction** (`/schedules/{routeId}/delay-prediction`) — probability of the arrival delay
+  at a chosen stop falling in each of seven ranges (`0-5` … `120+` min) for a run up to 14 days
+  ahead. The service validates the run and journey and calls a `prediction.Predictor`; today
+  that is `prediction.Mock` (`is_mock: true`). A future ML service (inputs: route, train,
+  weather forecast, historical delays) replaces it behind the same interface.
 - **Dashboard** — today's Warsaw operating date: counts by status (`in_progress` uses the 15 min
   snapshot window); on-time % and average delay are over started trains (`in_progress` +
   `completed`) with at least one confirmed stop, on-time being ≤ 5 min by maximum confirmed

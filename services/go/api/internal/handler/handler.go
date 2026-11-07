@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,6 +45,7 @@ func (h *Handler) Routes() http.Handler {
 		r.Get("/stations/{stationId}/board", h.stationBoard)
 		r.Get("/schedules/search", h.searchSchedules)
 		r.Get("/schedules/{routeId}", h.scheduleDetail)
+		r.Get("/schedules/{routeId}/delay-prediction", h.delayPrediction)
 		r.Get("/trains/live", h.liveTrains)
 		r.Get("/trains/{operationId}", h.trainDetail)
 		r.Get("/disruptions", h.disruptions)
@@ -137,6 +139,27 @@ func (h *Handler) scheduleDetail(w http.ResponseWriter, r *http.Request) {
 	h.respond(w, r, "failed to load schedule")(h.svc.ScheduleDetail(r.Context(), trainID))
 }
 
+func (h *Handler) delayPrediction(w http.ResponseWriter, r *http.Request) {
+	trainID, ok := idParam(w, r, "routeId")
+	if !ok {
+		return
+	}
+	date, err := time.Parse(time.DateOnly, r.URL.Query().Get("date"))
+	if err != nil {
+		badRequest(w, "date must be in YYYY-MM-DD format")
+		return
+	}
+	from, ok := intParam(w, r, "from", 0, 1, math.MaxInt32)
+	if !ok {
+		return
+	}
+	to, ok := intParam(w, r, "to", 0, 1, math.MaxInt32)
+	if !ok {
+		return
+	}
+	h.respond(w, r, "failed to predict delay")(h.svc.DelayPrediction(r.Context(), trainID, date, from, to))
+}
+
 func (h *Handler) liveTrains(w http.ResponseWriter, r *http.Request) {
 	sortBy := r.URL.Query().Get("sort")
 	if sortBy != "" && sortBy != service.SortDelay {
@@ -180,8 +203,8 @@ func (h *Handler) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// respond returns a function that writes a service result: 200 with the payload, 404 for
-// service.ErrNotFound, 500 (logged) otherwise. Usage: h.respond(w, r, msg)(h.svc.X(...)).
+// respond returns a function that writes a service result: 200 with the payload, 400 for a
+// service.InvalidRequestError, 404 for service.ErrNotFound, 500 (logged) otherwise. Usage: h.respond(w, r, msg)(h.svc.X(...)).
 func (h *Handler) respond(w http.ResponseWriter, r *http.Request, failure string) func(any, error) {
 	return func(payload any, err error) {
 		if err != nil {
@@ -195,6 +218,10 @@ func (h *Handler) respond(w http.ResponseWriter, r *http.Request, failure string
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error, message string) {
 	span := trace.SpanFromContext(r.Context())
 	span.RecordError(err)
+	if invalid := (*service.InvalidRequestError)(nil); errors.As(err, &invalid) {
+		badRequest(w, invalid.Message)
+		return
+	}
 	if errors.Is(err, service.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "resource not found"})
 		return
