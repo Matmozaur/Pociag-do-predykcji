@@ -109,14 +109,15 @@ type Disruption struct {
 }
 
 // DayStatistics summarises the runs of one operating date. Started counts runs in progress or
-// completed; OnTime and AvgDelay only consider those, by their largest confirmed delay.
+// completed; Rated, OnTime and AvgDelay only consider those, by their largest confirmed delay.
 type DayStatistics struct {
 	Total      int
 	InProgress int // status P and in the latest snapshot
 	Completed  int
 	Cancelled  int // fully or partially
-	Started    int
-	OnTime     int // max delay <= 5 minutes
+	Started    int // InProgress + Completed
+	Rated      int // started, with at least one confirmed stop (a known delay)
+	OnTime     int // rated, with max confirmed delay <= 5 minutes
 	AvgDelay   *float64
 }
 

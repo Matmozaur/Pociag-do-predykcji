@@ -23,7 +23,7 @@ role). Everything runs locally under Docker Compose; there is no deployment targ
 |---|---|---|
 | `airflow/dags` | Three thin TaskFlow DAGs; each task calls one `pociag_processing.pipelines.sync_*` | [specs/pipelines.md](../specs/pipelines.md) |
 | `airflow/plugins/pociag_processing` | Fetch PLK, normalise, write. `plk.py` (HTTP), `transform.py` (pure payload → `models.py` rows; all PLK quirks), `repository.py` (all SQL), `pipelines.py` (entrypoints), `tracing.py`, `data/station_coordinates.json` | [specs/pipelines.md](../specs/pipelines.md) |
-| `db/migrations` | The schema below (golang-migrate) | `001_init.up.sql` |
+| `db/migrations` | The schema below (golang-migrate) | `001_init.up.sql`, `002_disruption_id_bigint.up.sql` |
 | `services/go/api` | Frontend-shaped read API: `handler` (HTTP) → `service` (builds views, pure) → `repository` (pgx SQL); `position` is the train-position model | [specs/openapi/api.yml](../specs/openapi/api.yml) |
 | `services/frontend` | Next.js 15 UI, rendered in the browser; all data from the api | `src/lib/api.ts` (hand-written types with `api.yml` field names) |
 | `infra/` | Compose stack, OTel Collector, Prometheus, Grafana | `infra/docker-compose.yml` |
@@ -50,8 +50,8 @@ DAG are in `specs/pipelines.md`.
   `sync_schedules` (one per day). Stations, coordinates and operation stops skip unchanged rows;
   `trains` (by `sync_schedules`) and `operations` (by `sync_operations`) are always updated, so
   their `updated_at` marks freshness; `schedule_stops` are replaced per train; `disruptions` are
-  deleted and re-inserted. `operation_stops` are only upserted: stops PLK drops or renumbers
-  for a run are never removed.
+  deleted and re-inserted. `operation_stops` are upserted, and stops a run's payload no longer
+  lists (PLK dropped or renumbered them) are deleted in the same transaction.
 - **Referential integrity** — each batch upserts its payload's station dictionary first;
   unknown station ids get placeholder `Stacja <id>` rows and operations for unknown trains get
   bare `trains` rows, so FKs always hold.
@@ -84,7 +84,7 @@ disruptions ──► stations (start, end; nullable)
 | `schedule_stops` | Planned stop: arrival/departure offsets (may exceed 24 h), platform, track | (train, seq); seq renumbered 1..n |
 | `operations` | A train's run on an operating date and its status | surrogate id; unique (train, date) |
 | `operation_stops` | Planned vs actual arrival/departure (actual = PLK forecast until `is_confirmed`), delays in minutes, cancelled | (operation, seq); seq = PLK `actualSequenceNumber` |
-| `disruptions` | Disruptions for today and tomorrow; dates = min/max affected operating date; `affected_trains` = number of distinct affected runs (the runs themselves are not stored) | PLK id, unique only within one response |
+| `disruptions` | Disruptions for today and tomorrow; dates = min/max affected operating date; `affected_trains` = number of distinct affected runs (the runs themselves are not stored) | PLK id (`BIGINT`: PLK ids are int64 and exceed the INTEGER range), unique only within one response |
 
 Child rows cascade on delete of their train / operation.
 
@@ -117,7 +117,7 @@ Child rows cascade on delete of their train / operation.
   departure), its operating date is today or yesterday (Europe/Warsaw), its `updated_at` is
   within 15 min of the latest snapshot, and now lies in [effective first departure − 5 min,
   effective last arrival], with cancelled stops ignored. SQL pre-filters, `position.IsActive`
-  decides; carrier filtering and `/trains/live` pagination happen in Go. Freshness is relative to
+  decides; carrier filtering and `/trains/live` sorting and pagination happen in Go. Freshness is relative to
   the latest snapshot, so if ingestion stalls the last snapshot's trains stay live and only their
   `confidence` drops.
 - **Position model** (`internal/position`, pure Go) — effective times (actual, else planned +
@@ -129,7 +129,10 @@ Child rows cascade on delete of their train / operation.
 - **Station board** — stops planned in [now − 6 h, now + 12 h], excluding `X` runs; bucketed into
   at station (terminus: 5 min after arrival), arrivals and departures.
 - **Dashboard** — today's Warsaw operating date: counts by status (`in_progress` uses the 15 min
-  snapshot window), on-time ≤ 5 min by maximum confirmed delay, and data freshness
+  snapshot window); on-time % and average delay are over started trains (`in_progress` +
+  `completed`) with at least one confirmed stop, on-time being ≤ 5 min by maximum confirmed
+  delay (PLK omits delay minutes when on time, so a confirmed stop without them counts as 0);
+  and data freshness
   (`MAX(trains.updated_at)` over trains with operating dates, `MAX(operations.updated_at)`,
   disruption count).
 - **Time** — operating dates and "today" are Europe/Warsaw; times shown to people are Warsaw
@@ -156,8 +159,8 @@ Child rows cascade on delete of their train / operation.
 
 | Route | Endpoints | Refresh |
 |---|---|---|
-| `/mapa` | `map/trains`, `map/stations`, `dashboard/overview`, `trains/live?limit=4`, `disruptions?limit=3`, board of the selected station | trains poll 30 s; live list and board 60 s; stations stale 1 h; overview / disruptions stale 30 / 60 s |
-| `/pociagi`, `/pociagi/[id]` | `trains/live?limit=50`, `dashboard/overview`; `trains/{id}` | poll 60 s |
+| `/mapa` | `map/trains`, `map/stations`, `dashboard/overview`, `trains/live?sort=delay&limit=4`, `disruptions?limit=3`, board of the selected station | trains poll 30 s; live list and board 60 s; stations stale 1 h; overview / disruptions stale 30 / 60 s |
+| `/pociagi`, `/pociagi/[id]` | `trains/live?sort=delay&limit=100` (next pages on demand), `dashboard/overview`; `trains/{id}` | poll 60 s |
 | `/rozklad/[id]` | `schedules/{id}` | stale 5 min |
 | `/utrudnienia` | `disruptions` (top 20) | stale 2 min |
 | `/wyszukaj` | `search/stations` (debounced 300 ms), `schedules/search` | on input (stale 60 s) / submit |
@@ -176,52 +179,64 @@ Child rows cascade on delete of their train / operation.
 
 | Service | Image | Profile | Host → container | Starts after | Role |
 |---|---|---|---|---|---|
-| `postgres` | postgres:16-alpine | — (always) | 5434 → 5432 | — (healthcheck) | Curated DB `pociag` |
+| `postgres` | postgres:16-alpine | — (always) | 127.0.0.1:5434 → 5432 | — (healthcheck) | Curated DB `pociag` |
 | `migrate` | migrate/migrate:v4.18.1 | — (always) | — | postgres healthy | `up` on `db/migrations`, exits |
 | `otel-collector` | otel/opentelemetry-collector-contrib:0.117.0 | — (always) | 4327 → 4317, 4328 → 4318, 8889 | — | OTLP receiver |
-| `api` | build `services/go/api` | — (always) | 8080 → 8080 | migrate done, collector | Read API |
-| `frontend` | build `services/frontend` | frontend | `${FRONTEND_PORT:-3100}` → 3000 | api started | Next.js |
-| `airflow-db` | postgres:16-alpine | airflow | 5433 → 5432 | — (healthcheck) | Airflow metadata only |
+| `api` | build `services/go/api` | — (always) | 8080 → 8080 | migrate done, collector (healthcheck) | Read API |
+| `frontend` | build `services/frontend` | frontend | `${FRONTEND_PORT:-3100}` → 3000 | api healthy | Next.js |
+| `airflow-db` | postgres:16-alpine | airflow | 127.0.0.1:5433 → 5432 | — (healthcheck) | Airflow metadata only |
 | `airflow-init` | apache/airflow:2.10.4 | airflow | — | airflow-db healthy | `db migrate` + `admin` user, exits |
 | `airflow-webserver` | apache/airflow:2.10.4 | airflow | 8090 → 8080 | airflow-init done | UI / REST API |
 | `airflow-scheduler` | apache/airflow:2.10.4 | airflow | — | airflow-init, migrate done | Runs tasks (LocalExecutor) |
-| `jaeger` | jaegertracing/all-in-one:1.63.0 | tracing | 16686 | — | Trace UI, in-memory |
+| `jaeger` | jaegertracing/all-in-one:1.63.0 | — | 16686 | — | Trace UI, in-memory |
 | `prometheus` | prom/prometheus:v3.1.0 | monitoring | 9090 | — | Scrapes collector :8889, 15 d retention |
-| `grafana` | grafana/grafana:11.4.0 | monitoring | 3001 → 3000 | prometheus | Anonymous viewer; nothing provisioned |
+| `grafana` | grafana/grafana:11.4.0 | monitoring | 3001 → 3000 | prometheus | Anonymous viewer; Prometheus datasource provisioned, no dashboards |
 
 - **Profiles** — services without a profile start with every invocation. `make up` =
   `--profile all` (everything); `make up-core` = no profile: postgres, migrate, otel-collector,
-  api.
+  jaeger, api.
 - **Networks** — every service is on `default` except the frontend, which is only on `web`; the
   api is on both, so the frontend can reach only the api.
 - **Volumes** — `postgres_data`, `airflow_db_data`, `airflow_logs`, `prometheus_data`,
-  `grafana_data`. Only the two Postgres services have healthchecks.
+  `grafana_data`. Only the two Postgres services and the api (`/healthz`) have healthchecks.
+- **Bind mounts after a WSL restart** — Airflow (`dags/`, `plugins/`), the collector, Prometheus
+  and Grafana mount files from the checkout. If Docker restarts the containers before the
+  Windows drive is mounted in WSL, those mounts come up empty: Airflow lists no DAGs and the data
+  stops updating. Recreate them (plain `make up` does not, since their config is unchanged):
+  `docker compose -f infra/docker-compose.yml --profile all up -d --force-recreate --no-deps
+  airflow-webserver airflow-scheduler otel-collector prometheus grafana`. Missed syncs then
+  catch up on their own.
 - **Migrations** — the `migrate` service applies them on every `up`; `make db-migrate-*` runs the
-  same image on the host network against `DB_URL` (port 5434).
+  same image on the host network against `DB_URL` (port 5434, password from `infra/.env`).
 - **Config** — `PLK_BASE_URL`, `PLK_API_KEY` (required), `POSTGRES_PASSWORD`,
-  `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY`, `AIRFLOW__WEBSERVER__SECRET_KEY`; optional
-  `FRONTEND_PORT`. Airflow connections are `AIRFLOW_CONN_*` env vars built from these, not rows in
+  `AIRFLOW_DB_PASSWORD`, `AIRFLOW__CORE__FERNET_KEY` (required, generate your own),
+  `AIRFLOW__WEBSERVER__SECRET_KEY`; optional `FRONTEND_PORT`, `AIRFLOW_ADMIN_USERNAME` and
+  `AIRFLOW_ADMIN_PASSWORD` (default `admin`). Airflow connections are `AIRFLOW_CONN_*` env vars built from these, not rows in
   the Airflow DB.
 - **Images** — api: `golang:1.25.0-alpine3.22` → `alpine:3.22.1`, static binary, non-root (uid
-  1001). frontend: `node:22-alpine` deps → build → `next start` on 3000 (runs as root).
+  1001). frontend: `node:22.23.4-alpine3.24` deps → build → `next start` on 3000 with production
+  deps only, non-root (`node`).
   Everything else is a stock image.
 
 ## Observability
 
 ```
 api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
-  traces  → memory_limiter, batch, resource (deployment.environment=local) → Jaeger + debug
+  traces  → memory_limiter, batch, resource (deployment.environment=local) → Jaeger, debug
   metrics → Prometheus exporter :8889 (namespace pociag) ◄── Prometheus (15 s scrape) ◄── Grafana
   logs    → debug
 ```
 
-- **Traces** — api: `otelhttp` server spans (all named `pociag.api`) with repository child spans
-  `db.<noun>.<verb>` (mostly table names), W3C TraceContext. Airflow: `<sync>.sync` › `plk.get` /
+- **Traces** — api: `otelhttp` server spans named `<METHOD> <route>` with repository child spans
+  `db.<noun>.<verb>` (mostly table names; failures set the span's error status), W3C
+  TraceContext. Airflow: `<sync>.sync` › `plk.get` /
   `db.<table>.save|replace`. Both export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (compose
-  sets it). Jaeger runs only with the `tracing` profile, but the
-  collector (always on) always exports to it, so without that profile it logs export errors.
-- **Metrics** — the pipeline exists, but no component emits metrics and Grafana has no datasource
-  or dashboards, so Prometheus/Grafana show no application data yet.
+  sets it). Jaeger has no profile: it starts with the collector, which always exports traces to
+  it, so every compose invocation keeps tracing working. Healthcheck
+  requests (`/healthz`, `/readyz`) are filtered out of traces and metrics.
+- **Metrics** — the api exports `otelhttp` server metrics over OTLP (when the endpoint is set); they
+  reach Prometheus as `pociag_http_server_*`. Airflow emits none. Grafana has a provisioned
+  Prometheus datasource (`infra/grafana/provisioning`) and no dashboards.
 - **Logs** — container stdout via Docker `json-file` (10 MB × 3; the one-shot `migrate` and
   `airflow-init` use the daemon default). api: zap JSON (startup,
   shutdown, readiness, 500s; no access log). Airflow: stdlib `logging` in Airflow's default text
@@ -229,10 +244,10 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
 
 ## CI
 
-`.github/workflows/ci-cd.yaml` on every push and PR: `api` (`go test -race`, golangci-lint v2, unpinned `@latest`)
+`.github/workflows/ci-cd.yaml` on every branch push: `api` (`go test -race`, golangci-lint pinned to v2.14.0)
 and `airflow` (ruff, mypy strict via `pyproject.toml`, pytest), each with a Postgres 16 service for the SQL tests,
-which load `001_init.up.sql` directly. Not in CI: frontend build, image builds. The build and
-deploy jobs are placeholders.
+which apply every `db/migrations/*.up.sql` in order; `frontend` (`next build`); `images` (`docker build` of the api and
+frontend). The deploy job is a placeholder.
 
 ## Design decisions
 
@@ -252,8 +267,8 @@ deploy jobs are placeholders.
 ## Cross-cutting
 
 - Secrets via env vars (`infra/.env`, git-ignored) and Airflow `AIRFLOW_CONN_*` env vars. The
-  committed defaults — `.env.example` passwords and Fernet key, the Airflow `admin/admin` user,
-  the Makefile `DB_URL` — are for local development only.
+  committed defaults — `.env.example` passwords and the Airflow `admin/admin` user — are for
+  local development only; the Fernet key has no default. Both Postgres ports bind to 127.0.0.1.
 - No authentication on the api or the frontend (read-only public data); the Airflow UI and REST
   API use Airflow login / basic auth.
 - Parameterised SQL only.

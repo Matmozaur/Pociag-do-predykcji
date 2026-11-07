@@ -129,6 +129,24 @@ def test_schedules_stops_are_renumbered_in_plk_order() -> None:
     assert stops[0].platform is None
 
 
+@pytest.mark.parametrize("bad_stop", [{}, {"stationId": None}])
+def test_schedules_skip_stop_without_station_id(
+    bad_stop: dict[str, Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    payload = load("schedules.json")
+    route = next(r for r in payload["routes"] if r["orderId"] == 841919828)
+    del route["stations"][1]["stationId"]
+    route["stations"][1].update(bad_stop)
+
+    batch = transform.schedules(payload)
+
+    stops = [s for s in batch.stops if s.train == (2026, 841919828)]
+    assert [s.seq for s in stops] == [1, 2, 3, 4, 5, 6]
+    assert [s.station_id for s in stops][:2] == [150748, 150751]
+    assert len([s for s in batch.stops if s.train == (2026, 379184374)]) == 14
+    assert "Skipped 1 schedule stops" in caplog.text
+
+
 def test_schedules_day_offset_after_midnight() -> None:
     batch = transform.schedules(load("schedules.json"))
     stops = [s for s in batch.stops if s.train == (2026, 379184374)]
@@ -187,6 +205,26 @@ def test_operations_last_copy_of_a_run_wins() -> None:
 
     assert [o.status for o in batch.operations] == ["C"]
     assert len(batch.stops) == 2
+
+
+def test_operations_complete_runs_exclude_payloads_that_prove_nothing() -> None:
+    full, no_stops, bad_stop = (load("operations_page1.json") for _ in range(3))
+    run =(2026, 140621539, date(2026, 10, 4))
+    assert transform.operations([full]).complete_runs == {run}
+
+    no_stops["trains"][0]["stations"] = []
+    assert transform.operations([no_stops]).complete_runs == set()
+
+    del bad_stop["trains"][0]["stations"][0]["stationId"]
+    batch = transform.operations([bad_stop])
+    assert batch.complete_runs == set()
+    assert len(batch.stops) == 5
+
+    # A run seen on more than one page is never complete, even when each copy is valid:
+    # the copies might each hold part of the stops.
+    assert transform.operations([full, bad_stop]).complete_runs == set()
+    assert transform.operations([bad_stop, full]).complete_runs == set()
+    assert transform.operations([full, load("operations_page1.json")]).complete_runs == set()
 
 
 def test_operations_skip_unknown_status() -> None:

@@ -21,7 +21,7 @@ processors:
         action: upsert
 
 exporters:
-  # Forward traces to Jaeger (enabled when tracing profile is active)
+  # Forward traces to Jaeger (always running alongside the collector, see docker-compose.yml)
   otlp/jaeger:
     endpoint: jaeger:4317
     tls:

@@ -3,11 +3,15 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/model"
 	"github.com/pociag-do-predykcji/services/go/api/internal/position"
 )
+
+// SortDelay orders live trains by delay, largest first.
+const SortDelay = "delay"
 
 // activeTrain is a run that passes the active predicate at an instant, with its estimate.
 type activeTrain struct {
@@ -59,12 +63,18 @@ func (s *Service) activeTrains(ctx context.Context, at time.Time, carriers []str
 	return out, &snapshotUTC, nil
 }
 
-// LiveTrains is the paginated list of active trains.
-func (s *Service) LiveTrains(ctx context.Context, carriers []string, limit, offset int) (*model.LiveTrainsResponse, error) {
+// LiveTrains is the paginated list of active trains, in operation id order unless sortBy is
+// SortDelay. The delay is derived from the stops (position.LastConfirmed) and the active set is
+// decided here, so this sorts in Go rather than in SQL.
+func (s *Service) LiveTrains(ctx context.Context, carriers []string, sortBy string, limit, offset int) (*model.LiveTrainsResponse, error) {
 	now := s.now().UTC()
 	trains, _, err := s.activeTrains(ctx, now, carriers)
 	if err != nil {
 		return nil, err
+	}
+	if sortBy == SortDelay {
+		// Stable: equal delays stay in operation id order, so pages do not shuffle between requests.
+		sort.SliceStable(trains, func(i, j int) bool { return delayBefore(trains[i].Delay, trains[j].Delay) })
 	}
 	page := trains[min(offset, len(trains)):min(offset+limit, len(trains))]
 
@@ -93,6 +103,14 @@ func (s *Service) LiveTrains(ctx context.Context, carriers []string, limit, offs
 		Pagination:  model.NewPagination(len(trains), limit, offset),
 		GeneratedAt: now,
 	}, nil
+}
+
+// delayBefore orders the largest delay first and an unknown delay (nil) last.
+func delayBefore(a, b *int) bool {
+	if a == nil || b == nil {
+		return a != nil && b == nil
+	}
+	return *a > *b
 }
 
 // MapTrains returns the active trains that have an estimated position; the others are counted

@@ -128,9 +128,10 @@ paths:
 
   /api/v1/trains/live:
     get:
-      summary: Active trains (same definition as /map/trains), ordered by operation id
+      summary: Active trains (same definition as /map/trains), ordered by operation id by default
       parameters:
         - $ref: '#/components/parameters/Carriers'
+        - {name: sort, in: query, description: 'Set to `delay` for the largest delay first (early trains below on-time ones, unknown delay last, ties by operation id), applied before pagination. Omitted means operation id order.', schema: {type: string, enum: [delay]}}
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
       responses:
@@ -188,7 +189,7 @@ components:
   parameters:
     Carriers: {name: carriers, in: query, description: Comma-separated carrier codes, schema: {type: string}}
     Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
-    Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+    Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
 
   responses:
     Error:
@@ -423,7 +424,7 @@ components:
       type: object
       required: [id, message, affected_routes_count, severity]
       properties:
-        id: {type: integer, description: Only stable within one snapshot}
+        id: {type: integer, format: int64, description: 'Only stable within one snapshot. PLK ids can exceed 2^53, so treat it as an opaque key'}
         start_station: {type: string}
         end_station: {type: string}
         message: {type: string}
@@ -444,8 +445,8 @@ components:
             in_progress: {type: integer, description: Status P and in the latest snapshot}
             completed: {type: integer}
             cancelled: {type: integer, description: Fully or partially}
-            avg_delay_minutes: {type: number, description: Over started trains with a delay}
-            on_time_percentage: {type: number, description: Started trains with max confirmed delay <= 5 min}
+            avg_delay_minutes: {type: number, description: 'Mean maximum confirmed delay of started trains (in_progress + completed) with a delay'}
+            on_time_percentage: {type: number, description: 'Among started trains (in_progress + completed) with at least one confirmed stop, the share whose max confirmed delay is <= 5 min. Started trains with no confirmed stop yet are left out. A confirmed stop without delay minutes counts as 0'}
         disruptions_active: {type: integer}
         data_freshness:
           type: object

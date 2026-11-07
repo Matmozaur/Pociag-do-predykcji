@@ -17,7 +17,7 @@ from pociag_processing import transform
 from pociag_processing.models import Station
 from pociag_processing.plk import PlkClient
 from pociag_processing.repository import Repository
-from pociag_processing.tracing import get_tracer
+from pociag_processing.tracing import sync_span
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def sync_stations(
 ) -> dict[str, int]:
     """PLK station dictionary + cities + curated coordinates."""
     client, repository = client or PlkClient(), repository or Repository()
-    with get_tracer().start_as_current_span("stations.sync"):
+    with sync_span("stations.sync"):
         stations: list[Station] = []
         for page in client.stations():
             stations.extend(transform.stations(page))
@@ -51,7 +51,7 @@ def sync_schedules(
     """Trains and planned stops for each day, one PLK request and one transaction per day."""
     client, repository = client or PlkClient(), repository or Repository()
     summary = {"days": 0, "trains": 0, "stops": 0}
-    with get_tracer().start_as_current_span("schedules.sync"):
+    with sync_span("schedules.sync"):
         for day in days:
             batch = transform.schedules(client.schedules(day))
             repository.save_schedules(batch)
@@ -67,7 +67,7 @@ def sync_operations(
 ) -> dict[str, int]:
     """The current PLK operations snapshot."""
     client, repository = client or PlkClient(), repository or Repository()
-    with get_tracer().start_as_current_span("operations.sync"):
+    with sync_span("operations.sync"):
         batch = transform.operations(client.operations())
         repository.save_operations(batch)
     summary = {"operations": len(batch.operations), "stops": len(batch.stops)}
@@ -80,7 +80,7 @@ def sync_disruptions(
 ) -> dict[str, int]:
     """Replace the disruption snapshot with the disruptions affecting today and tomorrow."""
     client, repository = client or PlkClient(), repository or Repository()
-    with get_tracer().start_as_current_span("disruptions.sync"):
+    with sync_span("disruptions.sync"):
         batch = transform.disruptions(client.disruptions(today, today + timedelta(days=1)))
         repository.replace_disruptions(batch)
     summary = {"disruptions": len(batch.disruptions)}

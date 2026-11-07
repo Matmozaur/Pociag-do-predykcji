@@ -11,7 +11,7 @@ x-logging: &logging
 x-airflow-env: &airflow-env
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/airflow
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
-  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:?Set AIRFLOW__CORE__FERNET_KEY in infra/.env, see infra/.env.example}
   AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
   AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
   AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
@@ -30,7 +30,7 @@ services:
       POSTGRES_USER: pociag
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - 5434:5432
+      - 127.0.0.1:5434:5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -53,6 +53,9 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.117.0
     restart: unless-stopped
+    depends_on:
+      jaeger:
+        condition: service_started
     volumes:
       - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
     ports:
@@ -79,6 +82,12 @@ services:
     networks:
       - default
       - web
+    healthcheck:
+      # busybox wget from the alpine base; not --spider, which sends HEAD (the route is GET only).
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/healthz]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     logging: *logging
 
   frontend:
@@ -88,7 +97,7 @@ services:
     restart: unless-stopped
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     environment:
       API_URL: http://api:8080
       NODE_ENV: production
@@ -107,7 +116,7 @@ services:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
     ports:
-      - 5433:5432
+      - 127.0.0.1:5433:5432
     volumes:
       - airflow_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -123,14 +132,17 @@ services:
     depends_on:
       airflow-db:
         condition: service_healthy
-    environment: *airflow-env
+    environment:
+      <<: *airflow-env
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
     entrypoint: /bin/bash
     command:
       - -c
       - |
         airflow db migrate &&
-        airflow users create --username admin --password admin --role Admin \
-          --firstname Admin --lastname User --email admin@example.com || true
+        airflow users create --username "$$AIRFLOW_ADMIN_USERNAME" --password "$$AIRFLOW_ADMIN_PASSWORD" \
+          --role Admin --firstname Admin --lastname User --email "$$AIRFLOW_ADMIN_USERNAME@example.com"
     restart: on-failure
 
   airflow-webserver:
@@ -169,7 +181,6 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one:1.63.0
-    profiles: [tracing, all]
     restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: 'true'

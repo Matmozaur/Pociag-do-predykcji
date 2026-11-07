@@ -18,13 +18,26 @@ The script:
   common suffixes such as "Główny"/"Gł." and "Osobowa"/"Os." canonicalised or stripped;
 * breaks ties with the PLK ``city``, by collapsing nearby duplicates, and by proximity to
   already-matched stations of the same town; if the tie remains, the station is left unmatched;
-* writes the JSON in the existing ``{source, stations: [...]}`` format. Entries already present in
-  the curated file always win;
+* replaces the coordinates of low-precision curated entries (see ``is_low_precision``) with their
+  OSM match, unless the match is suspiciously far (see ``refine_low_precision``);
+* writes the JSON in the existing ``{source, stations: [...]}`` format. Other entries already
+  present in the curated file always win;
 * prints a coverage report, then the unmatched stations.
 
 Generated entries become part of the curated file. A later run therefore keeps them as they are.
 To rebuild from scratch, pass ``--curated`` pointing at a file that holds only the hand-curated
 entries.
+
+With ``--adjacent-stops``, new stations (those with no curated entry yet) are added only when
+the timetable confirms the match (see ``fill_missing_coordinates``). Low-precision curated
+entries are refined from OSM either way (see ``refine_low_precision``). Export the pairs from the
+curated DB::
+
+    psql -h localhost -p 5434 -U pociag -d pociag -c "\\copy (SELECT DISTINCT station_id,
+        next_station_id FROM (SELECT station_id, lead(station_id) OVER (PARTITION BY train_id
+        ORDER BY seq) AS next_station_id FROM schedule_stops) s WHERE next_station_id IS NOT NULL
+        AND next_station_id <> station_id) TO 'adjacent.csv' CSV HEADER"
+    python scripts/build_station_coordinates.py stations.csv --adjacent-stops adjacent.csv
 """
 
 from __future__ import annotations
@@ -145,6 +158,24 @@ DUPLICATE_RADIUS_KM = 2.0
 TOWN_RADIUS_KM = 25.0
 # ...and clearly closer than the runner-up.
 TOWN_MARGIN_KM = 15.0
+# A match for a station without coordinates must lie this close to a stop the timetable puts next
+# to it. Express hops can be longer: those stations stay empty rather than risk a wrong location.
+NEIGHBOUR_RADIUS_KM = 20.0
+# ...and a same-named candidate elsewhere must be at least this much farther from those stops.
+NEIGHBOUR_MARGIN_KM = 25.0
+# Operator suffix PLK appends to one physical station ("Gdańsk Oliwa SKM").
+_OPERATOR_SUFFIXES = frozenset({"skm"})
+# Regional adjective OSM may add to a name PLK leaves bare ("Międzybórz" -> "Międzybórz Sycowski").
+_REGIONAL_QUALIFIER = re.compile(r"(ski|ska|skie|cki|cka|ckie)$")
+
+# Hand-typed entries are approximate and have at most 4 decimals, with a value of at most this many.
+# One short value alone is not enough: ``round(x, 5)`` drops trailing zeros, so an OSM entry such as
+# (52.12345, 18.12300) is precise. Its other value has the full ``GENERATED_DECIMALS``.
+LOW_PRECISION_DECIMALS = 3
+GENERATED_DECIMALS = 5
+# A low-precision entry further than this from its OSM match is kept and reported, not replaced:
+# hand-typed values are off by a few km, so a larger gap means a wrong name match.
+MAX_REFINE_SHIFT_KM = 10.0
 
 
 @dataclass(frozen=True)
@@ -431,6 +462,127 @@ def match_stations(
     return ordered, unmatched
 
 
+# --------------------------------------------------------------------------- filling gaps
+
+
+def _distance_to(candidate: OsmStation, points: Sequence[tuple[float, float]]) -> float:
+    return min(
+        (haversine_km(candidate.latitude, candidate.longitude, lat, lon) for lat, lon in points),
+        default=math.inf,
+    )
+
+
+def resolve_by_route(
+    candidates: Sequence[OsmStation], neighbours: Sequence[tuple[float, float]]
+) -> OsmStation | None:
+    """Pick the one candidate the timetable places next to ``neighbours``, or ``None``.
+
+    Candidates within ``DUPLICATE_RADIUS_KM`` of the winner are the same physical station. Any other
+    candidate must be at least ``NEIGHBOUR_MARGIN_KM`` farther from the neighbours.
+    """
+    scored = sorted(candidates, key=lambda c: (_distance_to(c, neighbours), c.osm_id))
+    if not scored or _distance_to(scored[0], neighbours) > NEIGHBOUR_RADIUS_KM:
+        return None
+    best = scored[0]
+    margin = _distance_to(best, neighbours) + NEIGHBOUR_MARGIN_KM
+    for other in scored[1:]:
+        if _distance(best, other) > DUPLICATE_RADIUS_KM and _distance_to(other, neighbours) < margin:
+            return None
+    return best
+
+
+def _qualified_candidates(station: PlkStation, osm: Iterable[OsmStation]) -> list[OsmStation]:
+    """OSM stations named like ``station`` plus one regional adjective."""
+    wanted = normalise_name(station.name).split()
+    found: list[OsmStation] = []
+    for candidate in osm:
+        for name in candidate.names:
+            tokens = normalise_name(name).split()
+            if (
+                tokens[:-1] == wanted
+                and _REGIONAL_QUALIFIER.search(tokens[-1])
+                and candidate not in found
+            ):
+                found.append(candidate)
+    return found
+
+
+def _without_operator_suffix(name: str) -> str | None:
+    tokens = normalise_name(name).split()
+    kept = [tok for tok in tokens if tok not in _OPERATOR_SUFFIXES]
+    return " ".join(kept) if kept and len(kept) < len(tokens) else None
+
+
+def fill_missing_coordinates(
+    plk: Sequence[PlkStation],
+    osm: Sequence[OsmStation],
+    curated: Sequence[dict[str, Any]],
+    adjacent: Iterable[tuple[int, int]],
+) -> tuple[list[Match], list[tuple[PlkStation, str]]]:
+    """Match only the stations missing from ``curated``, preferring no match over a wrong one.
+
+    ``match_stations`` runs first. Its result is then checked against the curated coordinates of the
+    stops next to each station in the timetable:
+
+    * a match farther than ``NEIGHBOUR_RADIUS_KM`` from every such stop is rejected;
+    * a same-name tie is resolved only by ``resolve_by_route``;
+    * an operator suffix may be dropped if the remaining name is one place;
+    * a regional adjective may be added only if the timetable confirms it. Without neighbours a
+      bare name is too weak: OSM "Stobno" near Piła is not PLK "Stobno Szczecińskie".
+    """
+    known = {
+        int(e["external_id"]): (float(e["latitude"]), float(e["longitude"]))
+        for e in curated
+        if e.get("latitude") is not None and e.get("longitude") is not None
+    }
+    neighbours: dict[int, set[int]] = defaultdict(set)
+    for a, b in adjacent:
+        neighbours[a].add(b)
+        neighbours[b].add(a)
+    missing = [st for st in plk if st.external_id not in known]
+    tiers = dict(build_index(osm))
+
+    def points(st: PlkStation) -> list[tuple[float, float]]:
+        return [known[n] for n in sorted(neighbours[st.external_id]) if n in known]
+
+    def confirmed(st: PlkStation, candidate: OsmStation) -> bool:
+        near = points(st)
+        return not near or _distance_to(candidate, near) <= NEIGHBOUR_RADIUS_KM
+
+    base_matches, base_unmatched = match_stations(missing, osm)
+    matches: list[Match] = []
+    unmatched: list[tuple[PlkStation, str]] = []
+    for match in base_matches:
+        if confirmed(match.station, match.osm):
+            matches.append(match)
+        else:
+            unmatched.append((match.station, f"far from route neighbours ({match.osm.osm_id})"))
+
+    for st, why in base_unmatched:
+        chosen: OsmStation | None = None
+        method = ""
+        if why == "no-candidate":
+            bare = _without_operator_suffix(st.name)
+            unique = collapse_duplicates(tiers["name"].get(bare, [])) if bare else None
+            if unique is not None and confirmed(st, unique):
+                chosen, method = unique, "operator-suffix"
+            else:
+                chosen = resolve_by_route(_qualified_candidates(st, osm), points(st))
+                method = "qualifier:route"
+        elif why.startswith("ambiguous"):
+            kind, candidates = next(
+                (k, index[_plk_key(k, st.name)])
+                for k, index in tiers.items()
+                if _plk_key(k, st.name) in index
+            )
+            chosen, method = resolve_by_route(candidates, points(st)), f"{kind}:route"
+        if chosen is not None:
+            matches.append(Match(st, chosen, method))
+        else:
+            unmatched.append((st, why))
+    return matches, unmatched
+
+
 # --------------------------------------------------------------------------- I/O
 
 
@@ -448,6 +600,11 @@ def load_plk_stations(path: Path) -> list[PlkStation]:
         city = row.get("city") or None
         stations.append(PlkStation(int(row["external_id"]), str(row["name"]).strip(), city))
     return stations
+
+
+def load_adjacent_stops(path: Path) -> list[tuple[int, int]]:
+    with path.open(encoding="utf-8", newline="") as fh:
+        return [(int(row["station_id"]), int(row["next_station_id"])) for row in csv.DictReader(fh)]
 
 
 def load_curated(path: Path) -> list[dict[str, Any]]:
@@ -472,6 +629,55 @@ def build_payload(curated: Sequence[dict[str, Any]], matches: Sequence[Match]) -
         if m.station.external_id not in seen
     ]
     return {"source": SOURCE, "stations": [*curated, *generated]}
+
+
+def _decimals(value: float) -> int:
+    return len(str(value).partition(".")[2])
+
+
+def is_low_precision(entry: dict[str, Any]) -> bool:
+    """Return True if a curated entry has a short value and neither has full OSM precision."""
+    decimals = _decimals(entry["latitude"]), _decimals(entry["longitude"])
+    return min(decimals) <= LOW_PRECISION_DECIMALS and max(decimals) < GENERATED_DECIMALS
+
+
+def refine_low_precision(
+    curated: Sequence[dict[str, Any]], matches: Sequence[Match]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[tuple[dict[str, Any], str]]]:
+    """Replace the coordinates of low-precision curated entries with their OSM match.
+
+    Returns ``(entries, refined, kept)``. ``entries`` holds all curated entries in their original
+    order, ``refined`` the entries that changed, and ``kept`` the low-precision entries left as
+    they are, with the reason.
+    """
+    by_id = {m.station.external_id: m for m in matches}
+    entries: list[dict[str, Any]] = []
+    refined: list[dict[str, Any]] = []
+    kept: list[tuple[dict[str, Any], str]] = []
+    for entry in curated:
+        if not is_low_precision(entry):
+            entries.append(entry)
+            continue
+        match = by_id.get(int(entry["external_id"]))
+        if match is None:
+            entries.append(entry)
+            kept.append((entry, "no-osm-match"))
+            continue
+        shift = haversine_km(
+            entry["latitude"], entry["longitude"], match.osm.latitude, match.osm.longitude
+        )
+        if shift > MAX_REFINE_SHIFT_KM:
+            entries.append(entry)
+            kept.append((entry, f"too-far ({shift:.1f} km from {match.osm.osm_id})"))
+            continue
+        updated = {
+            **entry,
+            "latitude": round(match.osm.latitude, 5),
+            "longitude": round(match.osm.longitude, 5),
+        }
+        entries.append(updated)
+        refined.append(updated)
+    return entries, refined, kept
 
 
 def _pct(part: int, whole: int) -> str:
@@ -516,6 +722,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="read the Overpass JSON from this file if present, otherwise fetch and save it here",
     )
     parser.add_argument(
+        "--adjacent-stops",
+        type=Path,
+        default=None,
+        help="CSV station_id,next_station_id from the timetable: add new stations only when it confirms the match",
+    )
+    parser.add_argument(
         "--active-ids", type=Path, default=None, help="file of station ids (one per line) to report"
     )
     args = parser.parse_args(argv)
@@ -534,6 +746,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"OSM stations/halts with a name: {len(osm)}", file=sys.stderr)
 
     matches, unmatched = match_stations(plk, osm)
+    curated, refined, kept = refine_low_precision(curated, matches)
+    print(f"low-precision entries refined from OSM: {len(refined)}", file=sys.stderr)
+    for entry, why in kept:
+        print(f"low-precision kept: {entry['external_id']}\t{entry['name']}\t{why}", file=sys.stderr)
+    if args.adjacent_stops is not None:
+        adjacent = load_adjacent_stops(args.adjacent_stops)
+        matches, unmatched = fill_missing_coordinates(plk, osm, curated, adjacent)
     payload = build_payload(curated, matches)
     args.output.write_text(
         json.dumps(payload, ensure_ascii=False, indent=4) + "\n", encoding="utf-8"

@@ -13,7 +13,7 @@ See [docs/architecture.md](docs/architecture.md) for how it fits together.
 ## Quick start
 
 ```bash
-cp infra/.env.example infra/.env   # set PLK_API_KEY (and passwords)
+cp infra/.env.example infra/.env   # set PLK_API_KEY, AIRFLOW__CORE__FERNET_KEY (and passwords)
 make up                            # build and start everything
 make urls                          # frontend :3100, api :8080, Airflow :8090 (admin/admin)
 ```
@@ -21,6 +21,15 @@ make urls                          # frontend :3100, api :8080, Airflow :8090 (a
 Migrations run on start and the DAGs are unpaused, so data appears within minutes:
 operations every 10 min, disruptions every 15 min, stations and timetables daily at 02:30
 (trigger `sync_schedules` in Airflow for an immediate first load).
+
+If Airflow shows no DAGs after a Windows/WSL restart, the containers started before the
+checkout was mounted. Recreate the containers that mount it (see "Bind mounts after a WSL
+restart" in `docs/architecture.md`):
+
+```bash
+docker compose -f infra/docker-compose.yml --profile all up -d --force-recreate --no-deps \
+  airflow-webserver airflow-scheduler otel-collector prometheus grafana
+```
 
 ## Commands
 

@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
     AlertTriangle,
     ArrowLeft,
@@ -23,7 +23,6 @@ import {
     delayVariant,
     formatDelay,
     api,
-    sortByDelay,
     statusLabel,
     type DisruptionSummaryView,
     type LiveTrainSummary,
@@ -49,9 +48,9 @@ function QueryMessage({ children, onRetry }: { children: React.ReactNode; onRetr
 
 function Metric({ label, value, tone = 'text-white' }: { label: string; value: string | number; tone?: string }) {
     return (
-        <div className="border-l border-white/10 pl-3 first:border-l-0 first:pl-0">
+        <div className="flex items-baseline justify-between gap-3 border-t border-white/10 pt-2 first:border-t-0 first:pt-0 @xs:block @xs:border-l @xs:border-t-0 @xs:pl-3 @xs:pt-0 @xs:first:border-l-0 @xs:first:pl-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-            <p className={`mt-1 text-lg font-semibold tabular-nums ${tone}`}>{value}</p>
+            <p className={`whitespace-nowrap text-lg font-semibold tabular-nums @xs:mt-1 ${tone}`}>{value}</p>
         </div>
     )
 }
@@ -175,9 +174,8 @@ function MapHome() {
     }, [connectionKey, selectConnection])
 
     const overviewQuery = useQuery({ queryKey: ['dashboardOverview'], queryFn: api.getDashboardOverview, staleTime: 30_000 })
-    // All active trains (shared cache with /pociagi), sorted by delay before truncating.
-    const trainsQuery = useQuery({ queryKey: ['allLiveTrains'], queryFn: () => api.getAllLiveTrains(), staleTime: 30_000, refetchInterval: 60_000 })
-    const topDelayedTrains = useMemo(() => (trainsQuery.data ? sortByDelay(trainsQuery.data.data).slice(0, 4) : []), [trainsQuery.data])
+    const trainsQuery = useQuery({ queryKey: ['topDelayedTrains'], queryFn: () => api.getLiveTrains({ sort: 'delay', limit: 4 }), staleTime: 30_000, refetchInterval: 60_000 })
+    const topDelayedTrains = trainsQuery.data?.data ?? []
     const disruptionsQuery = useQuery({ queryKey: ['mapDisruptions'], queryFn: () => api.listDisruptions(3), staleTime: 60_000 })
     const isRefreshing = overviewQuery.isFetching || trainsQuery.isFetching || disruptionsQuery.isFetching
     const refreshAll = () => { void Promise.all([overviewQuery.refetch(), trainsQuery.refetch(), disruptionsQuery.refetch()]) }
@@ -237,9 +235,9 @@ function MapHome() {
                     </Button>
                 </div>
 
-                <section aria-label="Najważniejsze wskaźniki" className="mb-5">
+                <section aria-label="Najważniejsze wskaźniki" className="@container mb-5">
                     {overviewQuery.isLoading ? <div className="grid grid-cols-3 gap-3" aria-label="Ładowanie wskaźników"><div className="h-12 animate-pulse rounded bg-white/5" /><div className="h-12 animate-pulse rounded bg-white/5" /><div className="h-12 animate-pulse rounded bg-white/5" /></div> : overviewQuery.isError ? <QueryMessage onRetry={() => overviewQuery.refetch()}>Nie udało się pobrać podsumowania sieci.</QueryMessage> : overviewQuery.data ? (
-                        <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/8 bg-black/15 p-3">
+                        <div className="grid gap-2 rounded-xl border border-white/8 bg-black/15 p-3 @xs:grid-cols-[repeat(3,auto)]">
                             <Metric label="W ruchu" value={overviewQuery.data.statistics.in_progress ?? '—'} tone="text-emerald-300" />
                             <Metric label="Śr. opóźnienie" value={overviewQuery.data.statistics.avg_delay_minutes == null ? '—' : `${overviewQuery.data.statistics.avg_delay_minutes.toFixed(2)} min`} tone="text-amber-300" />
                             <Metric label="Utrudnienia" value={overviewQuery.data.disruptions_active} tone={overviewQuery.data.disruptions_active > 0 ? 'text-red-300' : 'text-emerald-300'} />

@@ -27,7 +27,7 @@ function formatDuration(minutes: number): string {
 function ConnectionRow({ result }: { result: ScheduleSearchResult }) {
     const category = result.commercial_category ?? result.carrier.code
     const chipClass = CARRIER_COLORS[category] ?? 'bg-blue-500/20 text-blue-400'
-    const meta = result.stops_count != null ? `${result.carrier.name} · ${result.stops_count} przystanków` : result.carrier.name
+    const meta = `${result.carrier.name} · ${result.stops_count} przystanków`
 
     return (
         <Link href={`/rozklad/${result.route_id}`} className="group flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
@@ -40,9 +40,7 @@ function ConnectionRow({ result }: { result: ScheduleSearchResult }) {
                 <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-white">
                     {result.departure.time} <span className="font-normal text-slate-600">→</span> {result.arrival.time}
                 </span>
-                {result.duration_minutes != null && (
-                    <span className="text-[11px] tabular-nums text-slate-500">{formatDuration(result.duration_minutes)}</span>
-                )}
+                <span className="text-[11px] tabular-nums text-slate-500">{formatDuration(result.duration_minutes)}</span>
             </span>
         </Link>
     )

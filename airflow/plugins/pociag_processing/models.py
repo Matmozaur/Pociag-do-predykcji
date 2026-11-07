@@ -103,6 +103,8 @@ class OperationBatch:
     stations: list[Station] = field(default_factory=list)
     operations: list[Operation] = field(default_factory=list)
     stops: list[OperationStop] = field(default_factory=list)
+    complete_runs: set[RunKey] = field(default_factory=set)
+    """Runs whose payload proves their full stop list, so other stored stops can be removed."""
 
 
 @dataclass(slots=True)
