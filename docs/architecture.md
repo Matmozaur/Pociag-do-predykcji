@@ -15,7 +15,8 @@ api, Airflow tasks ──OTLP gRPC──► OTel Collector ──► Jaeger
 ```
 
 Airflow is the only writer; the api only reads (by convention: it connects as the same `pociag`
-role). Everything runs locally under Docker Compose; there is no deployment target yet.
+role). Locally everything runs under Docker Compose. Production is the same Compose stack on one EC2
+instance (`infra/docker-compose.prod.yml`, behind Caddy), deployed by CI on every merge to `main`.
 
 ## Components
 
@@ -247,7 +248,9 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
 `.github/workflows/ci-cd.yaml` on every branch push: `api` (`go test -race`, golangci-lint pinned to v2.14.0)
 and `airflow` (ruff, mypy strict via `pyproject.toml`, pytest), each with a Postgres 16 service for the SQL tests,
 which apply every `db/migrations/*.up.sql` in order; `frontend` (`next build`); `images` (`docker build` of the api and
-frontend). The deploy job is a placeholder.
+frontend; skipped on `main`). On `main`, `deploy` builds and pushes both images to ECR tagged with the commit SHA,
+then runs `infra/ci-deploy.sh`: an SSM command runs `infra/deploy.sh` on the EC2 host, followed by an HTTP smoke
+test. `deploy-rollback.yaml` redeploys an earlier `main` commit by hand.
 
 ## Design decisions
 
