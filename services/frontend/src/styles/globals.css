@@ -132,9 +132,21 @@ body {
     background: #64748b;
 }
 
-/* Keep map credits above the mobile sheet rather than under its scrollable content. */
+/* Keep map credits above the mobile sheet rather than under its scrollable content;
+   heights match the sheet's collapsed / expanded max-height in MapHomeClient. */
 @media (max-width: 767px) {
     .map-home .leaflet-bottom {
-        bottom: calc(3.5rem + env(safe-area-inset-bottom) + min(52%, 28rem) + 0.25rem);
+        bottom: calc(9.5rem + 0.25rem);
+        transition: bottom 300ms ease-out;
+    }
+
+    .map-home[data-sheet='expanded'] .leaflet-bottom {
+        bottom: calc(min(62%, 32rem) + 0.25rem);
+    }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+    .map-home .leaflet-bottom {
+        transition: none;
     }
 }

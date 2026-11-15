@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer merge must not cancel a production deploy halfway through.
+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
 jobs:
   api:
@@ -118,6 +119,8 @@ jobs:
   images:
     name: Docker images
     runs-on: ubuntu-latest
+    # On main the deploy job builds and pushes these images instead.
+    if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     needs:
       - api
       - airflow
@@ -132,16 +135,57 @@ jobs:
       - name: Build frontend image
         run: docker build -t pociag-frontend:ci services/frontend
 
-  deploy-placeholder:
-    name: Deploy Placeholder (no deployment yet)
+  deploy:
+    name: Deploy to production
     runs-on: ubuntu-latest
     needs:
-      - images
+      - api
+      - airflow
+      - frontend
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     environment:
-      name: staging
+      name: production
+      url: ${{ vars.PROD_URL }}
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - name: Deployment placeholder
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Build and push images
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHA: ${{ github.sha }}
         run: |
-          echo "No deployment configured yet."
-          echo "TODO: Add deployment steps (e.g., Helm/Terraform/SSH) in a future iteration."
+          build_push() {
+            # ECR tags are immutable, so re-running a job must not push the same tag again.
+            if aws ecr describe-images --repository-name "pociag-$1" --image-ids imageTag="$SHA" > /dev/null 2>&1; then
+              echo "pociag-$1:$SHA already exists"
+              return
+            fi
+            docker build -t "$REGISTRY/pociag-$1:$SHA" "$2"
+            docker push "$REGISTRY/pociag-$1:$SHA"
+          }
+          build_push api services/go/api
+          build_push frontend services/frontend
+
+      - name: Deploy through SSM
+        env:
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          PROD_URL: ${{ vars.PROD_URL }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: bash infra/ci-deploy.sh

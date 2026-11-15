@@ -8,6 +8,7 @@ import {
     AlertTriangle,
     ArrowLeft,
     ArrowRight,
+    ChevronUp,
     Maximize2,
     CheckCircle2,
     RefreshCw,
@@ -29,7 +30,7 @@ import {
     type TrainMapPoint,
 } from '@/lib/api'
 import type { ConnectionEnd } from '@/lib/mapSearch'
-import { Badge, Button, Spinner } from '@/lib/ui'
+import { Badge, Button, Spinner, cn } from '@/lib/ui'
 
 function retryLabel(isFetching: boolean) {
     return isFetching ? 'Odświeżanie danych' : 'Odśwież dane'
@@ -110,6 +111,10 @@ function MapHome() {
     const connectionHeadingRef = useRef<HTMLHeadingElement>(null)
     // The nonce lets picking the same train again re-focus it on the map.
     const [focusedTrain, setFocusedTrain] = useState<{ id: number; nonce: number }>()
+    // Below md the panel is a bottom sheet: collapsed it only peeks, so the map stays usable.
+    // Picking a station or a connection (or opening a link to one) expands it; the check below
+    // adjusts state during render, keyed on the selection.
+    const [sheetExpanded, setSheetExpanded] = useState(() => selectedStationId != null || connection != null)
 
     // The panel shows one thing at a time: a station board, a connection, or the overview.
     const replaceParams = useCallback(
@@ -163,6 +168,12 @@ function MapHome() {
     }, [selectedStationId, selectStation])
 
     const connectionKey = connection ? `${connection.from}\n${connection.to}` : undefined
+    const selectionKey = selectedStationId != null ? `station:${selectedStationId}` : connectionKey != null ? `connection:${connectionKey}` : null
+    const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey)
+    if (selectionKey !== prevSelectionKey) {
+        setPrevSelectionKey(selectionKey)
+        if (selectionKey != null) setSheetExpanded(true)
+    }
     useEffect(() => {
         if (connectionKey == null) return
         connectionHeadingRef.current?.focus()
@@ -181,7 +192,7 @@ function MapHome() {
     const refreshAll = () => { void Promise.all([overviewQuery.refetch(), trainsQuery.refetch(), disruptionsQuery.refetch()]) }
 
     return (
-        <div className="map-home h-full w-full bg-[#0a0c14]">
+        <div className="map-home h-full w-full bg-[#0a0c14]" data-sheet={sheetExpanded ? 'expanded' : 'collapsed'}>
             <TrafficMapClient selectedStationId={selectedStationId} onStationSelect={(station) => selectStation(station.external_id)} focusedTrain={focusedTrain} />
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(10,12,20,.48),transparent_45%),linear-gradient(0deg,rgba(10,12,20,.35),transparent_40%)]" aria-hidden="true" />
 
@@ -196,8 +207,23 @@ function MapHome() {
                 />
             </div>
 
-            <section aria-labelledby={selectedStationId == null && connection == null ? 'map-home-title' : undefined} aria-label={selectedStationId != null ? 'Tablica stacyjna' : connection != null ? 'Połączenia' : undefined} className="map-operations-panel absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[500] mx-2 max-h-[min(52%,28rem)] touch-pan-y overflow-y-auto overscroll-contain rounded-t-2xl border border-white/10 bg-[#121622]/95 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:inset-x-auto md:bottom-auto md:left-5 md:top-[4.5rem] md:mx-0 md:max-h-[calc(100%-5.5rem)] md:w-[390px] md:rounded-2xl md:p-5 lg:top-5 lg:max-h-[calc(100%-2.5rem)]">
-                <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20 md:hidden" aria-hidden="true" />
+            <section aria-labelledby={selectedStationId == null && connection == null ? 'map-home-title' : undefined} aria-label={selectedStationId != null ? 'Tablica stacyjna' : connection != null ? 'Połączenia' : undefined} className={cn(
+                    'map-operations-panel absolute inset-x-0 bottom-0 z-[500] touch-pan-y overflow-y-auto overscroll-contain rounded-t-2xl border border-b-0 border-white/10 bg-[#121622]/95 px-4 pb-4 shadow-2xl shadow-black/40 backdrop-blur-xl transition-[max-height] duration-300 ease-out motion-reduce:transition-none',
+                    sheetExpanded ? 'max-h-[min(62%,32rem)]' : 'max-h-[9.5rem] overflow-hidden',
+                    'md:inset-x-auto md:bottom-auto md:left-5 md:top-[4.5rem] md:max-h-[calc(100%-5.5rem)] md:w-[390px] md:overflow-y-auto md:rounded-2xl md:border-b md:p-5 lg:top-5 lg:max-h-[calc(100%-2.5rem)]',
+                )}
+            >
+                {/* Sheet handle: a real button (44px tall) so it works without drag gestures and with a screen reader. */}
+                <button
+                    type="button"
+                    onClick={() => setSheetExpanded((v) => !v)}
+                    aria-expanded={sheetExpanded}
+                    aria-label={sheetExpanded ? 'Zwiń panel' : 'Rozwiń panel'}
+                    className="sticky top-0 z-10 -mx-4 mb-1 flex h-11 w-[calc(100%+2rem)] flex-col items-center justify-center gap-1 rounded-t-2xl bg-[#121622]/95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 md:hidden"
+                >
+                    <span className="h-1 w-10 rounded-full bg-white/25" aria-hidden="true" />
+                    <ChevronUp size={14} className={cn('text-slate-500 transition-transform', sheetExpanded && 'rotate-180')} aria-hidden="true" />
+                </button>
                 {selectedStationId != null ? (
                     <>
                         <button type="button" onClick={() => selectStation(undefined)} className="mb-3 inline-flex items-center gap-1.5 rounded-md text-sm text-slate-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
