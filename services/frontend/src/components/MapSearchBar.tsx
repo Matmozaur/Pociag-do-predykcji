@@ -225,7 +225,7 @@ export function MapSearchBar({ onSelectStation, onSelectTrain, onSelectConnectio
                             type="button"
                             onClick={clear}
                             aria-label="Wyczyść wyszukiwanie"
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                            className="flex h-9 w-9 items-center justify-center rounded-md text-slate-400 md:h-7 md:w-7 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                         >
                             <X size={15} aria-hidden="true" />
                         </button>

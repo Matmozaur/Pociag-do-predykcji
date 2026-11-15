@@ -24,7 +24,7 @@ export function NavShell({ children, title, showBack }: NavShellProps) {
     const router = useRouter()
 
     return (
-        <div className="flex h-screen overflow-hidden bg-[#0f1117]">
+        <div className="flex h-dvh overflow-hidden bg-[#0f1117]">
             <nav
                 aria-label="Nawigacja boczna"
                 className="hidden w-56 flex-shrink-0 flex-col border-r border-[#2d3148] bg-[#1a1d27] py-6 md:flex"
@@ -67,26 +67,32 @@ export function NavShell({ children, title, showBack }: NavShellProps) {
             </nav>
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                <header className="flex items-center gap-3 border-b border-[#2d3148] bg-[#1a1d27] px-4 py-3 md:hidden">
+                <header className="flex h-[calc(3.25rem+env(safe-area-inset-top))] flex-none items-center gap-2 border-b border-[#2d3148] bg-[#1a1d27] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)] md:hidden">
                     {showBack ? (
                         <button
-                            onClick={() => router.back()}
-                            className="text-slate-400 hover:text-white"
+                            type="button"
+                            // A deep link has no in-app history to go back to; fall back to the map.
+                            onClick={() => (window.history.length > 1 ? router.back() : router.push('/mapa'))}
+                            className="flex h-10 w-10 flex-none items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-[#222536] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                             aria-label="Wróć"
                         >
                             <ArrowLeft size={20} />
                         </button>
                     ) : (
-                        <Train className="text-blue-500" size={20} />
+                        <span className="flex h-10 w-10 flex-none items-center justify-center" aria-hidden="true">
+                            <Train className="text-blue-500" size={20} />
+                        </span>
                     )}
-                    <span className="text-sm font-semibold text-white">{title ?? 'Pociąg do Predykcji'}</span>
+                    <span className="min-w-0 truncate text-sm font-semibold text-white">{title ?? 'Pociąg do Predykcji'}</span>
                 </header>
 
-                <main className="flex-1 overflow-auto pb-16 md:pb-0">{children}</main>
+                {/* Bottom padding keeps the last content clear of the fixed tab bar and the home indicator. */}
+                <main className="min-h-0 flex-1 overflow-auto overscroll-contain pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
 
+                {/* z above Leaflet panes and controls (up to 1000) and the map search bar (1001). */}
                 <nav
                     aria-label="Nawigacja główna"
-                    className="fixed bottom-0 left-0 right-0 flex border-t border-[#2d3148] bg-[#1a1d27] md:hidden"
+                    className="fixed bottom-0 left-0 right-0 z-[1100] flex border-t border-[#2d3148] bg-[#1a1d27] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:hidden"
                 >
                     {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
                         const active = pathname === href || pathname.startsWith(`${href}/`)
@@ -94,13 +100,22 @@ export function NavShell({ children, title, showBack }: NavShellProps) {
                             <Link
                                 key={href}
                                 href={href}
+                                aria-current={active ? 'page' : undefined}
                                 className={cn(
-                                    'flex min-w-0 flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors min-[400px]:text-xs',
+                                    'flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 min-[360px]:text-[11px] min-[400px]:text-xs',
                                     active ? 'text-blue-400' : 'text-slate-500 hover:text-slate-300',
                                 )}
                             >
-                                <Icon size={20} />
-                                {label}
+                                <span
+                                    className={cn(
+                                        'flex h-7 w-12 items-center justify-center rounded-full transition-colors',
+                                        active && 'bg-blue-600/20',
+                                    )}
+                                    aria-hidden="true"
+                                >
+                                    <Icon size={20} />
+                                </span>
+                                <span className="max-w-full truncate px-0.5">{label}</span>
                             </Link>
                         )
                     })}

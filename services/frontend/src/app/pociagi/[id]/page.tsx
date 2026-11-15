@@ -50,7 +50,7 @@ function StopTimeline({ stops }: { stops: TrainStopView[] }) {
                                 )}
                             </div>
 
-                            <div className="mt-1 flex gap-4 text-xs text-slate-500">
+                            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
                                 {stop.planned_arrival && (
                                     <div>
                                         <span className="text-slate-600">Przyj: </span>
@@ -94,7 +94,8 @@ export default function TrainDetailPage() {
             <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-4">
                 <Link
                     href="/pociagi"
-                    className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-white transition-colors"
+                    // The mobile header already has a back button.
+                    className="hidden items-center gap-1 text-sm text-slate-500 transition-colors hover:text-white md:inline-flex"
                 >
                     <ArrowLeft size={14} />
                     Powrót do listy

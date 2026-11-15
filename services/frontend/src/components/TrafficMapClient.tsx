@@ -5,7 +5,7 @@ import L from 'leaflet'
 import Link from 'next/link'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, MapPin, TrainFront } from 'lucide-react'
+import { ArrowRight, ChevronDown, MapPin, TrainFront } from 'lucide-react'
 import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, Polyline, Popup, Rectangle, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { formatDelay, api, type MapStation, type TrainMapPoint, type TrainMapStop } from '@/lib/api'
 import type { RailIndex } from '@/lib/railSnap'
@@ -790,6 +790,8 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
     const [geoBackground, setGeoBackground] = useState<GeoBackground | null>(null)
     const [showStations, setShowStations] = useState(true)
     const [showTrains, setShowTrains] = useState(true)
+    // Below md the legend is folded by default so the layers card covers less of a small map.
+    const [legendOpen, setLegendOpen] = useState(false)
 
     // One canvas for both stations and trains: a Leaflet canvas swallows pointer events
     // for everything underneath it, so two stacked canvases would leave the lower layer
@@ -1018,7 +1020,7 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
                 <PanToStation station={selectedStation} />
             </MapContainer>
 
-            <div className="absolute right-3 top-[4.25rem] z-[450] w-56 rounded-xl border border-white/10 bg-[#121622]/90 p-2.5 text-xs text-slate-300 shadow-lg shadow-black/30 backdrop-blur md:right-4 xl:top-4">
+            <div className="absolute right-3 top-[4.25rem] z-[450] w-48 rounded-xl border border-white/10 bg-[#121622]/90 p-2.5 text-xs text-slate-300 shadow-lg shadow-black/30 backdrop-blur md:right-4 md:w-56 xl:top-4">
                 <div role="group" aria-label="Warstwy mapy" className="grid grid-cols-2 gap-1 rounded-lg bg-black/25 p-1">
                     <LayerToggle pressed={showStations} onToggle={() => setShowStations((v) => !v)} icon={<MapPin size={13} aria-hidden="true" />}>
                         Stacje
@@ -1066,7 +1068,17 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
                                     dane z {formatClock(trainsData.data_as_of)}
                                     {trainsQuery.isError && <span className="text-amber-300"> · nie udało się odświeżyć</span>}
                                 </p>
-                                <ul aria-label="Legenda opóźnień" className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 border-t border-white/8 pt-2 text-[11px] text-slate-400">
+                                <button
+                                    type="button"
+                                    onClick={() => setLegendOpen((v) => !v)}
+                                    aria-expanded={legendOpen}
+                                    aria-controls="map-delay-legend"
+                                    className="-mx-1 mt-1.5 flex min-h-8 w-[calc(100%+0.5rem)] items-center justify-between rounded-md px-1 text-[11px] font-medium text-slate-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 md:hidden"
+                                >
+                                    Legenda
+                                    <ChevronDown size={14} className={cn('transition-transform', legendOpen && 'rotate-180')} aria-hidden="true" />
+                                </button>
+                                <ul id="map-delay-legend" aria-label="Legenda opóźnień" className={cn(legendOpen ? 'grid' : 'hidden', 'mt-2 grid-cols-2 gap-x-2 gap-y-1 border-t border-white/8 pt-2 text-[11px] text-slate-400 md:grid')}>
                                     {LEGEND.map(({ tone, label }) => (
                                         <li key={tone} className="flex items-center gap-1.5">
                                             <span aria-hidden="true" className="h-2.5 w-2.5 flex-none rounded-full ring-1 ring-black/60" style={{ backgroundColor: DELAY_COLORS[tone] }} />
@@ -1089,7 +1101,7 @@ export function TrafficMapClient({ selectedStationId, onStationSelect, focusedTr
                     </div>
                 )}
 
-                <p className="mt-2.5 flex items-center gap-1.5 border-t border-white/8 px-1 pt-2 text-[11px] text-slate-500">
+                <p className={cn(legendOpen ? 'flex' : 'hidden', 'mt-2.5 items-center gap-1.5 border-t border-white/8 px-1 pt-2 text-[11px] text-slate-500 md:flex')}>
                     <span aria-hidden="true" className="h-0.5 w-2.5 flex-none rounded-full bg-slate-500/60" />
                     Linie zagraniczne — tło, bez pociągów
                 </p>

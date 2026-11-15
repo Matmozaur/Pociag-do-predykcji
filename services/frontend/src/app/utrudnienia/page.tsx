@@ -37,7 +37,7 @@ function DisruptionCard({ disruption }: { disruption: DisruptionSummaryView }) {
             </div>
 
             {(disruption.start_station || disruption.end_station) && (
-                <div className="flex items-center gap-1 text-xs text-slate-400">
+                <div className="flex flex-wrap items-center gap-1 text-xs text-slate-400">
                     <span>{disruption.start_station ?? '-'}</span>
                     <ArrowRight size={12} className="text-slate-600" />
                     <span>{disruption.end_station ?? '-'}</span>
@@ -46,7 +46,7 @@ function DisruptionCard({ disruption }: { disruption: DisruptionSummaryView }) {
 
             <p className="text-sm leading-relaxed text-slate-300">{disruption.message}</p>
 
-            <div className="flex items-center justify-between text-xs text-slate-500">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-slate-500">
                 {disruption.date_from && (
                     <div className="flex items-center gap-1">
                         <Calendar size={12} />
