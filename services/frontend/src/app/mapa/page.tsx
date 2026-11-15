@@ -18,7 +18,8 @@ const MapHomeClient = dynamic(
 export default function MapaPage() {
     return (
         <NavShell title="Mapa sieci">
-            <div style={{ height: 'calc(100vh - 57px)' }} className="relative overflow-hidden md:h-screen">
+            {/* Fills <main> (between the mobile header and tab bar), so the page itself never scrolls. */}
+            <div className="relative h-full overflow-hidden">
                 <MapHomeClient />
             </div>
         </NavShell>

@@ -138,22 +138,23 @@ function ConnectionResultCard({ result }: { result: ScheduleSearchResult }) {
 
     return (
         <Link href={`/rozklad/${result.route_id}`} className="block">
-            <Card className="flex items-center gap-4">
+            <Card className="flex items-center gap-3 sm:gap-4">
                 <span className={`flex-shrink-0 rounded-md px-2 py-1 text-xs font-bold ${colorClass}`}>
                     {category}
                 </span>
 
                 <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-white">{result.train_name}</p>
-                    <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
-                        <MapPin size={11} />
-                        <span>{result.carrier.name}</span>
-                        <span className="ml-1">· {result.stops_count} przystankow</span>
+                    <p className="line-clamp-2 break-words text-sm font-semibold text-white sm:truncate">{result.train_name}</p>
+                    <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-slate-500">
+                        <MapPin size={11} className="flex-none" />
+                        <span className="truncate">
+                            {result.carrier.name} · {result.stops_count} przystankow
+                        </span>
                     </div>
                 </div>
 
                 <div className="flex flex-shrink-0 flex-col items-end text-sm">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 tabular-nums sm:gap-2">
                         <span className="font-semibold text-white">{result.departure.time}</span>
                         <span className="text-slate-600">→</span>
                         <span className="font-semibold text-white">{result.arrival.time}</span>

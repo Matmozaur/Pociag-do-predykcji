@@ -78,13 +78,14 @@ function BoardRow({ row, section, now }: { row: StationBoardRow; section: Sectio
                 </span>
 
                 <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                        <span className={cn('truncate text-sm font-medium', row.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-100')}>
+                    <span className="flex min-w-0 items-start gap-1.5">
+                        {/* Two lines on phones instead of cutting the name to a few letters. */}
+                        <span className={cn('line-clamp-2 break-words text-sm font-medium sm:truncate', row.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-100')}>
                             {row.train_name}
                         </span>
-                        {showNumber && <span className="flex-none text-xs tabular-nums text-slate-500">{row.train_number}</span>}
+                        {showNumber && <span className="flex-none pt-px text-xs tabular-nums text-slate-500">{row.train_number}</span>}
                         {row.carrier && (
-                            <Badge variant="outline" className="flex-none px-1.5 py-0 text-[10px]">
+                            <Badge variant="outline" className="mt-0.5 flex-none px-1.5 py-0 text-[10px]">
                                 <span title={row.carrier.name}>{row.carrier.code}</span>
                             </Badge>
                         )}
@@ -241,7 +242,7 @@ export function StationBoard({ stationId, variant, headingRef, actions }: Statio
                                     onClick={() => setActiveTab(key)}
                                     onKeyDown={(e) => onTabKeyDown(e, index)}
                                     className={cn(
-                                        'rounded-lg px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
+                                        'min-h-10 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
                                         selected ? 'bg-blue-600/25 text-blue-200' : 'text-slate-400 hover:text-white',
                                     )}
                                 >

@@ -107,7 +107,7 @@ export function ConnectionResults({ from, to, headingRef }: ConnectionResultsPro
                         value={date}
                         min={today}
                         onChange={(e) => setDate(e.target.value)}
-                        className="rounded-lg border border-[#2d3148] bg-[#222536] px-2 py-1 text-sm text-slate-100 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="min-h-10 rounded-lg border border-[#2d3148] bg-[#222536] px-2 py-1 text-base text-slate-100 md:min-h-0 md:text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                 </div>
             </header>

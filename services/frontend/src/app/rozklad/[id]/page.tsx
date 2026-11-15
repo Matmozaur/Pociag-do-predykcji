@@ -32,7 +32,8 @@ export default function RozkladDetailPage() {
             <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-4">
                 <Link
                     href="/wyszukaj"
-                    className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-white transition-colors"
+                    // The mobile header already has a back button.
+                    className="hidden items-center gap-1 text-sm text-slate-500 transition-colors hover:text-white md:inline-flex"
                 >
                     <ArrowLeft size={14} />
                     Powrót do wyszukiwania
@@ -57,7 +58,7 @@ export default function RozkladDetailPage() {
                         {/* Route header */}
                         <div className="bg-[#1a1d27] border border-[#2d3148] rounded-xl p-4 space-y-3">
                             <div className="flex items-start justify-between gap-2">
-                                <div>
+                                <div className="min-w-0">
                                     <h1 className="text-lg font-bold text-white">{scheduleQuery.data.train_name}</h1>
                                     <p className="text-sm text-slate-500 mt-0.5">{scheduleQuery.data.carrier.name}</p>
                                 </div>
@@ -125,7 +126,7 @@ export default function RozkladDetailPage() {
                                                 >
                                                     {stop.station_name}
                                                 </p>
-                                                <div className="flex gap-3 mt-0.5 text-xs text-slate-500">
+                                                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
                                                     {stop.arrival_time && <span>Przyjazd: {stop.arrival_time}</span>}
                                                     {stop.departure_time && <span>Odjazd: {stop.departure_time}</span>}
                                                     {stop.platform && <span>Peron: {stop.platform}</span>}
