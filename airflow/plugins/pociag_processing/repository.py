@@ -140,6 +140,16 @@ INSERT INTO disruptions (
 ) VALUES %s
 """
 
+# One row per distinct disruption state; seeing the same state again only extends last_seen_at.
+_LOG_DISRUPTIONS = """
+INSERT INTO disruption_history (
+    type_code, start_station_id, end_station_id, message, date_from, date_to, affected_trains
+) VALUES %s
+ON CONFLICT (
+    type_code, start_station_id, end_station_id, message, date_from, date_to, affected_trains
+) DO UPDATE SET last_seen_at = now()
+"""
+
 
 class Repository:
     def __init__(self, conn_id: str = "pociag_postgres") -> None:
@@ -229,6 +239,7 @@ class Repository:
             ])
 
     def replace_disruptions(self, batch: DisruptionBatch) -> None:
+        """Replace the current snapshot; every state it holds is also kept in disruption_history."""
         with self._transaction("db.disruptions.replace") as cur:
             _upsert_stations(cur, batch.stations)
             _insert_unknown_stations(cur, {
@@ -241,6 +252,13 @@ class Repository:
                  d.message, d.date_from, d.date_to, d.affected_trains)
                 for d in batch.disruptions
             ])
+            # PLK ids are not stable, so the rows are keyed by content; equal states in one
+            # snapshot are one state (ON CONFLICT cannot touch a row twice in a statement).
+            _values(cur, _LOG_DISRUPTIONS, list({
+                (d.type_code, d.start_station_id, d.end_station_id,
+                 d.message, d.date_from, d.date_to, d.affected_trains)
+                for d in batch.disruptions
+            }))
 
 
 def _upsert_stations(cur: Any, stations: Iterable[Station]) -> None:

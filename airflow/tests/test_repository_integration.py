@@ -233,6 +233,94 @@ def test_replace_disruptions_keeps_int64_ids(db: Any) -> None:
     assert query(db, "SELECT id FROM disruptions") == [(3465064817476233210,)]
 
 
+def test_replace_disruptions_keeps_every_state_in_the_history(db: Any) -> None:
+    repo = Repository()
+    batch = transform.disruptions(load("disruptions.json"))
+    first, second = batch.disruptions[:2]
+    repo.replace_disruptions(replace(batch, disruptions=[first, second]))
+    # The same states again, in a snapshot that also repeats one of them, add no rows.
+    repo.replace_disruptions(replace(batch, disruptions=[first, second, replace(first, id=99)]))
+    assert query(db, "SELECT count(*), count(*) FILTER (WHERE last_seen_at > first_seen_at) "
+                     "FROM disruption_history") == [(2, 2)]
+
+    # One disruption gaining affected trains is a new state; one that disappears stays.
+    repo.replace_disruptions(
+        replace(batch, disruptions=[replace(first, affected_trains=first.affected_trains + 5)])
+    )
+    assert query(db, "SELECT affected_trains FROM disruption_history "
+                     "WHERE message = %s ORDER BY first_seen_at, id" % repr(first.message)) == [
+        (first.affected_trains,), (first.affected_trains + 5,),
+    ]
+    assert query(db, "SELECT count(*) FROM disruption_history") == [(3,)]
+    assert query(db, "SELECT count(*) FROM disruptions") == [(1,)]
+
+
+def test_runs_missing_from_later_snapshots_are_kept(db: Any) -> None:
+    repo = Repository()
+    pages = [load("operations_page1.json"), load("operations_page2.json")]
+    repo.save_operations(transform.operations(pages))
+    stops = query(db, "SELECT count(*) FROM operation_stops")
+
+    # PLK stops listing the runs altogether (they finished long ago): nothing is deleted.
+    for _ in range(2):
+        repo.save_operations(transform.operations([{**pages[0], "trains": []}]))
+    assert query(db, "SELECT count(*) FROM operations") == [(2,)]
+    assert query(db, "SELECT count(*) FROM operation_stops") == stops
+
+
+# Run 100 is late at its final stop, 101 is on time, 102 was lost before it finished (its last
+# stop is a forecast), 103 is cancelled. Delay minutes are NULL for on-time stops.
+DELAY_SEED = """
+INSERT INTO stations (id, name) VALUES (1, 'A'), (2, 'B'), (3, 'C');
+INSERT INTO trains (id, schedule_id, order_id) VALUES (10, 1, 1);
+INSERT INTO operations (id, train_id, operating_date, status) VALUES
+    (100, 10, '2026-10-01', 'C'), (101, 10, '2026-10-02', 'C'),
+    (102, 10, '2026-10-03', 'P'), (103, 10, '2026-10-04', 'X');
+INSERT INTO operation_stops (operation_id, seq, station_id, planned_arrival, planned_departure,
+    actual_arrival, actual_departure, arrival_delay, departure_delay, is_confirmed, is_cancelled)
+VALUES
+    (100, 1, 1, NULL, '2026-10-01T08:00Z', NULL, '2026-10-01T08:02Z', NULL, 2, true, false),
+    (100, 2, 2, '2026-10-01T09:00Z', '2026-10-01T09:02Z', '2026-10-01T09:08Z', '2026-10-01T09:09Z', 8, 7, true, false),
+    (100, 3, 3, '2026-10-01T10:00Z', NULL, '2026-10-01T10:12Z', NULL, 12, NULL, true, false),
+    (101, 1, 1, NULL, '2026-10-02T08:00Z', NULL, '2026-10-02T08:00Z', NULL, NULL, true, false),
+    (101, 2, 2, '2026-10-02T09:00Z', '2026-10-02T09:02Z', '2026-10-02T08:59Z', '2026-10-02T09:02Z', -1, NULL, true, false),
+    (101, 3, 3, '2026-10-02T10:00Z', NULL, '2026-10-02T10:00Z', NULL, NULL, NULL, true, false),
+    (102, 1, 1, NULL, '2026-10-03T08:00Z', NULL, '2026-10-03T08:20Z', NULL, 20, true, false),
+    (102, 2, 2, '2026-10-03T09:00Z', '2026-10-03T09:02Z', '2026-10-03T09:30Z', NULL, 30, 30, false, false),
+    (102, 3, 3, '2026-10-03T10:00Z', NULL, '2026-10-03T10:30Z', NULL, 30, NULL, false, false),
+    (103, 1, 1, NULL, '2026-10-04T08:00Z', NULL, NULL, NULL, NULL, false, true),
+    (103, 2, 2, '2026-10-04T09:00Z', NULL, NULL, NULL, NULL, NULL, false, true);
+"""
+
+
+def test_delay_views_label_runs_and_stops(db: Any) -> None:
+    with db.cursor() as cur:
+        cur.execute(DELAY_SEED)
+
+    # Only stops that happened; an on-time stop (NULL minutes) is 0, early is negative; the origin
+    # has no arrival delay and the terminus no departure delay.
+    assert query(db, """
+        SELECT operation_id, seq, arrival_delay_min, departure_delay_min FROM stop_delays
+        WHERE operation_id IN (100, 101, 102) ORDER BY 1, 2
+    """) == [
+        (100, 1, None, 2), (100, 2, 8, 7), (100, 3, 12, None),
+        (101, 1, None, 0), (101, 2, -1, 0), (101, 3, 0, None),
+        (102, 1, None, 20),
+    ]
+    assert query(db, "SELECT count(*) FROM stop_delays WHERE operation_id = 103") == [(0,)]
+
+    assert query(db, """
+        SELECT operation_id, status, stops, confirmed_stops, cancelled_stops, max_arrival_delay_min,
+               final_station_id, final_arrival_delay_min, is_delayed
+        FROM run_delays ORDER BY operation_id
+    """) == [
+        (100, "C", 3, 3, 0, 12, 3, 12, True),
+        (101, "C", 3, 3, 0, 0, 3, 0, False),
+        (102, "P", 3, 1, 0, None, 3, None, None),  # lost before the end: no label
+        (103, "X", 2, 0, 2, None, None, None, None),  # cancelled
+    ]
+
+
 def test_down_migration_drops_everything(db: Any) -> None:
     with db.cursor() as cur:
         for migration in sorted(MIGRATIONS.glob("*.down.sql"), reverse=True):
