@@ -136,6 +136,26 @@ type ScheduleDetailView struct {
 	TotalDurationMinutes *int               `json:"total_duration_minutes,omitempty"`
 }
 
+type DelayBucket struct {
+	Range       string  `json:"range"`
+	MinMinutes  int     `json:"min_minutes"`
+	MaxMinutes  *int    `json:"max_minutes,omitempty"`
+	Probability float64 `json:"probability"`
+}
+
+type DelayPrediction struct {
+	RouteID      int64            `json:"route_id"`
+	TrainName    string           `json:"train_name"`
+	Date         string           `json:"date"`
+	From         ScheduleEndpoint `json:"from"`
+	To           ScheduleEndpoint `json:"to"`
+	Buckets      []DelayBucket    `json:"buckets"`
+	MostLikely   string           `json:"most_likely"`
+	ModelVersion string           `json:"model_version"`
+	IsMock       bool             `json:"is_mock"`
+	GeneratedAt  time.Time        `json:"generated_at"`
+}
+
 // ── Trains ────────────────────────────────────────────────────────────────────
 
 type LiveTrainSummary struct {

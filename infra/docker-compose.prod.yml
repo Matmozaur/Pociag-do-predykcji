@@ -20,6 +20,9 @@ services:
     build: !reset null
     image: ${ECR_REGISTRY:?Set ECR_REGISTRY in infra/.env}/pociag-api:${IMAGE_TAG:?Set IMAGE_TAG in infra/.env}
     ports: !reset []
+  predictor:
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY in infra/.env}/pociag-predictor:${IMAGE_TAG:?Set IMAGE_TAG in infra/.env}
   frontend:
     build: !reset null
     image: ${ECR_REGISTRY:?Set ECR_REGISTRY in infra/.env}/pociag-frontend:${IMAGE_TAG:?Set IMAGE_TAG in infra/.env}

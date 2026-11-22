@@ -33,7 +33,7 @@ REGISTRY=$(sed -n 's/^ECR_REGISTRY=//p' .env)
 aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY" > /dev/null
 
-compose pull --quiet api frontend
+compose pull --quiet api predictor frontend
 compose up -d
 
 # Airflow imports plugins at start, and DAG/plugin files arrive through the checkout.

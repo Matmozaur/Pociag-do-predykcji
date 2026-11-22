@@ -3,12 +3,14 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/model"
 	"github.com/pociag-do-predykcji/services/go/api/internal/position"
+	"github.com/pociag-do-predykcji/services/go/api/internal/prediction"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service/servicetest"
 )
@@ -373,6 +375,82 @@ func TestScheduleDetail(t *testing.T) {
 	equal(t, "departure", deref(detail.Stops[0].DepartureTime), any("23:15"))
 	equal(t, "arrival", deref(detail.Stops[1].ArrivalTime), any("00:02"))
 	equal(t, "duration", deref(detail.TotalDurationMinutes), any(47))
+}
+
+func predictionRepo() *servicetest.Repository {
+	return &servicetest.Repository{Schedule: &service.TrainSchedule{
+		Train:          service.Train{ID: 3, Category: sp("IC"), Number: sp("5300"), CarrierCode: sp("IC")},
+		OperatingDates: []time.Time{ts("2026-10-04T00:00:00Z"), ts("2026-10-18T00:00:00Z"), ts("2026-10-19T00:00:00Z")},
+		Stops: []service.ScheduleStop{
+			{Seq: 1, StationID: 5100, StationName: "Warszawa Centralna", Departure: dp(8 * time.Hour)},
+			{Seq: 2, StationID: 4900, StationName: "Kielce", Arrival: dp(10 * time.Hour), Departure: dp(10*time.Hour + 2*time.Minute)},
+			{Seq: 3, StationID: 3300, StationName: "Kraków Główny", Arrival: dp(11*time.Hour + 30*time.Minute)},
+		},
+	}}
+}
+
+func TestDelayPrediction(t *testing.T) {
+	predictor := &servicetest.Predictor{Prediction: &prediction.Prediction{
+		Probabilities: [7]float64{0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.015625},
+		ModelVersion:  "history-7d",
+	}}
+	svc := service.NewAtWithPredictor(predictionRepo(), predictor, now)
+
+	p, err := svc.DelayPrediction(context.Background(), 3, ts("2026-10-18T00:00:00Z"), 0, 4900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "from", p.From, model.ScheduleEndpoint{StationName: "Warszawa Centralna", StationExternalID: 5100, Time: "08:00"})
+	equal(t, "to", p.To, model.ScheduleEndpoint{StationName: "Kielce", StationExternalID: 4900, Time: "10:00"})
+	equal(t, "model version", p.ModelVersion, "history-7d")
+	equal(t, "is mock", p.IsMock, false)
+	ranges, probabilities := []string{}, []float64{}
+	for _, b := range p.Buckets {
+		ranges = append(ranges, b.Range)
+		probabilities = append(probabilities, b.Probability)
+	}
+	equal(t, "ranges", ranges, []string{"0-5", "5-10", "10-20", "20-40", "40-60", "60-120", "120+"})
+	equal(t, "probabilities", probabilities, predictor.Prediction.Probabilities[:])
+	equal(t, "most likely", p.MostLikely, "0-5")
+	equal(t, "bounds", [2]int{p.Buckets[1].MinMinutes, *p.Buckets[1].MaxMinutes}, [2]int{5, 10})
+	equal(t, "open-ended max", p.Buckets[6].MaxMinutes, (*int)(nil))
+
+	// The predictor is asked about the destination of the chosen journey.
+	equal(t, "train", predictor.Request.TrainID, int64(3))
+	equal(t, "to station", predictor.Request.ToStationID, 4900)
+	equal(t, "from station", predictor.Request.FromStationID, 5100)
+}
+
+func TestDelayPredictionPredictorFailure(t *testing.T) {
+	boom := fmt.Errorf("predict: %w", prediction.ErrUnavailable)
+	svc := service.NewAtWithPredictor(predictionRepo(), &servicetest.Predictor{Err: boom}, now)
+
+	_, err := svc.DelayPrediction(context.Background(), 3, ts("2026-10-18T00:00:00Z"), 0, 4900)
+	if !errors.Is(err, prediction.ErrUnavailable) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestDelayPredictionRejects(t *testing.T) {
+	cases := []struct {
+		name     string
+		date     string
+		from, to int
+		notFound bool
+	}{
+		{name: "past", date: "2026-10-03"},
+		{name: "beyond horizon", date: "2026-10-19"},
+		{name: "not an operating date", date: "2026-10-05", notFound: true},
+		{name: "unknown stop", date: "2026-10-04", from: 1},
+		{name: "backwards", date: "2026-10-04", from: 3300, to: 5100},
+	}
+	for _, c := range cases {
+		_, err := service.NewAt(predictionRepo(), now).DelayPrediction(context.Background(), 3, ts(c.date+"T00:00:00Z"), c.from, c.to)
+		var invalid *service.InvalidRequestError
+		if c.notFound && !errors.Is(err, service.ErrNotFound) || !c.notFound && !errors.As(err, &invalid) {
+			t.Errorf("%s: err = %v", c.name, err)
+		}
+	}
 }
 
 // ── Disruptions & dashboard ───────────────────────────────────────────────────

@@ -6,16 +6,19 @@ PLK Open Data API (X-API-Key)
    ▼
 PostgreSQL 16 "pociag" (db/migrations)
    │  api (Go): handler → service → repository, position model
+   │      │ POST /v1/predict-delay
+   │      ▼
+   │  predictor (Python): delay distribution from the route's recent arrivals
    ▼
 frontend (Next.js server): serves the bundle, rewrites /bff/* → api
    ▲
 browser ──► *.tiles.openrailwaymap.org (railway map tiles, third-party)
 
-api, Airflow tasks ──OTLP gRPC──► OTel Collector ──► Jaeger
+api, predictor, Airflow tasks ──OTLP gRPC──► OTel Collector ──► Jaeger
 ```
 
 Airflow is the only writer; the api only reads (by convention: it connects as the same `pociag`
-role). Locally everything runs under Docker Compose. Production is the same Compose stack on one EC2
+role). The predictor reads too, and its database session is read-only. Locally everything runs under Docker Compose. Production is the same Compose stack on one EC2
 instance (`infra/docker-compose.prod.yml`, behind Caddy), deployed by CI on every merge to `main`.
 
 ## Components
@@ -24,8 +27,9 @@ instance (`infra/docker-compose.prod.yml`, behind Caddy), deployed by CI on ever
 |---|---|---|
 | `airflow/dags` | Three thin TaskFlow DAGs; each task calls one `pociag_processing.pipelines.sync_*` | [specs/pipelines.md](../specs/pipelines.md) |
 | `airflow/plugins/pociag_processing` | Fetch PLK, normalise, write. `plk.py` (HTTP), `transform.py` (pure payload → `models.py` rows; all PLK quirks), `repository.py` (all SQL), `pipelines.py` (entrypoints), `tracing.py`, `data/station_coordinates.json` | [specs/pipelines.md](../specs/pipelines.md) |
-| `db/migrations` | The schema below (golang-migrate) | `001_init.up.sql`, `002_disruption_id_bigint.up.sql` |
+| `db/migrations` | The schema below (golang-migrate) | `001_init.up.sql`, `002_disruption_id_bigint.up.sql`, `003_delay_history.up.sql` |
 | `services/go/api` | Frontend-shaped read API: `handler` (HTTP) → `service` (builds views, pure) → `repository` (pgx SQL); `position` is the train-position model | [specs/openapi/api.yml](../specs/openapi/api.yml) |
+| `services/python/predictor` | Delay predictor (FastAPI): `model` (pure ranges and shares), `predictor` (7-day window), `repository` (read-only SQL), `app` (HTTP), `tracing`. Called by the api only | [specs/openapi/predictor.yml](../specs/openapi/predictor.yml) |
 | `services/frontend` | Next.js 15 UI, rendered in the browser; all data from the api | `src/lib/api.ts` (hand-written types with `api.yml` field names) |
 | `infra/` | Compose stack, OTel Collector, Prometheus, Grafana | `infra/docker-compose.yml` |
 | `research/` | Exploratory notebooks (marimo); not part of the runtime | — |
@@ -36,7 +40,7 @@ instance (`infra/docker-compose.prod.yml`, behind Caddy), deployed by CI on ever
 |---|---|---|---|
 | `sync_schedules` | `30 2 * * *` | `stations` >> `schedules` (today … today+7) | 2 × 10 min / none |
 | `sync_operations` | `*/10 * * * *` | `operations` | 0 / 9 min |
-| `sync_disruptions` | `*/15 * * * *` | `disruptions` (today, tomorrow) | 1 × 2 min / 14 min |
+| `sync_disruptions` | `*/15 * * * *` | `disruptions` (today, tomorrow), `disruption_history` | 1 × 2 min / 14 min |
 
 All DAGs: `catchup=False`, `max_active_runs=1`, start unpaused. Requests and written tables per
 DAG are in `specs/pipelines.md`.
@@ -75,7 +79,8 @@ DAG are in `specs/pipelines.md`.
 ```
 trains ◄── schedule_stops ──► stations
 trains ◄── operations ◄── operation_stops ──► stations
-disruptions ──► stations (start, end; nullable)
+disruptions, disruption_history ──► stations (start, end; nullable)
+operation_stops ──► stop_delays, run_delays (views over operations + operation_stops)
 ```
 
 | Table | Row | Key |
@@ -86,8 +91,35 @@ disruptions ──► stations (start, end; nullable)
 | `operations` | A train's run on an operating date and its status | surrogate id; unique (train, date) |
 | `operation_stops` | Planned vs actual arrival/departure (actual = PLK forecast until `is_confirmed`), delays in minutes, cancelled | (operation, seq); seq = PLK `actualSequenceNumber` |
 | `disruptions` | Disruptions for today and tomorrow; dates = min/max affected operating date; `affected_trains` = number of distinct affected runs (the runs themselves are not stored) | PLK id (`BIGINT`: PLK ids are int64 and exceed the INTEGER range), unique only within one response |
+| `disruption_history` | Every distinct state a disruption has had (type, stations, message, dates, `affected_trains`), with `first_seen_at` / `last_seen_at`; written with each disruptions sync, never deleted | surrogate id; unique over all content columns (NULLs equal) |
 
 Child rows cascade on delete of their train / operation.
+
+### Historical data for model training
+
+Nothing deletes history: `operations`, `operation_stops` and `trains` are only upserted, and a
+run that PLK stops listing keeps its last stored state (`sync_operations` deletes only the stops
+a still-listed, complete run no longer has). The `postgres_data` volume is the only copy: `make
+reset` / `docker compose down -v` erase it, the AWS guide (step 12) sets up daily EBS snapshots for production.
+
+What a model can use, by view (`003_delay_history`; all delays in whole PLK minutes, negative
+is early; PLK omits the minutes of an on-time stop, which counts as 0):
+
+- `stop_delays` — one row per stop that happened (confirmed, not cancelled): planned and actual
+  arrival and departure, `arrival_delay_min`, `departure_delay_min` (NULL at the origin / terminus).
+- `run_delays` — one row per run: `status`, stop counts, `max_arrival_delay_min`,
+  `final_arrival_delay_min` and **`is_delayed`** (final arrival more than 5 min late, the
+  on-time threshold of the dashboard). They are NULL when the outcome is unknown: the run is
+  cancelled (`X`), or PLK stopped reporting it before its final stop was confirmed (status `S`,
+  `P` or `Q` on an old operating date). Train on `WHERE is_delayed IS NOT NULL`.
+- Join `trains` (category, carrier, `schedule_stops`) and `stations` for features;
+  `disruption_history` for what was disrupted when (overlap `first_seen_at`..`last_seen_at` or
+  `date_from`..`date_to` with a run's operating date).
+
+Limits: PLK serves only the current snapshot, so a day with no successful `sync_operations` runs
+is lost for good (the stack was not running roughly 13–21 Oct and 9–18 Nov 2026, which left gaps), and runs seen only
+before they finished stay partial. Only the latest values are stored, not how a forecast evolved
+during the run, and there is no weather data.
 
 - **Status** — `S` not started, `P` in progress, `C` completed, `X` cancelled, `Q` partly
   cancelled (api: `not_started` … `partial_cancelled`). Other PLK statuses are skipped.
@@ -129,6 +161,16 @@ Child rows cascade on delete of their train / operation.
   < 30 min ago; else `low`).
 - **Station board** — stops planned in [now − 6 h, now + 12 h], excluding `X` runs; bucketed into
   at station (terminus: 5 min after arrival), arrivals and departures.
+- **Delay prediction** (`/schedules/{routeId}/delay-prediction`) — probability of the arrival delay
+  at a chosen stop falling in each of seven ranges (`0-5` … `120+` min) for a run up to 14 days
+  ahead. The service validates the run and journey and calls a `prediction.Predictor`, which is
+  `prediction.Client`: `POST /v1/predict-delay` to the predictor service (5 s timeout), whose answer
+  must cover the seven ranges in order and sum to 1. The predictor returns, per range, the share of
+  the route's confirmed, not cancelled arrivals at the destination stop over the last 7 operating
+  dates (today included, Europe/Warsaw) that fell in it (`model_version: history-7d`); a route with
+  no such arrival gets a fixed placeholder (`is_mock: true`). Without a valid answer the endpoint
+  is 503 `prediction_unavailable`. A future ML model replaces the predictor's logic behind the same
+  contract.
 - **Dashboard** — today's Warsaw operating date: counts by status (`in_progress` uses the 15 min
   snapshot window); on-time % and average delay are over started trains (`in_progress` +
   `completed`) with at least one confirmed stop, on-time being ≤ 5 min by maximum confirmed
@@ -140,10 +182,10 @@ Child rows cascade on delete of their train / operation.
   `HH:MM`, built in `service`; instants are RFC 3339. `time/tzdata` is embedded (the image has no
   zoneinfo).
 - **HTTP** — chi; open CORS (`*`, `GET, OPTIONS`); bad parameters → 400 `invalid_request`,
-  missing rows → 404 `not_found`, else 500 `internal_error` logged with `trace_id`; errors are
+  missing rows → 404 `not_found`, predictor down → 503 `prediction_unavailable`, else 500 `internal_error` logged with `trace_id`; errors are
   `{error, message}`. `ReadHeaderTimeout` 5 s, `WriteTimeout` 30 s; graceful shutdown on
   SIGINT/SIGTERM (10 s). The pgx pool connects lazily, so the api starts without a reachable DB.
-- **Config** — `HTTP_ADDR`, `DATABASE_DSN` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional,
+- **Config** — `HTTP_ADDR`, `DATABASE_DSN`, `PREDICTOR_URL` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional,
   `host:port`; tracing is off when unset).
 
 ## Frontend
@@ -183,7 +225,8 @@ Child rows cascade on delete of their train / operation.
 | `postgres` | postgres:16-alpine | — (always) | 127.0.0.1:5434 → 5432 | — (healthcheck) | Curated DB `pociag` |
 | `migrate` | migrate/migrate:v4.18.1 | — (always) | — | postgres healthy | `up` on `db/migrations`, exits |
 | `otel-collector` | otel/opentelemetry-collector-contrib:0.117.0 | — (always) | 4327 → 4317, 4328 → 4318, 8889 | — | OTLP receiver |
-| `api` | build `services/go/api` | — (always) | 8080 → 8080 | migrate done, collector (healthcheck) | Read API |
+| `predictor` | build `services/python/predictor` | — (always) | — (internal, 8000) | migrate done, collector | Delay predictions for the api |
+| `api` | build `services/go/api` | — (always) | 8080 → 8080 | migrate done, collector, predictor healthy | Read API |
 | `frontend` | build `services/frontend` | frontend | `${FRONTEND_PORT:-3100}` → 3000 | api healthy | Next.js |
 | `airflow-db` | postgres:16-alpine | airflow | 127.0.0.1:5433 → 5432 | — (healthcheck) | Airflow metadata only |
 | `airflow-init` | apache/airflow:2.10.4 | airflow | — | airflow-db healthy | `db migrate` + `admin` user, exits |
@@ -195,11 +238,11 @@ Child rows cascade on delete of their train / operation.
 
 - **Profiles** — services without a profile start with every invocation. `make up` =
   `--profile all` (everything); `make up-core` = no profile: postgres, migrate, otel-collector,
-  jaeger, api.
+  jaeger, predictor, api.
 - **Networks** — every service is on `default` except the frontend, which is only on `web`; the
   api is on both, so the frontend can reach only the api.
 - **Volumes** — `postgres_data`, `airflow_db_data`, `airflow_logs`, `prometheus_data`,
-  `grafana_data`. Only the two Postgres services and the api (`/healthz`) have healthchecks.
+  `grafana_data`. Only the two Postgres services, the api (`/healthz`) and the predictor (`/healthz`) have healthchecks.
 - **Bind mounts after a WSL restart** — Airflow (`dags/`, `plugins/`), the collector, Prometheus
   and Grafana mount files from the checkout. If Docker restarts the containers before the
   Windows drive is mounted in WSL, those mounts come up empty: Airflow lists no DAGs and the data
@@ -245,10 +288,10 @@ api, Airflow tasks ──OTLP gRPC (insecure)──► otel-collector:4317
 
 ## CI
 
-`.github/workflows/ci-cd.yaml` on every branch push: `api` (`go test -race`, golangci-lint pinned to v2.14.0)
-and `airflow` (ruff, mypy strict via `pyproject.toml`, pytest), each with a Postgres 16 service for the SQL tests,
-which apply every `db/migrations/*.up.sql` in order; `frontend` (`next build`); `images` (`docker build` of the api and
-frontend; skipped on `main`). On `main`, `deploy` builds and pushes both images to ECR tagged with the commit SHA,
+`.github/workflows/ci-cd.yaml` on every branch push: `api` (`go test -race`, golangci-lint pinned to v2.14.0),
+`airflow` and `predictor` (ruff, mypy strict via `pyproject.toml`, pytest), each with a Postgres 16 service for the SQL tests,
+which apply every `db/migrations/*.up.sql` in order; `frontend` (`next build`); `images` (`docker build` of the api, predictor and
+frontend; skipped on `main`). On `main`, `deploy` builds and pushes the three images to ECR tagged with the commit SHA,
 then runs `infra/ci-deploy.sh`: an SSM command runs `infra/deploy.sh` on the EC2 host, followed by an HTTP smoke
 test. `deploy-rollback.yaml` redeploys an earlier `main` commit by hand.
 

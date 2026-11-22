@@ -3,16 +3,19 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Per-subproject guidance lives in nested `CLAUDE.md` files — read the one for the area you're touching:
-`services/go/CLAUDE.md`, `airflow/CLAUDE.md`, `db/migrations/CLAUDE.md`, `services/frontend/CLAUDE.md`.
+`services/go/CLAUDE.md`, `airflow/CLAUDE.md`, `db/migrations/CLAUDE.md`, `services/frontend/CLAUDE.md`,
+`services/python/predictor/CLAUDE.md`.
 
 ## What this is
 
 **Pociag do Predykcji** — ingests Polish railway data from the PLK Open Data API with Airflow into
-PostgreSQL and serves it to a Next.js frontend through one Go API. Details:
+PostgreSQL and serves it to a Next.js frontend through one Go API, which gets delay predictions from
+a Python service. Details:
 `docs/architecture.md`.
 
 ```
 PLK API → Airflow (pociag_processing plugin) → PostgreSQL → api (Go) → frontend (Next.js)
+                                                    └──────► predictor (Python) ◄── api
 ```
 
 | Component | Path | Role |
@@ -21,14 +24,16 @@ PLK API → Airflow (pociag_processing plugin) → PostgreSQL → api (Go) → f
 | DAGs | `airflow/dags` | `sync_schedules` (daily), `sync_operations` (10 min), `sync_disruptions` (15 min) |
 | schema | `db/migrations` | `stations`, `trains`, `schedule_stops`, `operations`, `operation_stops`, `disruptions` |
 | api | `services/go/api` | Read-only JSON API shaped for the frontend |
+| predictor | `services/python/predictor` | Internal FastAPI service: delay distribution per route and stop from the last 7 days of arrivals. Called by the api only; reads PostgreSQL read-only |
 | frontend | `services/frontend` | Next.js 15; talks only to the api (`/bff/*` proxy) |
 
-Airflow is the only writer; the api only reads. Both depend on the same tables, so a schema
-change must keep `repository.py` and `services/go/api/internal/repository` working.
+Airflow is the only writer; the api and the predictor only read. They depend on the same tables, so a
+schema change must keep `repository.py`, `services/go/api/internal/repository` and
+`services/python/predictor/src/pociag_predictor/repository.py` working.
 
 ## Contract-first (non-negotiable)
 
-`specs/openapi/api.yml` (api ↔ frontend) and `specs/pipelines.md` (DAGs, PLK data rules) are the
+`specs/openapi/api.yml` (api ↔ frontend), `specs/openapi/predictor.yml` (api ↔ predictor) and `specs/pipelines.md` (DAGs, PLK data rules) are the
 source of truth; `specs/openapi/plk-open-data.json` is the upstream API. Change the spec first,
 then the code. On doc conflicts trust: `infra/docker-compose.yml` → `.github/workflows/ci-cd.yaml`
 → `Makefile`. `.github/instructions/*.instructions.md` mirror the nested CLAUDE.md files.
@@ -83,7 +88,7 @@ database — they recreate its `public` schema. Never point it at the stack's da
   (`Add stations on the map`, `Fix ...`, `Update ...`, `Remove ...`). Keep them scoped.
 - Merge to `main` via GitHub PR ("Merge pull request #N from Matmozaur/<branch>").
 - CI (`.github/workflows/ci-cd.yaml`) runs on every branch push: Go test + lint for the api and
-  ruff / mypy / pytest for `airflow/`, both with a Postgres service for the SQL tests, a frontend
+  ruff / mypy / pytest for `airflow/` and the predictor, each with a Postgres service for the SQL tests, a frontend
   build and Docker image builds. On `main`, the `deploy` job pushes images to ECR and deploys to
   one EC2 host through SSM (`infra/deploy.sh`, `infra/ci-deploy.sh`); `deploy-rollback.yaml`
   redeploys an earlier commit.
@@ -91,10 +96,10 @@ database — they recreate its `public` schema. Never point it at the stack's da
 ## Cross-cutting conventions
 
 - **No hardcoded secrets** — env vars (Go: `os.LookupEnv`) or Airflow connections.
-- **Tracing**: service names `pociag.api` / `pociag.airflow`, span names `<noun>.<verb>`, OTLP gRPC
+- **Tracing**: service names `pociag.api` / `pociag.airflow` / `pociag.predictor`, span names `<noun>.<verb>`, OTLP gRPC
   to `OTEL_EXPORTER_OTLP_ENDPOINT`.
 - **Structured logs**: `zap` JSON in Go; stdlib `logging` in Python (Airflow's default task-log
-  format). Never log secrets or payloads.
+  format; the predictor logs through uvicorn). Never log secrets or payloads.
 - **Parameterized SQL only**, on both sides.
 
 ## Shell

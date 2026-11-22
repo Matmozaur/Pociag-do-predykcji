@@ -182,6 +182,33 @@ export interface ScheduleDetailView {
     total_duration_minutes?: number
 }
 
+export type DelayRange = '0-5' | '5-10' | '10-20' | '20-40' | '40-60' | '60-120' | '120+'
+
+/** Arrival delay d in (min_minutes, max_minutes]; the first range also holds on-time arrivals. */
+export interface DelayBucket {
+    range: DelayRange
+    min_minutes: number
+    max_minutes?: number
+    probability: number
+}
+
+export interface DelayPrediction {
+    route_id: number
+    train_name: string
+    date: string
+    from: { station_name: string; station_external_id: number; time: string }
+    to: { station_name: string; station_external_id: number; time: string }
+    buckets: DelayBucket[]
+    most_likely: DelayRange
+    model_version: string
+    /** True while the api returns a placeholder instead of a model output. */
+    is_mock: boolean
+    generated_at: string
+}
+
+/** How many days ahead a delay can be predicted (today included). */
+export const DELAY_PREDICTION_HORIZON_DAYS = 14
+
 export interface LiveTrainSummary {
     operation_id: number
     train_name: string
@@ -288,6 +315,13 @@ export const api = {
 
     getScheduleDetail: (routeId: number) =>
         apiFetch<ScheduleDetailView>(`/api/v1/schedules/${routeId}`),
+
+    getDelayPrediction: (routeId: number, params: { date: string; from?: number; to?: number }) =>
+        apiFetch<DelayPrediction>(`/api/v1/schedules/${routeId}/delay-prediction`, {
+            date: params.date,
+            from: params.from !== undefined ? String(params.from) : undefined,
+            to: params.to !== undefined ? String(params.to) : undefined,
+        }),
 
     getLiveTrains: (params?: { carriers?: string; sort?: 'delay'; limit?: number; offset?: number }) =>
         apiFetch<LiveTrainsResponse>('/api/v1/trains/live', {

@@ -1,0 +1,70 @@
+openapi: 3.0.3
+info:
+  title: Pociag do Predykcji — delay predictor (internal)
+  version: 1.0.0
+  description: |
+    Called only by the api (`PREDICTOR_URL`), never by the frontend. The predictor reads the
+    curated PostgreSQL tables read-only. The ranges (`buckets`) are the same seven the public
+    api exposes, in the same order; the api rejects a response that differs.
+servers:
+  - url: http://predictor:8000
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness
+      responses:
+        '200': {description: Alive}
+
+  /readyz:
+    get:
+      summary: Readiness (database ping)
+      responses:
+        '200': {description: Ready}
+        '503': {description: Database unreachable}
+
+  /v1/predict-delay:
+    post:
+      summary: Arrival delay distribution of a train at a stop
+      description: |
+        The probability of each range is the share of the train's (route's) confirmed, not
+        cancelled arrivals at `to_station_id` over the last 7 operating dates (today included,
+        Europe/Warsaw) that fell in it; ranges are (min, max], the first also holds early and on-time
+        arrivals. When there is no such arrival the response is a fixed placeholder
+        (`is_mock: true`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PredictRequest'}
+      responses:
+        '200':
+          description: Delay distribution
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PredictResponse'}
+        '422': {description: Invalid request body}
+
+components:
+  schemas:
+    PredictRequest:
+      type: object
+      required: [train_id, to_station_id]
+      properties:
+        train_id: {type: integer, minimum: 1, description: trains.id (the route)}
+        to_station_id: {type: integer, minimum: 1, description: Station whose arrival delay is predicted}
+    PredictResponse:
+      type: object
+      required: [buckets, model_version, is_mock]
+      properties:
+        buckets:
+          type: array
+          description: All seven ranges in order (`0-5`, `5-10`, `10-20`, `20-40`, `40-60`, `60-120`, `120+`); probabilities sum to 1
+          items:
+            type: object
+            required: [range, probability]
+            properties:
+              range: {type: string}
+              probability: {type: number, minimum: 0, maximum: 1}
+        model_version: {type: string, example: history-7d}
+        is_mock: {type: boolean, description: True for the placeholder distribution}

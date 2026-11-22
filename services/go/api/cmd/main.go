@@ -25,6 +25,7 @@ import (
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/config"
 	"github.com/pociag-do-predykcji/services/go/api/internal/handler"
+	"github.com/pociag-do-predykcji/services/go/api/internal/prediction"
 	"github.com/pociag-do-predykcji/services/go/api/internal/repository"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service"
 )
@@ -78,7 +79,7 @@ func run(logger *zap.Logger) error {
 	}
 	defer pool.Close()
 
-	h := handler.New(service.New(repository.New(pool)), logger)
+	h := handler.New(service.New(repository.New(pool), prediction.NewClient(cfg.PredictorURL)), logger)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           otelhttp.NewHandler(h.Routes(), serviceName, otelhttp.WithFilter(notProbe)),

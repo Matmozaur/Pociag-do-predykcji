@@ -19,12 +19,17 @@ install Go 1.25+ or builds fail with `go.mod requires go >= 1.25.0`.
 - `cmd/main.go` — config, tracing, pgx pool, HTTP server.
 - `internal/handler` — chi routes (`/healthz`, `/readyz` = DB ping, `/api/v1/*`), an open CORS
   middleware (`*`, `GET, OPTIONS`), parameter validation (out of range → 400), JSON, error
-  mapping (`service.ErrNotFound` → 404, else 500 logged with `trace_id`).
+  mapping (`service.InvalidRequestError` → 400, `service.ErrNotFound` → 404, else 500 logged
+  with `trace_id`).
 - `internal/service` — builds the response models (`internal/model`) from repository rows. Pure
   apart from the `Repository` interface it defines; tests use `service/servicetest` (fake repo)
   and `export_test.go` (fixed clock).
 - `internal/repository` — all SQL (pgx v5, no ORM), one method per view.
 - `internal/position` — pure train-position model (active predicate, phase, interpolation).
+- `internal/prediction` — delay-prediction `Predictor` interface, the fixed delay ranges, and
+  `Client`, which asks the predictor service (`services/python/predictor`) over HTTP. A failed or
+  malformed answer is `ErrUnavailable` (handler → 503); `service.New` takes the `Predictor`,
+  tests use `servicetest.Predictor`.
 
 ## Commands (from repo root)
 
@@ -36,7 +41,7 @@ POCIAG_TEST_DATABASE_URL=postgres://… make api-test   # also runs internal/rep
 
 ## Env vars
 
-`HTTP_ADDR`, `DATABASE_DSN` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, tracing and metrics
+`HTTP_ADDR`, `DATABASE_DSN`, `PREDICTOR_URL` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, tracing and metrics
 off when unset).
 
 ## Patterns

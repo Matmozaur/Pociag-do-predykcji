@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { api } from '@/lib/api'
 import { Button, EmptyState, Spinner } from '@/lib/ui'
 import { NavShell } from '@/components/NavShell'
+import { DelayPredictionCard } from '@/components/DelayPredictionCard'
 
 const CARRIER_COLORS: Record<string, string> = {
     IC: 'bg-red-500/20 text-red-400',
@@ -96,6 +97,8 @@ export default function RozkladDetailPage() {
                                 </div>
                             )}
                         </div>
+
+                        <DelayPredictionCard schedule={scheduleQuery.data} />
 
                         {/* Stops list */}
                         <div>
