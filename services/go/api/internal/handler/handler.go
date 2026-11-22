@@ -20,6 +20,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/model"
+	"github.com/pociag-do-predykcji/services/go/api/internal/prediction"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service"
 )
 
@@ -204,7 +205,7 @@ func (h *Handler) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // respond returns a function that writes a service result: 200 with the payload, 400 for a
-// service.InvalidRequestError, 404 for service.ErrNotFound, 500 (logged) otherwise. Usage: h.respond(w, r, msg)(h.svc.X(...)).
+// service.InvalidRequestError, 404 for service.ErrNotFound, 503 for prediction.ErrUnavailable, 500 (logged) otherwise. Usage: h.respond(w, r, msg)(h.svc.X(...)).
 func (h *Handler) respond(w http.ResponseWriter, r *http.Request, failure string) func(any, error) {
 	return func(payload any, err error) {
 		if err != nil {
@@ -227,6 +228,12 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error, messag
 		return
 	}
 	span.SetStatus(codes.Error, err.Error())
+	if errors.Is(err, prediction.ErrUnavailable) {
+		h.logger.Warn(message, zap.Error(err), zap.String("path", r.URL.Path),
+			zap.String("trace_id", span.SpanContext().TraceID().String()))
+		writeJSON(w, http.StatusServiceUnavailable, model.ErrorResponse{Error: "prediction_unavailable", Message: "delay prediction is unavailable"})
+		return
+	}
 	h.logger.Error(message, zap.Error(err), zap.String("path", r.URL.Path),
 		zap.String("trace_id", span.SpanContext().TraceID().String()))
 	writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: message})

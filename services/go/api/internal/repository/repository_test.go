@@ -298,7 +298,7 @@ func TestLiveTrainsSortByDelay(t *testing.T) {
 
 	list := func(sortBy string, limit, offset int) ([]int64, []*int) {
 		t.Helper()
-		resp, err := service.New(repo).LiveTrains(ctx, nil, sortBy, limit, offset)
+		resp, err := service.New(repo, nil).LiveTrains(ctx, nil, sortBy, limit, offset)
 		check(t, err)
 		equal(t, "total", resp.Pagination.Total, 7)
 		ids, delays := make([]int64, 0, len(resp.Data)), make([]*int, 0, len(resp.Data))

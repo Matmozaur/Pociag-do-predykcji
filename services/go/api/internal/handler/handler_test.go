@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,12 +19,17 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/handler"
+	"github.com/pociag-do-predykcji/services/go/api/internal/prediction"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service/servicetest"
 )
 
 func serve(repo *servicetest.Repository, target string) *httptest.ResponseRecorder {
-	h := handler.New(service.New(repo), zap.NewNop())
+	return serveWith(repo, &servicetest.Predictor{}, target)
+}
+
+func serveWith(repo *servicetest.Repository, predictor *servicetest.Predictor, target string) *httptest.ResponseRecorder {
+	h := handler.New(service.New(repo, predictor), zap.NewNop())
 	rec := httptest.NewRecorder()
 	h.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
@@ -67,6 +73,33 @@ func TestNotFound(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", target, rec.Code)
 		}
+	}
+}
+
+func TestDelayPredictionUnavailable(t *testing.T) {
+	warsaw, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	y, m, d := time.Now().In(warsaw).Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, time.UTC) // the operating date
+	repo := &servicetest.Repository{Schedule: &service.TrainSchedule{
+		Train:          service.Train{ID: 3},
+		OperatingDates: []time.Time{today},
+		Stops:          []service.ScheduleStop{{Seq: 1, StationID: 1}, {Seq: 2, StationID: 2}},
+	}}
+	failing := &servicetest.Predictor{Err: fmt.Errorf("predict: %w", prediction.ErrUnavailable)}
+	rec := serveWith(repo, failing, "/api/v1/schedules/3/delay-prediction?date="+today.Format(time.DateOnly))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "prediction_unavailable" {
+		t.Errorf("body = %v", body)
 	}
 }
 
@@ -142,7 +175,7 @@ func TestServerSpansAreNamedByRoute(t *testing.T) {
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	reader := sdkmetric.NewManualReader()
 	meters := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	h := handler.New(service.New(&servicetest.Repository{}), zap.NewNop())
+	h := handler.New(service.New(&servicetest.Repository{}, &servicetest.Predictor{}), zap.NewNop())
 	server := otelhttp.NewHandler(h.Routes(), "pociag.api",
 		otelhttp.WithTracerProvider(provider), otelhttp.WithMeterProvider(meters))
 

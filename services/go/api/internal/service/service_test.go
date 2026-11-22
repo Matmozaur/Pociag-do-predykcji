@@ -3,12 +3,14 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/pociag-do-predykcji/services/go/api/internal/model"
 	"github.com/pociag-do-predykcji/services/go/api/internal/position"
+	"github.com/pociag-do-predykcji/services/go/api/internal/prediction"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service/servicetest"
 )
@@ -388,7 +390,11 @@ func predictionRepo() *servicetest.Repository {
 }
 
 func TestDelayPrediction(t *testing.T) {
-	svc := service.NewAt(predictionRepo(), now)
+	predictor := &servicetest.Predictor{Prediction: &prediction.Prediction{
+		Probabilities: [7]float64{0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.015625},
+		ModelVersion:  "history-7d",
+	}}
+	svc := service.NewAtWithPredictor(predictionRepo(), predictor, now)
 
 	p, err := svc.DelayPrediction(context.Background(), 3, ts("2026-10-18T00:00:00Z"), 0, 4900)
 	if err != nil {
@@ -396,24 +402,33 @@ func TestDelayPrediction(t *testing.T) {
 	}
 	equal(t, "from", p.From, model.ScheduleEndpoint{StationName: "Warszawa Centralna", StationExternalID: 5100, Time: "08:00"})
 	equal(t, "to", p.To, model.ScheduleEndpoint{StationName: "Kielce", StationExternalID: 4900, Time: "10:00"})
-	equal(t, "is mock", p.IsMock, true)
-	ranges, sum, best := []string{}, 0.0, p.Buckets[0]
+	equal(t, "model version", p.ModelVersion, "history-7d")
+	equal(t, "is mock", p.IsMock, false)
+	ranges, probabilities := []string{}, []float64{}
 	for _, b := range p.Buckets {
 		ranges = append(ranges, b.Range)
-		sum += b.Probability
-		if b.Probability > best.Probability {
-			best = b
-		}
+		probabilities = append(probabilities, b.Probability)
 	}
 	equal(t, "ranges", ranges, []string{"0-5", "5-10", "10-20", "20-40", "40-60", "60-120", "120+"})
-	if sum < 0.999999 || sum > 1.000001 {
-		t.Errorf("probabilities sum to %v", sum)
-	}
-	equal(t, "most likely", p.MostLikely, best.Range)
+	equal(t, "probabilities", probabilities, predictor.Prediction.Probabilities[:])
+	equal(t, "most likely", p.MostLikely, "0-5")
+	equal(t, "bounds", [2]int{p.Buckets[1].MinMinutes, *p.Buckets[1].MaxMinutes}, [2]int{5, 10})
 	equal(t, "open-ended max", p.Buckets[6].MaxMinutes, (*int)(nil))
 
-	again, _ := svc.DelayPrediction(context.Background(), 3, ts("2026-10-18T00:00:00Z"), 5100, 4900)
-	equal(t, "deterministic", again.Buckets, p.Buckets)
+	// The predictor is asked about the destination of the chosen journey.
+	equal(t, "train", predictor.Request.TrainID, int64(3))
+	equal(t, "to station", predictor.Request.ToStationID, 4900)
+	equal(t, "from station", predictor.Request.FromStationID, 5100)
+}
+
+func TestDelayPredictionPredictorFailure(t *testing.T) {
+	boom := fmt.Errorf("predict: %w", prediction.ErrUnavailable)
+	svc := service.NewAtWithPredictor(predictionRepo(), &servicetest.Predictor{Err: boom}, now)
+
+	_, err := svc.DelayPrediction(context.Background(), 3, ts("2026-10-18T00:00:00Z"), 0, 4900)
+	if !errors.Is(err, prediction.ErrUnavailable) {
+		t.Errorf("err = %v", err)
+	}
 }
 
 func TestDelayPredictionRejects(t *testing.T) {

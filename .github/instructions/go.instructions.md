@@ -27,7 +27,9 @@ install Go 1.25+ or builds fail with `go.mod requires go >= 1.25.0`.
 - `internal/repository` — all SQL (pgx v5, no ORM), one method per view.
 - `internal/position` — pure train-position model (active predicate, phase, interpolation).
 - `internal/prediction` — delay-prediction `Predictor` interface, the fixed delay ranges, and
-  `Mock` (deterministic placeholder wired in `service.New` until the ML service exists).
+  `Client`, which asks the predictor service (`services/python/predictor`) over HTTP. A failed or
+  malformed answer is `ErrUnavailable` (handler → 503); `service.New` takes the `Predictor`,
+  tests use `servicetest.Predictor`.
 
 ## Commands (from repo root)
 
@@ -39,7 +41,7 @@ POCIAG_TEST_DATABASE_URL=postgres://… make api-test   # also runs internal/rep
 
 ## Env vars
 
-`HTTP_ADDR`, `DATABASE_DSN` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, tracing and metrics
+`HTTP_ADDR`, `DATABASE_DSN`, `PREDICTOR_URL` (required); `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, tracing and metrics
 off when unset).
 
 ## Patterns

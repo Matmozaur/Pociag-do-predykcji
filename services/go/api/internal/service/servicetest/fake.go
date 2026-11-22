@@ -5,8 +5,25 @@ import (
 	"context"
 	"time"
 
+	"github.com/pociag-do-predykcji/services/go/api/internal/prediction"
 	"github.com/pociag-do-predykcji/services/go/api/internal/service"
 )
+
+// Predictor returns Prediction, or Err when set, and records the Request it was asked.
+type Predictor struct {
+	Prediction *prediction.Prediction
+	Err        error
+
+	Request prediction.Request
+}
+
+func (p *Predictor) PredictDelay(_ context.Context, req prediction.Request) (*prediction.Prediction, error) {
+	p.Request = req
+	if p.Err != nil {
+		return nil, p.Err
+	}
+	return p.Prediction, nil
+}
 
 // Repository returns its fields. Err, when set, fails every call; a nil Station, Run or
 // Schedule is service.ErrNotFound. Calls record their filter arguments.

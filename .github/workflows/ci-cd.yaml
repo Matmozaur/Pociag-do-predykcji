@@ -93,6 +93,47 @@ jobs:
       - name: Test (pytest)
         run: uv run pytest tests/ -v
 
+  predictor:
+    name: Python (predictor)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pociag
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: pociag_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U pociag" --health-interval 5s --health-retries 10
+    env:
+      POCIAG_TEST_DATABASE_URL: postgresql://pociag:test@localhost:5432/pociag_test
+    defaults:
+      run:
+        working-directory: services/python/predictor
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type check (mypy)
+        run: uv run mypy src tests
+
+      - name: Test (pytest)
+        run: uv run pytest tests/ -v
+
   frontend:
     name: Next.js (frontend)
     runs-on: ubuntu-latest
@@ -124,6 +165,7 @@ jobs:
     needs:
       - api
       - airflow
+      - predictor
       - frontend
     steps:
       - name: Checkout
@@ -131,6 +173,9 @@ jobs:
 
       - name: Build api image
         run: docker build -t pociag-api:ci services/go/api
+
+      - name: Build predictor image
+        run: docker build -t pociag-predictor:ci services/python/predictor
 
       - name: Build frontend image
         run: docker build -t pociag-frontend:ci services/frontend
@@ -141,6 +186,7 @@ jobs:
     needs:
       - api
       - airflow
+      - predictor
       - frontend
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     environment:
@@ -181,6 +227,7 @@ jobs:
             docker push "$REGISTRY/pociag-$1:$SHA"
           }
           build_push api services/go/api
+          build_push predictor services/python/predictor
           build_push frontend services/frontend
 
       - name: Deploy through SSM

@@ -53,8 +53,8 @@ db-psql: ## Open a psql shell on the curated database
 
 # ── Checks ────────────────────────────────────────────────────────────────────
 
-.PHONY: test api-test api-lint airflow-test airflow-lint frontend-build
-test: api-test api-lint airflow-test airflow-lint frontend-build ## Run every check CI runs, plus the frontend build
+.PHONY: test api-test api-lint airflow-test airflow-lint predictor-test predictor-lint frontend-build
+test: api-test api-lint airflow-test airflow-lint predictor-test predictor-lint frontend-build ## Run every check CI runs, plus the frontend build
 
 api-test: ## Go tests (set POCIAG_TEST_DATABASE_URL to include the SQL tests)
 	cd services/go/api && go test -race ./...
@@ -67,6 +67,12 @@ airflow-test: ## pytest (set POCIAG_TEST_DATABASE_URL to include the SQL tests)
 
 airflow-lint: ## ruff + mypy --strict on the Airflow code
 	cd airflow && uv run ruff check . && uv run mypy plugins/pociag_processing dags
+
+predictor-test: ## pytest for the predictor (set POCIAG_TEST_DATABASE_URL to include the SQL tests)
+	cd services/python/predictor && uv sync --all-extras -q && uv run pytest tests -q
+
+predictor-lint: ## ruff + mypy --strict on the predictor
+	cd services/python/predictor && uv run ruff check . && uv run mypy src tests
 
 frontend-build: ## Next.js build (type check + lint)
 	cd services/frontend && npm run build

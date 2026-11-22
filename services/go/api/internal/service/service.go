@@ -158,9 +158,9 @@ type Service struct {
 	now       func() time.Time
 }
 
-// New serves views from repo. Delay predictions are mocked until the ML service exists.
-func New(repo Repository) *Service {
-	return &Service{repo: repo, predictor: prediction.Mock{}, now: time.Now}
+// New serves views from repo; delay predictions come from predictor.
+func New(repo Repository, predictor prediction.Predictor) *Service {
+	return &Service{repo: repo, predictor: predictor, now: time.Now}
 }
 
 func (s *Service) Ready(ctx context.Context) error {

@@ -8,7 +8,7 @@ Europe/Warsaw; `catchup=False`, `max_active_runs=1`.
 |---|---|---|---|
 | `sync_schedules` | `30 2 * * *` | task `stations`: `/dictionaries/stations`, `/dictionaries/cities`; task `schedules`: `/schedules?dateFrom=D&dateTo=D` for today … today+7 | `stations` (+ city, packaged coordinates); `trains` upsert (operating dates merged), `schedule_stops` replaced per train |
 | `sync_operations` | `*/10 * * * *` | `/operations?withPlanned=true`, all pages | `operations` upsert (`updated_at` = seen in this snapshot), `operation_stops` upsert (unchanged rows skipped), stops a run no longer lists deleted |
-| `sync_disruptions` | `*/15 * * * *` | `/disruptions?dateFrom=today&dateTo=today+1` | `disruptions` replaced |
+| `sync_disruptions` | `*/15 * * * *` | `/disruptions?dateFrom=today&dateTo=today+1` | `disruptions` replaced; `disruption_history` gets every state not seen before (a known one only has `last_seen_at` extended) |
 
 ## PLK data rules (`transform.py`)
 
@@ -27,7 +27,10 @@ Europe/Warsaw; `catchup=False`, `max_active_runs=1`.
 - Each payload carries a dictionary of the stations it references; it is upserted first. Station
   ids missing from every dictionary get a placeholder `Stacja <id>` until a dictionary names them.
 - An operation for a train not in the timetable creates a bare `trains` row.
-- Disruption ids are only unique within one response, hence snapshot replacement. A disruption's
+- History is never deleted: `operations`, `operation_stops` and `disruption_history` only grow.
+  Labels for model training are the views `stop_delays` / `run_delays` (docs/architecture.md).
+- Disruption ids are only unique within one response, hence snapshot replacement, and
+  `disruption_history` is keyed by content (type, stations, message, dates, `affected_trains`). A disruption's
   dates are the min/max operating date of its affected trains; a message that is only a type
   code is replaced by that type's description.
 

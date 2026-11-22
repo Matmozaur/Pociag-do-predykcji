@@ -64,6 +64,25 @@ services:
       - 8889:8889
     logging: *logging
 
+  predictor:
+    build:
+      context: ../services/python/predictor
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+    environment:
+      DATABASE_DSN: postgresql://pociag:${POSTGRES_PASSWORD}@postgres:5432/pociag
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
   api:
     build:
       context: ../services/go/api
@@ -73,9 +92,12 @@ services:
         condition: service_completed_successfully
       otel-collector:
         condition: service_started
+      predictor:
+        condition: service_healthy
     environment:
       HTTP_ADDR: :8080
       DATABASE_DSN: postgres://pociag:${POSTGRES_PASSWORD}@postgres:5432/pociag?sslmode=disable
+      PREDICTOR_URL: http://predictor:8000
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
     ports:
       - 8080:8080
